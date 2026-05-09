@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider     = "prisma-client"
   output       = "../src/generated/prisma"
@@ -13,6 +11,28 @@ datasource db {
   provider = "postgresql"
 }
 
+// ===================== ENUMS =====================
+
+enum StatusOS {
+  RECEBIDA
+  EM_DIAGNOSTICO
+  AGUARDANDO_APROVACAO
+  EM_EXECUCAO
+  FINALIZADA
+  ENTREGUE
+}
+
+enum StatusOrcamento {
+  AGUARDANDO_APROVACAO
+  APROVADO
+  REJEITADO
+}
+
+enum TipoMovimentacaoEstoque {
+  ENTRADA
+  BAIXA
+}
+
 enum PerfilUsuario {
   ADMINISTRADOR
   ATENDENTE
@@ -20,72 +40,193 @@ enum PerfilUsuario {
   ALMOXARIFE
 }
 
-model Cliente {
-  id           String    @id @default(uuid()) @db.Uuid
-  nome         String
-  cpfCnpj      String    @unique
-  email        String    @unique
-  telefone     String
-  veiculos     Veiculo[]
-  criadoEm     DateTime  @default(now()) @map("criado_em")
-  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
-
-  @@map("clientes")
-}
-
-model Veiculo {
-  id           String   @id @default(uuid()) @db.Uuid
-  placa        String   @unique
-  marca        String
-  modelo       String
-  ano          Int
-  clienteId    String   @map("cliente_id") @db.Uuid
-  cliente      Cliente  @relation(fields: [clienteId], references: [id])
-  criadoEm     DateTime @default(now()) @map("criado_em")
-  atualizadoEm DateTime @updatedAt @map("atualizado_em")
-
-  @@index([clienteId])
-  @@map("veiculos")
-}
+// ===================== USUÁRIO (JWT) =====================
 
 model Usuario {
   id           String        @id @default(uuid()) @db.Uuid
   nome         String
   email        String        @unique
   senhaHash    String        @map("senha_hash")
-  ativo        Boolean       @default(true)
   perfil       PerfilUsuario
+  ativo        Boolean       @default(true)
   criadoEm     DateTime      @default(now()) @map("criado_em")
   atualizadoEm DateTime      @updatedAt @map("atualizado_em")
 
   @@map("usuarios")
 }
 
+// ===================== CLIENTE / VEÍCULO =====================
+
+model Cliente {
+  id           String         @id @default(uuid()) @db.Uuid
+  nome         String
+  cpfCnpj      String         @unique @map("cpf_cnpj")
+  email        String         @unique
+  telefone     String
+  veiculos     Veiculo[]
+  ordens       OrdemServico[]
+  criadoEm     DateTime       @default(now()) @map("criado_em")
+  atualizadoEm DateTime       @updatedAt @map("atualizado_em")
+
+  @@map("clientes")
+}
+
+model Veiculo {
+  id           String         @id @default(uuid()) @db.Uuid
+  placa        String         @unique
+  marca        String
+  modelo       String
+  ano          Int
+  clienteId    String         @map("cliente_id") @db.Uuid
+  cliente      Cliente        @relation(fields: [clienteId], references: [id])
+  ordens       OrdemServico[]
+  criadoEm     DateTime       @default(now()) @map("criado_em")
+  atualizadoEm DateTime       @updatedAt @map("atualizado_em")
+
+  @@index([clienteId])
+  @@map("veiculos")
+}
+
+// ===================== CATÁLOGOS =====================
+
 model Servico {
-  id               String   @id @default(uuid()) @db.Uuid
-  nome             String   @unique
+  id               String               @id @default(uuid()) @db.Uuid
+  nome             String               @unique
   descricao        String?
-  precoBase        Decimal  @map("preco_base") @db.Decimal(10, 2)
-  tempoEstimadoMin Int      @map("tempo_estimado_min")
-  ativo            Boolean  @default(true)
-  criadoEm        DateTime @default(now()) @map("criado_em")
-  atualizadoEm    DateTime @updatedAt @map("atualizado_em")
+  precoBase        Decimal              @map("preco_base") @db.Decimal(10, 2)
+  tempoEstimadoMin Int                  @map("tempo_estimado_min")
+  ativo            Boolean              @default(true)
+  itensOrdem       OrdemServicoServico[]
+  criadoEm         DateTime             @default(now()) @map("criado_em")
+  atualizadoEm     DateTime             @updatedAt @map("atualizado_em")
 
   @@map("servicos")
 }
 
 model Peca {
-  id                String   @id @default(uuid()) @db.Uuid
-  codigo            String   @unique
+  id                String               @id @default(uuid()) @db.Uuid
+  codigo            String               @unique
   nome              String
   descricao         String?
-  precoUnitario     Decimal  @map("preco_unitario") @db.Decimal(10, 2)
-  quantidadeEstoque Int      @default(0) @map("quantidade_estoque")
-  estoqueMinimo     Int      @default(0) @map("estoque_minimo")
-  ativo             Boolean  @default(true)
-  criadoEm         DateTime @default(now()) @map("criado_em")
-  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+  precoUnitario     Decimal              @map("preco_unitario") @db.Decimal(10, 2)
+  quantidadeEstoque Int                  @default(0) @map("quantidade_estoque")
+  estoqueMinimo     Int                  @default(0) @map("estoque_minimo")
+  ativo             Boolean              @default(true)
+  itensOrdem        OrdemServicoPeca[]
+  movimentacoes     MovimentacaoEstoque[]
+  criadoEm          DateTime             @default(now()) @map("criado_em")
+  atualizadoEm      DateTime             @updatedAt @map("atualizado_em")
 
   @@map("pecas")
+}
+
+// ===================== ORDEM DE SERVIÇO =====================
+
+model OrdemServico {
+  id                String               @id @default(uuid()) @db.Uuid
+  numero            Int                  @unique @default(autoincrement())
+  status            StatusOS             @default(RECEBIDA)
+  clienteId         String               @map("cliente_id") @db.Uuid
+  cliente           Cliente              @relation(fields: [clienteId], references: [id])
+  veiculoId         String               @map("veiculo_id") @db.Uuid
+  veiculo           Veiculo              @relation(fields: [veiculoId], references: [id])
+  descricaoProblema String?              @map("descricao_problema")
+  diagnostico       String?
+  servicos          OrdemServicoServico[]
+  pecas             OrdemServicoPeca[]
+  orcamentos        Orcamento[]
+  historicoStatus   HistoricoStatusOS[]
+  iniciadaEm        DateTime?            @map("iniciada_em")
+  finalizadaEm      DateTime?            @map("finalizada_em")
+  entregueEm        DateTime?            @map("entregue_em")
+  criadoEm          DateTime             @default(now()) @map("criado_em")
+  atualizadoEm      DateTime             @updatedAt @map("atualizado_em")
+
+  @@index([clienteId])
+  @@index([veiculoId])
+  @@index([status])
+  @@map("ordens_servico")
+}
+
+model OrdemServicoServico {
+  id             String       @id @default(uuid()) @db.Uuid
+  ordemServicoId String       @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  servicoId      String       @map("servico_id") @db.Uuid
+  servico        Servico      @relation(fields: [servicoId], references: [id])
+  quantidade     Int          @default(1)
+  precoUnitario  Decimal      @map("preco_unitario") @db.Decimal(10, 2)
+  criadoEm       DateTime     @default(now()) @map("criado_em")
+
+  @@index([ordemServicoId])
+  @@map("ordens_servico_servicos")
+}
+
+model OrdemServicoPeca {
+  id             String       @id @default(uuid()) @db.Uuid
+  ordemServicoId String       @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  pecaId         String       @map("peca_id") @db.Uuid
+  peca           Peca         @relation(fields: [pecaId], references: [id])
+  quantidade     Int
+  precoUnitario  Decimal      @map("preco_unitario") @db.Decimal(10, 2)
+  criadoEm       DateTime     @default(now()) @map("criado_em")
+
+  @@index([ordemServicoId])
+  @@map("ordens_servico_pecas")
+}
+
+// ===================== ORÇAMENTO =====================
+
+model Orcamento {
+  id             String          @id @default(uuid()) @db.Uuid
+  ordemServicoId String          @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico    @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  valorTotal     Decimal         @map("valor_total") @db.Decimal(10, 2)
+  status         StatusOrcamento @default(AGUARDANDO_APROVACAO)
+  observacoes    String?
+  aprovadoEm     DateTime?       @map("aprovado_em")
+  rejeitadoEm    DateTime?       @map("rejeitado_em")
+  motivoRejeicao String?         @map("motivo_rejeicao")
+  criadoEm       DateTime        @default(now()) @map("criado_em")
+  atualizadoEm   DateTime        @updatedAt @map("atualizado_em")
+
+  @@index([ordemServicoId])
+  @@index([status])
+  @@map("orcamentos")
+}
+
+// ===================== HISTÓRICO DE STATUS (tempo médio) =====================
+
+model HistoricoStatusOS {
+  id             String       @id @default(uuid()) @db.Uuid
+  ordemServicoId String       @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  statusAnterior StatusOS?    @map("status_anterior")
+  statusNovo     StatusOS     @map("status_novo")
+  alteradoPor    String?      @map("alterado_por")
+  observacao     String?
+  criadoEm       DateTime     @default(now()) @map("criado_em")
+
+  @@index([ordemServicoId])
+  @@index([statusNovo])
+  @@map("historico_status_os")
+}
+
+// ===================== MOVIMENTAÇÃO DE ESTOQUE =====================
+
+model MovimentacaoEstoque {
+  id             String                  @id @default(uuid()) @db.Uuid
+  pecaId         String                  @map("peca_id") @db.Uuid
+  peca           Peca                    @relation(fields: [pecaId], references: [id])
+  tipo           TipoMovimentacaoEstoque
+  quantidade     Int
+  ordemServicoId String?                 @map("ordem_servico_id") @db.Uuid
+  observacao     String?
+  criadoEm       DateTime                @default(now()) @map("criado_em")
+
+  @@index([pecaId])
+  @@index([ordemServicoId])
+  @@map("movimentacoes_estoque")
 }
 
