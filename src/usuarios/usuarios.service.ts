@@ -113,6 +113,12 @@ export class UsuariosService {
     return this.mapUsuario(usuario);
   }
 
+  async findByEmailParaAuth(email: string) {
+    return this.prismaService.usuario.findUnique({
+      where: { email },
+    });
+  }
+
   async remove(id: string) {
     await this.findOne(id);
 
