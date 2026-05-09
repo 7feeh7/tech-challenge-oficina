@@ -6,6 +6,7 @@ import { PrismaService } from './database/prisma.service';
 import { PrismaModule } from './database/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { UsuariosModule } from './usuarios/usuarios.module';
+import { PecasModule } from './pecas/pecas.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     VeiculosModule,
     PrismaModule,
     UsuariosModule,
+    PecasModule,
   ],
   controllers: [],
   providers: [PrismaService],

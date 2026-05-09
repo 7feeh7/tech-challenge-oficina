@@ -74,3 +74,18 @@ model Servico {
   @@map("servicos")
 }
 
+model Peca {
+  id                String   @id @default(uuid()) @db.Uuid
+  codigo            String   @unique
+  nome              String
+  descricao         String?
+  precoUnitario     Decimal  @map("preco_unitario") @db.Decimal(10, 2)
+  quantidadeEstoque Int      @default(0) @map("quantidade_estoque")
+  estoqueMinimo     Int      @default(0) @map("estoque_minimo")
+  ativo             Boolean  @default(true)
+  criadoEm         DateTime @default(now()) @map("criado_em")
+  atualizadoEm     DateTime @updatedAt @map("atualizado_em")
+
+  @@map("pecas")
+}
+
