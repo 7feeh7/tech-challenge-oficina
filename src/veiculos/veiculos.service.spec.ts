@@ -109,7 +109,12 @@ describe('VeiculosService', () => {
         expect.objectContaining({ skip: 0, take: 10 }),
       );
       expect(result.data).toHaveLength(1);
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve calcular skip corretamente para page 2', async () => {
@@ -137,7 +142,9 @@ describe('VeiculosService', () => {
 
       // Assert
       expect(prismaMock.veiculo.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ OR: expect.any(Array) }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ OR: expect.any(Array) }),
+        }),
       );
     });
   });
@@ -145,7 +152,10 @@ describe('VeiculosService', () => {
   describe('findOne', () => {
     it('deve retornar um veículo pelo id', async () => {
       // Arrange
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, cliente: clienteMock });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        cliente: clienteMock,
+      });
 
       // Act
       const result = await service.findOne('uuid-v1');
@@ -163,16 +173,24 @@ describe('VeiculosService', () => {
       prismaMock.veiculo.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('update', () => {
     it('deve atualizar um veículo com sucesso', async () => {
       // Arrange
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, cliente: clienteMock });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        cliente: clienteMock,
+      });
       prismaMock.veiculo.findFirst.mockResolvedValue(null);
-      prismaMock.veiculo.update.mockResolvedValue({ ...veiculoMock, modelo: 'Yaris' });
+      prismaMock.veiculo.update.mockResolvedValue({
+        ...veiculoMock,
+        modelo: 'Yaris',
+      });
 
       // Act
       const result = await service.update('uuid-v1', { modelo: 'Yaris' });
@@ -186,12 +204,17 @@ describe('VeiculosService', () => {
       prismaMock.veiculo.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve lançar ConflictException se a placa já estiver em uso', async () => {
       // Arrange
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, cliente: clienteMock });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        cliente: clienteMock,
+      });
       prismaMock.veiculo.findFirst.mockResolvedValue({ id: 'outro-uuid' });
 
       // Act & Assert
@@ -202,7 +225,10 @@ describe('VeiculosService', () => {
 
     it('deve lançar NotFoundException se o novo clienteId não existir', async () => {
       // Arrange
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, cliente: clienteMock });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        cliente: clienteMock,
+      });
       prismaMock.veiculo.findFirst.mockResolvedValue(null);
       prismaMock.cliente.findUnique.mockResolvedValue(null);
 
@@ -216,15 +242,22 @@ describe('VeiculosService', () => {
   describe('remove', () => {
     it('deve remover um veículo com sucesso', async () => {
       // Arrange
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, cliente: clienteMock });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        cliente: clienteMock,
+      });
       prismaMock.veiculo.delete.mockResolvedValue(veiculoMock);
 
       // Act
       const result = await service.remove('uuid-v1');
 
       // Assert
-      expect(prismaMock.veiculo.delete).toHaveBeenCalledWith({ where: { id: 'uuid-v1' } });
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-v1') });
+      expect(prismaMock.veiculo.delete).toHaveBeenCalledWith({
+        where: { id: 'uuid-v1' },
+      });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-v1'),
+      });
     });
 
     it('deve lançar NotFoundException se o veículo não existir', async () => {
@@ -232,7 +265,9 @@ describe('VeiculosService', () => {
       prismaMock.veiculo.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

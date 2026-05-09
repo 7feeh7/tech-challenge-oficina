@@ -115,7 +115,9 @@ describe('UsuariosController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -126,10 +128,14 @@ describe('UsuariosController', () => {
       serviceMock.update.mockResolvedValue(updated);
 
       // Act
-      const result = await controller.update('uuid-u1', { nome: 'Maria Atualizada' });
+      const result = await controller.update('uuid-u1', {
+        nome: 'Maria Atualizada',
+      });
 
       // Assert
-      expect(serviceMock.update).toHaveBeenCalledWith('uuid-u1', { nome: 'Maria Atualizada' });
+      expect(serviceMock.update).toHaveBeenCalledWith('uuid-u1', {
+        nome: 'Maria Atualizada',
+      });
       expect(result).toMatchObject({ nome: 'Maria Atualizada' });
     });
 
@@ -138,7 +144,9 @@ describe('UsuariosController', () => {
       serviceMock.update.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve propagar ConflictException quando e-mail já está em uso', async () => {
@@ -155,14 +163,18 @@ describe('UsuariosController', () => {
   describe('remove', () => {
     it('deve remover um usuário e retornar mensagem de sucesso', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Usuário "uuid-u1" removido com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Usuário "uuid-u1" removido com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('uuid-u1');
 
       // Assert
       expect(serviceMock.remove).toHaveBeenCalledWith('uuid-u1');
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-u1') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-u1'),
+      });
     });
 
     it('deve propagar NotFoundException quando usuário não existe', async () => {
@@ -170,7 +182,9 @@ describe('UsuariosController', () => {
       serviceMock.remove.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

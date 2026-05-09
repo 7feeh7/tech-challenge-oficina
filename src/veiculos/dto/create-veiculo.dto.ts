@@ -10,7 +10,10 @@ import {
 } from 'class-validator';
 
 export class CreateVeiculoDto {
-  @ApiProperty({ example: 'ABC1D23', description: 'Placa do veículo (formato Mercosul ou antigo)' })
+  @ApiProperty({
+    example: 'ABC1D23',
+    description: 'Placa do veículo (formato Mercosul ou antigo)',
+  })
   @IsString()
   @IsNotEmpty({ message: 'A placa é obrigatória.' })
   @Matches(/^[A-Z]{3}\d[A-Z\d]\d{2}$/, { message: 'Placa inválida.' })
@@ -32,7 +35,10 @@ export class CreateVeiculoDto {
   @Max(new Date().getFullYear() + 1, { message: 'Ano inválido.' })
   ano!: number;
 
-  @ApiProperty({ example: 'uuid-do-cliente', description: 'UUID do cliente proprietário' })
+  @ApiProperty({
+    example: 'uuid-do-cliente',
+    description: 'UUID do cliente proprietário',
+  })
   @IsUUID('4', { message: 'clienteId deve ser um UUID válido.' })
   @IsNotEmpty({ message: 'O clienteId é obrigatório.' })
   clienteId!: string;

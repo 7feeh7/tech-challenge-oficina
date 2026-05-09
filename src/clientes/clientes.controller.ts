@@ -41,10 +41,30 @@ export class ClientesController {
 
   @Get()
   @ApiOperation({ summary: 'Lista clientes cadastrados' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Número da página' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Itens por página' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Filtro por nome do cliente' })
-  @ApiResponse({ status: 200, description: 'Lista de clientes retornada com sucesso' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Número da página',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Itens por página',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Filtro por nome do cliente',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de clientes retornada com sucesso',
+  })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -68,7 +88,10 @@ export class ClientesController {
   @ApiResponse({ status: 200, description: 'Cliente atualizado com sucesso' })
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
-  @ApiResponse({ status: 409, description: 'E-mail ou CPF/CNPJ já está em uso' })
+  @ApiResponse({
+    status: 409,
+    description: 'E-mail ou CPF/CNPJ já está em uso',
+  })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateClienteDto: UpdateClienteDto,

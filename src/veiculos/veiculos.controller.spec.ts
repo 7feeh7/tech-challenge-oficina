@@ -108,7 +108,10 @@ describe('VeiculosController', () => {
   describe('findOne', () => {
     it('deve retornar um veículo pelo id', async () => {
       // Arrange
-      serviceMock.findOne.mockResolvedValue({ ...veiculoMock, cliente: { id: 'uuid-c1', nome: 'João' } });
+      serviceMock.findOne.mockResolvedValue({
+        ...veiculoMock,
+        cliente: { id: 'uuid-c1', nome: 'João' },
+      });
 
       // Act
       const result = await controller.findOne('uuid-v1');
@@ -123,7 +126,9 @@ describe('VeiculosController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -137,7 +142,9 @@ describe('VeiculosController', () => {
       const result = await controller.update('uuid-v1', { modelo: 'Yaris' });
 
       // Assert
-      expect(serviceMock.update).toHaveBeenCalledWith('uuid-v1', { modelo: 'Yaris' });
+      expect(serviceMock.update).toHaveBeenCalledWith('uuid-v1', {
+        modelo: 'Yaris',
+      });
       expect(result).toMatchObject({ modelo: 'Yaris' });
     });
 
@@ -146,7 +153,9 @@ describe('VeiculosController', () => {
       serviceMock.update.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve propagar ConflictException quando placa já está em uso', async () => {
@@ -154,21 +163,27 @@ describe('VeiculosController', () => {
       serviceMock.update.mockRejectedValue(new ConflictException());
 
       // Act & Assert
-      await expect(controller.update('uuid-v1', { placa: 'XYZ9W87' })).rejects.toThrow(ConflictException);
+      await expect(
+        controller.update('uuid-v1', { placa: 'XYZ9W87' }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
   describe('remove', () => {
     it('deve remover um veículo e retornar mensagem de sucesso', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Veículo "uuid-v1" removido com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Veículo "uuid-v1" removido com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('uuid-v1');
 
       // Assert
       expect(serviceMock.remove).toHaveBeenCalledWith('uuid-v1');
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-v1') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-v1'),
+      });
     });
 
     it('deve propagar NotFoundException quando veículo não existe', async () => {
@@ -176,7 +191,9 @@ describe('VeiculosController', () => {
       serviceMock.remove.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

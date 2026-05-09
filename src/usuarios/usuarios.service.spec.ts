@@ -4,7 +4,9 @@ import { UsuariosService } from './usuarios.service';
 import { PrismaService } from '@/database/prisma.service';
 import { PerfilUsuario } from '@/generated/prisma/enums';
 
-jest.mock('bcryptjs', () => ({ hash: jest.fn().mockResolvedValue('hash-fake') }));
+jest.mock('bcryptjs', () => ({
+  hash: jest.fn().mockResolvedValue('hash-fake'),
+}));
 
 const usuarioMock = {
   id: 'uuid-u1',
@@ -69,7 +71,10 @@ describe('UsuariosService', () => {
         data: expect.objectContaining({ senhaHash: 'hash-fake' }),
       });
       expect(result).not.toHaveProperty('senhaHash');
-      expect(result).toMatchObject({ id: 'uuid-u1', email: 'maria@oficina.com' });
+      expect(result).toMatchObject({
+        id: 'uuid-u1',
+        email: 'maria@oficina.com',
+      });
     });
 
     it('deve lançar ConflictException se e-mail já existir', async () => {
@@ -95,7 +100,12 @@ describe('UsuariosService', () => {
         expect.objectContaining({ skip: 0, take: 10 }),
       );
       expect(result.data[0]).not.toHaveProperty('senhaHash');
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve calcular skip corretamente para page 2', async () => {
@@ -123,7 +133,9 @@ describe('UsuariosService', () => {
       const result = await service.findOne('uuid-u1');
 
       // Assert
-      expect(prismaMock.usuario.findUnique).toHaveBeenCalledWith({ where: { id: 'uuid-u1' } });
+      expect(prismaMock.usuario.findUnique).toHaveBeenCalledWith({
+        where: { id: 'uuid-u1' },
+      });
       expect(result).not.toHaveProperty('senhaHash');
       expect(result).toMatchObject({ id: 'uuid-u1' });
     });
@@ -133,7 +145,9 @@ describe('UsuariosService', () => {
       prismaMock.usuario.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -141,10 +155,15 @@ describe('UsuariosService', () => {
     it('deve atualizar nome sem verificar conflito de e-mail', async () => {
       // Arrange
       prismaMock.usuario.findUnique.mockResolvedValue(usuarioMock);
-      prismaMock.usuario.update.mockResolvedValue({ ...usuarioMock, nome: 'Maria Atualizada' });
+      prismaMock.usuario.update.mockResolvedValue({
+        ...usuarioMock,
+        nome: 'Maria Atualizada',
+      });
 
       // Act
-      const result = await service.update('uuid-u1', { nome: 'Maria Atualizada' });
+      const result = await service.update('uuid-u1', {
+        nome: 'Maria Atualizada',
+      });
 
       // Assert
       expect(result).toMatchObject({ nome: 'Maria Atualizada' });
@@ -161,7 +180,9 @@ describe('UsuariosService', () => {
 
       // Assert
       expect(prismaMock.usuario.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ senhaHash: 'hash-fake' }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({ senhaHash: 'hash-fake' }),
+        }),
       );
     });
 
@@ -170,7 +191,9 @@ describe('UsuariosService', () => {
       prismaMock.usuario.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve lançar ConflictException se e-mail já estiver em uso', async () => {
@@ -195,8 +218,12 @@ describe('UsuariosService', () => {
       const result = await service.remove('uuid-u1');
 
       // Assert
-      expect(prismaMock.usuario.delete).toHaveBeenCalledWith({ where: { id: 'uuid-u1' } });
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-u1') });
+      expect(prismaMock.usuario.delete).toHaveBeenCalledWith({
+        where: { id: 'uuid-u1' },
+      });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-u1'),
+      });
     });
 
     it('deve lançar NotFoundException se usuário não existir', async () => {
@@ -204,7 +231,9 @@ describe('UsuariosService', () => {
       prismaMock.usuario.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

@@ -41,10 +41,30 @@ export class UsuariosController {
 
   @Get()
   @ApiOperation({ summary: 'Lista usuários cadastrados' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Número da página' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Itens por página' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Filtro por nome do usuário' })
-  @ApiResponse({ status: 200, description: 'Lista de usuários retornada com sucesso' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Número da página',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Itens por página',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Filtro por nome do usuário',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de usuários retornada com sucesso',
+  })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,

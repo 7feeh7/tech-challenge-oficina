@@ -42,10 +42,30 @@ export class VeiculosController {
 
   @Get()
   @ApiOperation({ summary: 'Lista veículos cadastrados' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1, description: 'Número da página' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10, description: 'Itens por página' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Filtro por placa, marca ou modelo' })
-  @ApiResponse({ status: 200, description: 'Lista de veículos retornada com sucesso' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    example: 1,
+    description: 'Número da página',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    example: 10,
+    description: 'Itens por página',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Filtro por placa, marca ou modelo',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de veículos retornada com sucesso',
+  })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -68,7 +88,10 @@ export class VeiculosController {
   @ApiParam({ name: 'id', description: 'UUID do veículo', type: String })
   @ApiResponse({ status: 200, description: 'Veículo atualizado com sucesso' })
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
-  @ApiResponse({ status: 404, description: 'Veículo ou cliente não encontrado' })
+  @ApiResponse({
+    status: 404,
+    description: 'Veículo ou cliente não encontrado',
+  })
   @ApiResponse({ status: 409, description: 'Placa já está em uso' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
