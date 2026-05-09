@@ -9,7 +9,7 @@ import { PrismaService } from '@/database/prisma.service';
 
 @Injectable()
 export class ClientesService {
-  constructor(private prismaService: PrismaService) { }
+  constructor(private prismaService: PrismaService) {}
 
   async create(createClienteDto: CreateClienteDto) {
     const clienteJaExiste = await this.prismaService.cliente.findFirst({
@@ -22,19 +22,23 @@ export class ClientesService {
     });
 
     if (clienteJaExiste) {
-      throw new ConflictException('Já existe um cliente com esse e-mail ou CPF/CNPJ.');
+      throw new ConflictException(
+        'Já existe um cliente com esse e-mail ou CPF/CNPJ.',
+      );
     }
 
-    const cliente = await this.prismaService.cliente.create({ data: createClienteDto });
+    const cliente = await this.prismaService.cliente.create({
+      data: createClienteDto,
+    });
 
-    const { id, nome, email, telefone } = cliente
+    const { id, nome, email, telefone } = cliente;
 
     return {
       id,
       nome,
       email,
-      telefone
-    }
+      telefone,
+    };
   }
 
   async findAll(page = 1, limit = 10, search?: string) {
@@ -100,7 +104,9 @@ export class ClientesService {
       });
 
       if (conflito) {
-        throw new ConflictException('E-mail ou CPF/CNPJ já está em uso por outro cliente.');
+        throw new ConflictException(
+          'E-mail ou CPF/CNPJ já está em uso por outro cliente.',
+        );
       }
     }
 

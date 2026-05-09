@@ -126,10 +126,14 @@ describe('ClientesController', () => {
       serviceMock.update.mockResolvedValue(updated);
 
       // Act
-      const result = await controller.update('uuid-1', { nome: 'João Atualizado' });
+      const result = await controller.update('uuid-1', {
+        nome: 'João Atualizado',
+      });
 
       // Assert
-      expect(serviceMock.update).toHaveBeenCalledWith('uuid-1', { nome: 'João Atualizado' });
+      expect(serviceMock.update).toHaveBeenCalledWith('uuid-1', {
+        nome: 'João Atualizado',
+      });
       expect(result).toMatchObject({ nome: 'João Atualizado' });
     });
 
@@ -157,14 +161,18 @@ describe('ClientesController', () => {
   describe('remove', () => {
     it('deve remover um cliente e retornar mensagem de sucesso', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Cliente "uuid-1" removido com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Cliente "uuid-1" removido com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('uuid-1');
 
       // Assert
       expect(serviceMock.remove).toHaveBeenCalledWith('uuid-1');
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-1') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-1'),
+      });
     });
 
     it('deve propagar NotFoundException quando cliente não existe', async () => {

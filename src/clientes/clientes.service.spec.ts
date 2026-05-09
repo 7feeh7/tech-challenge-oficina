@@ -77,7 +77,12 @@ describe('ClientesService', () => {
         expect.objectContaining({ skip: 0, take: 10 }),
       );
       expect(result.data).toHaveLength(1);
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve calcular skip corretamente para page 2', async () => {
@@ -130,7 +135,9 @@ describe('ClientesService', () => {
         nome: 'João Atualizado',
       });
 
-      const result = await service.update('uuid-1', { nome: 'João Atualizado' });
+      const result = await service.update('uuid-1', {
+        nome: 'João Atualizado',
+      });
 
       expect(result).toMatchObject({ nome: 'João Atualizado' });
     });
@@ -169,7 +176,9 @@ describe('ClientesService', () => {
       expect(prismaMock.cliente.delete).toHaveBeenCalledWith({
         where: { id: 'uuid-1' },
       });
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-1') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-1'),
+      });
     });
 
     it('deve lançar NotFoundException se cliente não existir', async () => {

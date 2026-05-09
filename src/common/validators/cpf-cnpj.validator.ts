@@ -29,10 +29,7 @@ function validarCnpj(cnpj: string): boolean {
   if (/^(\d)\1+$/.test(digits)) return false;
 
   const calcDigit = (d: string, weights: number[]) => {
-    const sum = weights.reduce(
-      (acc, w, i) => acc + parseInt(d[i]) * w,
-      0,
-    );
+    const sum = weights.reduce((acc, w, i) => acc + parseInt(d[i]) * w, 0);
     const remainder = sum % 11;
     return remainder < 2 ? 0 : 11 - remainder;
   };

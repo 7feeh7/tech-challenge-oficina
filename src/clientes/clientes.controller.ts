@@ -16,6 +16,7 @@ import {
 import { ClientesService } from './clientes.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
+import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 
 @Controller('clientes')
 export class ClientesController {
@@ -23,11 +24,20 @@ export class ClientesController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Cadastra um novo cliente' })
+  @ApiResponse({ status: 201, description: 'Cliente cadastrado com sucesso' })
+  @ApiResponse({ status: 400, description: 'Dados inválidos' })
   async create(@Body() createClienteDto: CreateClienteDto) {
     return await this.clientesService.create(createClienteDto);
   }
 
   @Get()
+  @Get()
+  @ApiOperation({ summary: 'Lista clientes cadastrados' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de clientes retornada com sucesso',
+  })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
