@@ -57,6 +57,49 @@ $ yarn run test:e2e
 $ yarn run test:cov
 ```
 
+## Análise de qualidade (SonarQube)
+
+A análise de cobertura e vulnerabilidades roda em um SonarQube local, isolado do `docker-compose` da aplicação (não é necessário subi-lo para rodar a API).
+
+### Passo a passo
+
+1. Subir o SonarQube (leva ~1-2 min para ficar disponível):
+
+   ```bash
+   yarn sonar:up
+   ```
+
+2. Acessar `http://localhost:9000` e fazer login com `admin` / `admin` (será solicitado trocar a senha no primeiro acesso).
+
+3. Gerar um token em **My Account → Security → Generate Tokens** (tipo *Global Analysis Token* ou *Project Analysis Token*).
+
+4. Exportar o token e rodar a análise (gera cobertura via Jest + envia para o Sonar):
+
+   **bash / Git Bash / WSL**
+   ```bash
+   export SONAR_TOKEN=seu_token_aqui
+   yarn sonar
+   ```
+
+   **PowerShell**
+   ```powershell
+   $env:SONAR_TOKEN="seu_token_aqui"
+   yarn sonar
+   ```
+
+5. Acessar o relatório em `http://localhost:9000/dashboard?id=tech-challenge`.
+
+### Comandos disponíveis
+
+| Comando            | Descrição                                                       |
+| ------------------ | --------------------------------------------------------------- |
+| `yarn sonar:up`    | Sobe o container do SonarQube                                   |
+| `yarn sonar:down`  | Derruba o container do SonarQube                                |
+| `yarn sonar:scan`  | Executa apenas o scanner (requer cobertura já gerada)           |
+| `yarn sonar`       | Roda `test:cov` + scanner (fluxo completo)                      |
+
+> A configuração do projeto está em [sonar-project.properties](sonar-project.properties) e o serviço em [docker-compose.sonar.yml](docker-compose.sonar.yml).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
