@@ -53,6 +53,25 @@ export class OrdensServicoController {
     return this.ordensServicoService.findAll(page, limit, status);
   }
 
+  @Get('metricas/tempo-medio')
+  @ApiOperation({
+    summary: 'Tempo médio de execução das ordens de serviço',
+    description:
+      'Calcula o tempo médio entre iniciadaEm/finalizadaEm e o ciclo total (criadoEm/entregueEm). Aceita filtros opcionais de período (baseados em criadoEm).',
+  })
+  @ApiQuery({ name: 'dataInicio', required: false, type: String, example: '2026-01-01' })
+  @ApiQuery({ name: 'dataFim', required: false, type: String, example: '2026-12-31' })
+  @ApiResponse({ status: 200, description: 'Métricas calculadas.' })
+  tempoMedio(
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+  ) {
+    return this.ordensServicoService.tempoMedioExecucao(
+      dataInicio ? new Date(dataInicio) : undefined,
+      dataFim ? new Date(dataFim) : undefined,
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Buscar ordem de serviço por ID' })
   @ApiParam({ name: 'id', format: 'uuid' })

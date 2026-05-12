@@ -21,6 +21,7 @@ const serviceMock = {
   findOne: jest.fn(),
   update: jest.fn(),
   remove: jest.fn(),
+  tempoMedioExecucao: jest.fn(),
 };
 
 describe('OrdensServicoController', () => {
@@ -159,6 +160,45 @@ describe('OrdensServicoController', () => {
 
       // Act & Assert
       await expect(controller.remove('inexistente')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('tempoMedio', () => {
+    it('deve retornar métricas sem filtros', async () => {
+      // Arrange
+      const metricas = {
+        totalOrdens: 0,
+        totalFinalizadas: 0,
+        totalEntregues: 0,
+        tempoMedioExecucaoMs: 0,
+        tempoMedioExecucaoHoras: 0,
+        tempoMedioCicloTotalMs: 0,
+        tempoMedioCicloTotalHoras: 0,
+        filtros: { dataInicio: null, dataFim: null },
+      };
+      serviceMock.tempoMedioExecucao.mockResolvedValue(metricas);
+
+      // Act
+      const result = await controller.tempoMedio();
+
+      // Assert
+      expect(serviceMock.tempoMedioExecucao).toHaveBeenCalledWith(undefined, undefined);
+      expect(result).toEqual(metricas);
+    });
+
+    it('deve repassar datas de filtro convertidas para Date', async () => {
+      // Arrange
+      serviceMock.tempoMedioExecucao.mockResolvedValue({});
+
+      // Act
+      await controller.tempoMedio('2026-01-01', '2026-12-31');
+
+      // Assert
+      const [inicio, fim] = serviceMock.tempoMedioExecucao.mock.calls[0];
+      expect(inicio).toBeInstanceOf(Date);
+      expect(fim).toBeInstanceOf(Date);
+      expect((inicio as Date).toISOString().startsWith('2026-01-01')).toBe(true);
+      expect((fim as Date).toISOString().startsWith('2026-12-31')).toBe(true);
     });
   });
 });

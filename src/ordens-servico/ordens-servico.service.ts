@@ -175,6 +175,60 @@ export class OrdensServicoService {
     return { message: `Ordem de serviço "${id}" removida com sucesso.` };
   }
 
+  /**
+   * Calcula o tempo médio de execução das ordens de serviço:
+   * - tempoMedioExecucaoMs: entre iniciadaEm e finalizadaEm (somente OS finalizadas)
+   * - tempoMedioCicloTotalMs: entre criadoEm e entregueEm (somente OS entregues)
+   * Aceita filtro opcional por intervalo (baseado em criadoEm).
+   */
+  async tempoMedioExecucao(dataInicio?: Date, dataFim?: Date) {
+    const where: any = {};
+    if (dataInicio || dataFim) {
+      where.criadoEm = {};
+      if (dataInicio) where.criadoEm.gte = dataInicio;
+      if (dataFim) where.criadoEm.lte = dataFim;
+    }
+
+    const ordens = await this.prisma.ordemServico.findMany({
+      where,
+      select: {
+        criadoEm: true,
+        iniciadaEm: true,
+        finalizadaEm: true,
+        entregueEm: true,
+      },
+    });
+
+    const execucao = ordens.filter((o) => o.iniciadaEm && o.finalizadaEm);
+    const ciclo = ordens.filter((o) => o.entregueEm);
+
+    const somaExecucao = execucao.reduce(
+      (acc, o) => acc + (o.finalizadaEm!.getTime() - o.iniciadaEm!.getTime()),
+      0,
+    );
+    const somaCiclo = ciclo.reduce(
+      (acc, o) => acc + (o.entregueEm!.getTime() - o.criadoEm.getTime()),
+      0,
+    );
+
+    const tempoMedioExecucaoMs = execucao.length ? somaExecucao / execucao.length : 0;
+    const tempoMedioCicloTotalMs = ciclo.length ? somaCiclo / ciclo.length : 0;
+
+    return {
+      totalOrdens: ordens.length,
+      totalFinalizadas: execucao.length,
+      totalEntregues: ciclo.length,
+      tempoMedioExecucaoMs,
+      tempoMedioExecucaoHoras: Number((tempoMedioExecucaoMs / 3_600_000).toFixed(2)),
+      tempoMedioCicloTotalMs,
+      tempoMedioCicloTotalHoras: Number((tempoMedioCicloTotalMs / 3_600_000).toFixed(2)),
+      filtros: {
+        dataInicio: dataInicio ?? null,
+        dataFim: dataFim ?? null,
+      },
+    };
+  }
+
   private mapOrdem(ordem: any) {
     return {
       id: ordem.id,

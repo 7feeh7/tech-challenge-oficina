@@ -269,4 +269,67 @@ describe('OrdensServicoService', () => {
       await expect(service.remove('inexistente')).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('tempoMedioExecucao', () => {
+    it('deve calcular tempo médio de execução e ciclo total', async () => {
+      // Arrange
+      const base = new Date('2026-01-01T08:00:00Z').getTime();
+      prismaMock.ordemServico.findMany.mockResolvedValue([
+        {
+          criadoEm: new Date(base),
+          iniciadaEm: new Date(base + 1 * 3_600_000),
+          finalizadaEm: new Date(base + 3 * 3_600_000),
+          entregueEm: new Date(base + 5 * 3_600_000),
+        },
+        {
+          criadoEm: new Date(base),
+          iniciadaEm: new Date(base + 1 * 3_600_000),
+          finalizadaEm: new Date(base + 5 * 3_600_000),
+          entregueEm: new Date(base + 7 * 3_600_000),
+        },
+      ]);
+
+      // Act
+      const result = await service.tempoMedioExecucao();
+
+      // Assert
+      expect(result.totalOrdens).toBe(2);
+      expect(result.totalFinalizadas).toBe(2);
+      expect(result.tempoMedioExecucaoHoras).toBe(3);
+      expect(result.tempoMedioCicloTotalHoras).toBe(6);
+    });
+
+    it('deve retornar zeros quando não há OS finalizadas/entregues', async () => {
+      // Arrange
+      prismaMock.ordemServico.findMany.mockResolvedValue([
+        { criadoEm: new Date(), iniciadaEm: null, finalizadaEm: null, entregueEm: null },
+      ]);
+
+      // Act
+      const result = await service.tempoMedioExecucao();
+
+      // Assert
+      expect(result.totalOrdens).toBe(1);
+      expect(result.totalFinalizadas).toBe(0);
+      expect(result.tempoMedioExecucaoMs).toBe(0);
+      expect(result.tempoMedioCicloTotalMs).toBe(0);
+    });
+
+    it('deve aplicar filtro de período (dataInicio e dataFim)', async () => {
+      // Arrange
+      prismaMock.ordemServico.findMany.mockResolvedValue([]);
+      const inicio = new Date('2026-01-01');
+      const fim = new Date('2026-12-31');
+
+      // Act
+      await service.tempoMedioExecucao(inicio, fim);
+
+      // Assert
+      expect(prismaMock.ordemServico.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { criadoEm: { gte: inicio, lte: fim } },
+        }),
+      );
+    });
+  });
 });
