@@ -22,9 +22,14 @@ import {
   ApiQuery,
   ApiResponse,
   ApiTags,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
 
 @ApiTags('Clientes')
+@ApiBearerAuth()
+@Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
 @Controller('clientes')
 export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}

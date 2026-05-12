@@ -19,17 +19,22 @@ import {
   ApiQuery,
   ApiResponse,
   ApiTags,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { ServicosService } from './servicos.service';
 import { CreateServicoDto } from './dto/create-servico.dto';
 import { UpdateServicoDto } from './dto/update-servico.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
 
 @ApiTags('Serviços')
+@ApiBearerAuth()
 @Controller('servicos')
 export class ServicosController {
   constructor(private readonly servicosService: ServicosService) {}
 
   @Post()
+  @Roles(PerfilUsuario.ADMINISTRADOR)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastra um novo serviço' })
   @ApiResponse({ status: 201, description: 'Serviço cadastrado com sucesso' })
@@ -83,6 +88,7 @@ export class ServicosController {
   }
 
   @Patch(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR)
   @ApiOperation({ summary: 'Atualiza os dados de um serviço' })
   @ApiParam({ name: 'id', description: 'UUID do serviço', type: String })
   @ApiResponse({ status: 200, description: 'Serviço atualizado com sucesso' })
@@ -100,6 +106,7 @@ export class ServicosController {
   }
 
   @Delete(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remove um serviço' })
   @ApiParam({ name: 'id', description: 'UUID do serviço', type: String })

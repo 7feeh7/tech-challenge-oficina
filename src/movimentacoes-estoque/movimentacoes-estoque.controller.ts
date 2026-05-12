@@ -20,8 +20,13 @@ import {
 } from '@nestjs/swagger';
 import { MovimentacoesEstoqueService } from './movimentacoes-estoque.service';
 import { CreateMovimentacaoEstoqueDto } from './dto/create-movimentacao-estoque.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Movimentações de Estoque')
+@ApiBearerAuth()
+@Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
 @Controller('movimentacoes-estoque')
 export class MovimentacoesEstoqueController {
   constructor(private readonly movimentacoesEstoqueService: MovimentacoesEstoqueService) {}

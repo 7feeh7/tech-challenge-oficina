@@ -23,8 +23,13 @@ import {
 import { OrcamentosService } from './orcamentos.service';
 import { CreateOrcamentoDto } from './dto/create-orcamento.dto';
 import { UpdateOrcamentoDto } from './dto/update-orcamento.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Orçamentos')
+@ApiBearerAuth()
+@Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
 @Controller('orcamentos')
 export class OrcamentosController {
   constructor(private readonly orcamentosService: OrcamentosService) {}

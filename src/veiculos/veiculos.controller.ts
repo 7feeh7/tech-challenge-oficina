@@ -19,12 +19,17 @@ import {
   ApiQuery,
   ApiResponse,
   ApiTags,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { VeiculosService } from './veiculos.service';
 import { CreateVeiculoDto } from './dto/create-veiculo.dto';
 import { UpdateVeiculoDto } from './dto/update-veiculo.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
 
 @ApiTags('Veículos')
+@ApiBearerAuth()
+@Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
 @Controller('veiculos')
 export class VeiculosController {
   constructor(private readonly veiculosService: VeiculosService) {}

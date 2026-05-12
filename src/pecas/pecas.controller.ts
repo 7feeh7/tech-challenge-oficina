@@ -19,17 +19,22 @@ import {
   ApiQuery,
   ApiResponse,
   ApiTags,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
 import { PecasService } from './pecas.service';
 import { CreatePecaDto } from './dto/create-peca.dto';
 import { UpdatePecaDto } from './dto/update-peca.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
 
 @ApiTags('Peças')
+@ApiBearerAuth()
 @Controller('pecas')
 export class PecasController {
   constructor(private readonly pecasService: PecasService) {}
 
   @Post()
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastra uma nova peça' })
   @ApiResponse({ status: 201, description: 'Peça cadastrada com sucesso' })
@@ -80,6 +85,7 @@ export class PecasController {
   }
 
   @Patch(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
   @ApiOperation({ summary: 'Atualiza os dados de uma peça' })
   @ApiParam({ name: 'id', description: 'UUID da peça', type: String })
   @ApiResponse({ status: 200, description: 'Peça atualizada com sucesso' })
@@ -94,6 +100,7 @@ export class PecasController {
   }
 
   @Delete(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remove uma peça' })
   @ApiParam({ name: 'id', description: 'UUID da peça', type: String })

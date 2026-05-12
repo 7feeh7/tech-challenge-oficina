@@ -23,8 +23,17 @@ import {
 import { OrdensServicoService } from './ordens-servico.service';
 import { CreateOrdemServicoDto } from './dto/create-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from './dto/update-ordem-servico.dto';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Ordens de Serviço')
+@ApiBearerAuth()
+@Roles(
+  PerfilUsuario.ADMINISTRADOR,
+  PerfilUsuario.ATENDENTE,
+  PerfilUsuario.MECANICO,
+)
 @Controller('ordens-servico')
 export class OrdensServicoController {
   constructor(private readonly ordensServicoService: OrdensServicoService) {}

@@ -23,9 +23,13 @@ import {
 import { UsuariosService } from './usuarios.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
-import { Public } from '@/auth/decorators/public.decorator';
+import { Roles } from '@/auth/decorators/roles.decorator';
+import { PerfilUsuario } from '@/generated/prisma/enums';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('Usuários')
+@ApiBearerAuth()
+@Roles(PerfilUsuario.ADMINISTRADOR)
 @Controller('usuarios')
 export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
