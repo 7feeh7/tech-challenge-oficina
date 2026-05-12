@@ -7,6 +7,7 @@ import { PrismaService } from '@/database/prisma.service';
 import { CreateOrdemServicoDto } from './dto/create-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from './dto/update-ordem-servico.dto';
 import { StatusOS } from '@/generated/prisma/enums';
+import { transicaoPermitida } from './status-os.transitions';
 
 @Injectable()
 export class OrdensServicoService {
@@ -69,6 +70,16 @@ export class OrdensServicoService {
       },
     });
 
+    // Registra entrada inicial no histórico de status
+    await this.prisma.historicoStatusOS.create({
+      data: {
+        ordemServicoId: ordem.id,
+        statusAnterior: null,
+        statusNovo: StatusOS.RECEBIDA,
+        observacao: 'OS criada',
+      },
+    });
+
     return this.mapOrdem(ordem);
   }
 
@@ -116,6 +127,12 @@ export class OrdensServicoService {
   async update(id: string, dto: UpdateOrdemServicoDto) {
     const ordem = await this.prisma.ordemServico.findUnique({ where: { id } });
     if (!ordem) throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
+
+    if (dto.status && dto.status !== ordem.status && !transicaoPermitida(ordem.status, dto.status)) {
+      throw new BadRequestException(
+        `Transição de status inválida: ${ordem.status} → ${dto.status}.`,
+      );
+    }
 
     const updated = await this.prisma.ordemServico.update({
       where: { id },

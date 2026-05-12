@@ -75,17 +75,26 @@ describe('OrdensServicoService', () => {
       descricaoProblema: 'Barulho no motor',
     };
 
-    it('deve criar uma OS com sucesso', async () => {
+    it('deve criar uma OS com sucesso e registrar histórico inicial', async () => {
       // Arrange
       prismaMock.cliente.findUnique.mockResolvedValue(clienteMock);
       prismaMock.veiculo.findUnique.mockResolvedValue(veiculoMock);
       prismaMock.ordemServico.create.mockResolvedValue(ordemMock);
+      prismaMock.historicoStatusOS.create.mockResolvedValue({});
 
       // Act
       const result = await service.create(dto);
 
       // Assert
       expect(prismaMock.ordemServico.create).toHaveBeenCalled();
+      expect(prismaMock.historicoStatusOS.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            statusAnterior: null,
+            statusNovo: StatusOS.RECEBIDA,
+          }),
+        }),
+      );
       expect(result).toMatchObject({ numero: 1, status: StatusOS.RECEBIDA });
     });
 
@@ -205,15 +214,15 @@ describe('OrdensServicoService', () => {
     it('deve registrar histórico ao mudar status', async () => {
       // Arrange
       prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
-      prismaMock.ordemServico.update.mockResolvedValue({ ...ordemMock, status: StatusOS.EM_EXECUCAO });
+      prismaMock.ordemServico.update.mockResolvedValue({ ...ordemMock, status: StatusOS.EM_DIAGNOSTICO });
       prismaMock.historicoStatusOS.create.mockResolvedValue({});
 
       // Act
-      await service.update('ordem-uuid', { status: StatusOS.EM_EXECUCAO });
+      await service.update('ordem-uuid', { status: StatusOS.EM_DIAGNOSTICO });
 
       // Assert
       expect(prismaMock.historicoStatusOS.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ statusNovo: StatusOS.EM_EXECUCAO }) }),
+        expect.objectContaining({ data: expect.objectContaining({ statusNovo: StatusOS.EM_DIAGNOSTICO }) }),
       );
     });
 
@@ -223,6 +232,19 @@ describe('OrdensServicoService', () => {
 
       // Act & Assert
       await expect(service.update('inexistente', {})).rejects.toThrow(NotFoundException);
+    });
+
+    it('deve lançar BadRequestException em transição de status inválida', async () => {
+      // Arrange
+      prismaMock.ordemServico.findUnique.mockResolvedValue({
+        ...ordemMock,
+        status: StatusOS.RECEBIDA,
+      });
+
+      // Act & Assert
+      await expect(
+        service.update('ordem-uuid', { status: StatusOS.ENTREGUE }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

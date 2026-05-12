@@ -2,9 +2,20 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OrcamentosService } from './orcamentos.service';
 import { PrismaService } from '@/database/prisma.service';
-import { StatusOrcamento } from '@/generated/prisma/enums';
+import {
+  StatusOrcamento,
+  StatusOS,
+  TipoMovimentacaoEstoque,
+} from '@/generated/prisma/enums';
 
-const ordemMock = { id: 'ordem-uuid', numero: 1 };
+const ordemMock = {
+  id: 'ordem-uuid',
+  numero: 1,
+  status: StatusOS.RECEBIDA,
+  iniciadaEm: null,
+  pecas: [] as Array<{ pecaId: string; quantidade: number }>,
+};
+
 const orcamentoMock = {
   id: 'orcamento-uuid',
   ordemServicoId: 'ordem-uuid',
@@ -19,7 +30,7 @@ const orcamentoMock = {
 };
 
 const prismaMock = {
-  ordemServico: { findUnique: jest.fn() },
+  ordemServico: { findUnique: jest.fn(), update: jest.fn() },
   orcamento: {
     create: jest.fn(),
     findMany: jest.fn(),
@@ -28,6 +39,10 @@ const prismaMock = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  historicoStatusOS: { create: jest.fn() },
+  peca: { findUnique: jest.fn(), update: jest.fn() },
+  movimentacaoEstoque: { create: jest.fn() },
+  $transaction: jest.fn(),
 };
 
 describe('OrcamentosService', () => {
@@ -52,17 +67,32 @@ describe('OrcamentosService', () => {
   describe('create', () => {
     const dto = { ordemServicoId: 'ordem-uuid', valorTotal: 350 };
 
-    it('deve criar um orçamento com sucesso', async () => {
+    it('deve criar orçamento, mover OS para AGUARDANDO_APROVACAO e registrar histórico', async () => {
       // Arrange
       prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
-      prismaMock.orcamento.create.mockResolvedValue(orcamentoMock);
+      prismaMock.$transaction.mockResolvedValue([orcamentoMock, {}, {}]);
 
       // Act
       const result = await service.create(dto);
 
       // Assert
-      expect(prismaMock.orcamento.create).toHaveBeenCalled();
-      expect(result).toMatchObject({ valorTotal: 350, status: StatusOrcamento.AGUARDANDO_APROVACAO });
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+      expect(prismaMock.ordemServico.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: StatusOS.AGUARDANDO_APROVACAO },
+        }),
+      );
+      expect(prismaMock.historicoStatusOS.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            statusNovo: StatusOS.AGUARDANDO_APROVACAO,
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        valorTotal: 350,
+        status: StatusOrcamento.AGUARDANDO_APROVACAO,
+      });
     });
 
     it('deve lançar NotFoundException quando OS não existe', async () => {
@@ -125,20 +155,71 @@ describe('OrcamentosService', () => {
   });
 
   describe('update', () => {
-    it('deve aprovar o orçamento e registrar aprovadoEm', async () => {
+    it('deve aprovar o orçamento, mover OS para EM_EXECUCAO e dar baixa de estoque', async () => {
       // Arrange
-      prismaMock.orcamento.findUnique.mockResolvedValue(orcamentoMock);
-      prismaMock.orcamento.update.mockResolvedValue({
+      const ordemComPecas = {
+        ...ordemMock,
+        status: StatusOS.AGUARDANDO_APROVACAO,
+        pecas: [{ pecaId: 'peca-uuid', quantidade: 2 }],
+      };
+      const orcamentoAprovado = {
         ...orcamentoMock,
         status: StatusOrcamento.APROVADO,
         aprovadoEm: new Date(),
+      };
+      prismaMock.orcamento.findUnique.mockResolvedValue(orcamentoMock);
+      prismaMock.ordemServico.findUnique.mockResolvedValue(ordemComPecas);
+      prismaMock.peca.findUnique.mockResolvedValue({
+        id: 'peca-uuid',
+        quantidadeEstoque: 10,
       });
+      prismaMock.$transaction.mockResolvedValue([orcamentoAprovado, {}, {}, {}, {}]);
 
       // Act
-      const result = await service.update('orcamento-uuid', { status: StatusOrcamento.APROVADO });
+      const result = await service.update('orcamento-uuid', {
+        status: StatusOrcamento.APROVADO,
+      });
 
       // Assert
+      expect(prismaMock.ordemServico.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: StatusOS.EM_EXECUCAO }),
+        }),
+      );
+      expect(prismaMock.movimentacaoEstoque.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tipo: TipoMovimentacaoEstoque.BAIXA,
+            pecaId: 'peca-uuid',
+            quantidade: 2,
+          }),
+        }),
+      );
+      expect(prismaMock.peca.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { quantidadeEstoque: { decrement: 2 } },
+        }),
+      );
       expect(result).toMatchObject({ status: StatusOrcamento.APROVADO });
+    });
+
+    it('deve lançar BadRequestException ao aprovar com estoque insuficiente', async () => {
+      // Arrange
+      const ordemComPecas = {
+        ...ordemMock,
+        pecas: [{ pecaId: 'peca-uuid', quantidade: 50 }],
+      };
+      prismaMock.orcamento.findUnique.mockResolvedValue(orcamentoMock);
+      prismaMock.ordemServico.findUnique.mockResolvedValue(ordemComPecas);
+      prismaMock.peca.findUnique.mockResolvedValue({
+        id: 'peca-uuid',
+        quantidadeEstoque: 5,
+      });
+
+      // Act & Assert
+      await expect(
+        service.update('orcamento-uuid', { status: StatusOrcamento.APROVADO }),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('deve rejeitar o orçamento com motivo de rejeição', async () => {
