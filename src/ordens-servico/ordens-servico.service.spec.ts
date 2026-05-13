@@ -246,6 +246,45 @@ describe('OrdensServicoService', () => {
         service.update('ordem-uuid', { status: StatusOS.ENTREGUE }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('deve adicionar serviços e peças à OS no update com snapshot de preço', async () => {
+      // Arrange
+      prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
+      prismaMock.servico.findUnique.mockResolvedValue(servicoMock);
+      prismaMock.peca.findUnique.mockResolvedValue(pecaMock);
+      prismaMock.ordemServico.update.mockResolvedValue({
+        ...ordemMock,
+        servicos: [{ id: 's1', servico: servicoMock, quantidade: 1, precoUnitario: '150.00' }],
+        pecas: [{ id: 'p1', peca: pecaMock, quantidade: 2, precoUnitario: '29.90' }],
+      });
+
+      // Act
+      await service.update('ordem-uuid', {
+        servicos: [{ servicoId: 'servico-uuid', quantidade: 1 }],
+        pecas: [{ pecaId: 'peca-uuid', quantidade: 2 }],
+      });
+
+      // Assert
+      expect(prismaMock.ordemServico.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            servicos: { create: [{ servicoId: 'servico-uuid', quantidade: 1, precoUnitario: '150.00' }] },
+            pecas: { create: [{ pecaId: 'peca-uuid', quantidade: 2, precoUnitario: '29.90' }] },
+          }),
+        }),
+      );
+    });
+
+    it('deve lançar NotFoundException quando serviço informado no update não existe', async () => {
+      // Arrange
+      prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
+      prismaMock.servico.findUnique.mockResolvedValue(null);
+
+      // Act & Assert
+      await expect(
+        service.update('ordem-uuid', { servicos: [{ servicoId: 'inexistente', quantidade: 1 }] }),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('remove', () => {

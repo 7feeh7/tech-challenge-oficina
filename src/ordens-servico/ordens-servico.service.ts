@@ -134,6 +134,32 @@ export class OrdensServicoService {
       );
     }
 
+    // Resolve preços snapshot dos serviços a adicionar
+    const servicosData = await Promise.all(
+      (dto.servicos ?? []).map(async (item) => {
+        const servico = await this.prisma.servico.findUnique({ where: { id: item.servicoId } });
+        if (!servico) throw new NotFoundException(`Serviço "${item.servicoId}" não encontrado.`);
+        return {
+          servicoId: item.servicoId,
+          quantidade: item.quantidade ?? 1,
+          precoUnitario: servico.precoBase,
+        };
+      }),
+    );
+
+    // Resolve preços snapshot das peças a adicionar
+    const pecasData = await Promise.all(
+      (dto.pecas ?? []).map(async (item) => {
+        const peca = await this.prisma.peca.findUnique({ where: { id: item.pecaId } });
+        if (!peca) throw new NotFoundException(`Peça "${item.pecaId}" não encontrada.`);
+        return {
+          pecaId: item.pecaId,
+          quantidade: item.quantidade,
+          precoUnitario: peca.precoUnitario,
+        };
+      }),
+    );
+
     const updated = await this.prisma.ordemServico.update({
       where: { id },
       data: {
@@ -146,6 +172,8 @@ export class OrdensServicoService {
           dto.status === StatusOS.FINALIZADA && !ordem.finalizadaEm ? new Date() : undefined,
         entregueEm:
           dto.status === StatusOS.ENTREGUE && !ordem.entregueEm ? new Date() : undefined,
+        servicos: servicosData.length ? { create: servicosData } : undefined,
+        pecas: pecasData.length ? { create: pecasData } : undefined,
       },
       include: {
         cliente: { select: { id: true, nome: true } },
