@@ -14,20 +14,33 @@ export class OrdensServicoService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateOrdemServicoDto) {
-    const cliente = await this.prisma.cliente.findUnique({ where: { id: dto.clienteId } });
-    if (!cliente) throw new NotFoundException(`Cliente "${dto.clienteId}" não encontrado.`);
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id: dto.clienteId },
+    });
+    if (!cliente)
+      throw new NotFoundException(`Cliente "${dto.clienteId}" não encontrado.`);
 
-    const veiculo = await this.prisma.veiculo.findUnique({ where: { id: dto.veiculoId } });
-    if (!veiculo) throw new NotFoundException(`Veículo "${dto.veiculoId}" não encontrado.`);
+    const veiculo = await this.prisma.veiculo.findUnique({
+      where: { id: dto.veiculoId },
+    });
+    if (!veiculo)
+      throw new NotFoundException(`Veículo "${dto.veiculoId}" não encontrado.`);
 
     if (veiculo.clienteId !== dto.clienteId)
-      throw new BadRequestException('O veículo não pertence ao cliente informado.');
+      throw new BadRequestException(
+        'O veículo não pertence ao cliente informado.',
+      );
 
     // Resolve preços snapshot dos serviços
     const servicosData = await Promise.all(
       (dto.servicos ?? []).map(async (item) => {
-        const servico = await this.prisma.servico.findUnique({ where: { id: item.servicoId } });
-        if (!servico) throw new NotFoundException(`Serviço "${item.servicoId}" não encontrado.`);
+        const servico = await this.prisma.servico.findUnique({
+          where: { id: item.servicoId },
+        });
+        if (!servico)
+          throw new NotFoundException(
+            `Serviço "${item.servicoId}" não encontrado.`,
+          );
         return {
           servicoId: item.servicoId,
           quantidade: item.quantidade ?? 1,
@@ -39,8 +52,11 @@ export class OrdensServicoService {
     // Resolve preços snapshot das peças
     const pecasData = await Promise.all(
       (dto.pecas ?? []).map(async (item) => {
-        const peca = await this.prisma.peca.findUnique({ where: { id: item.pecaId } });
-        if (!peca) throw new NotFoundException(`Peça "${item.pecaId}" não encontrada.`);
+        const peca = await this.prisma.peca.findUnique({
+          where: { id: item.pecaId },
+        });
+        if (!peca)
+          throw new NotFoundException(`Peça "${item.pecaId}" não encontrada.`);
         return {
           pecaId: item.pecaId,
           quantidade: item.quantidade,
@@ -55,18 +71,18 @@ export class OrdensServicoService {
         veiculoId: dto.veiculoId,
         descricaoProblema: dto.descricaoProblema,
         diagnostico: dto.diagnostico,
-        servicos: servicosData.length
-          ? { create: servicosData }
-          : undefined,
-        pecas: pecasData.length
-          ? { create: pecasData }
-          : undefined,
+        servicos: servicosData.length ? { create: servicosData } : undefined,
+        pecas: pecasData.length ? { create: pecasData } : undefined,
       },
       include: {
         cliente: { select: { id: true, nome: true } },
         veiculo: { select: { id: true, placa: true, modelo: true } },
-        servicos: { include: { servico: { select: { id: true, nome: true } } } },
-        pecas: { include: { peca: { select: { id: true, codigo: true, nome: true } } } },
+        servicos: {
+          include: { servico: { select: { id: true, nome: true } } },
+        },
+        pecas: {
+          include: { peca: { select: { id: true, codigo: true, nome: true } } },
+        },
       },
     });
 
@@ -111,24 +127,44 @@ export class OrdensServicoService {
     const ordem = await this.prisma.ordemServico.findUnique({
       where: { id },
       include: {
-        cliente: { select: { id: true, nome: true, email: true, telefone: true } },
-        veiculo: { select: { id: true, placa: true, marca: true, modelo: true, ano: true } },
-        servicos: { include: { servico: { select: { id: true, nome: true } } } },
-        pecas: { include: { peca: { select: { id: true, codigo: true, nome: true } } } },
+        cliente: {
+          select: { id: true, nome: true, email: true, telefone: true },
+        },
+        veiculo: {
+          select: {
+            id: true,
+            placa: true,
+            marca: true,
+            modelo: true,
+            ano: true,
+          },
+        },
+        servicos: {
+          include: { servico: { select: { id: true, nome: true } } },
+        },
+        pecas: {
+          include: { peca: { select: { id: true, codigo: true, nome: true } } },
+        },
         orcamentos: true,
         historicoStatus: { orderBy: { criadoEm: 'asc' } },
       },
     });
 
-    if (!ordem) throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
+    if (!ordem)
+      throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
     return this.mapOrdem(ordem);
   }
 
   async update(id: string, dto: UpdateOrdemServicoDto) {
     const ordem = await this.prisma.ordemServico.findUnique({ where: { id } });
-    if (!ordem) throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
+    if (!ordem)
+      throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
 
-    if (dto.status && dto.status !== ordem.status && !transicaoPermitida(ordem.status, dto.status)) {
+    if (
+      dto.status &&
+      dto.status !== ordem.status &&
+      !transicaoPermitida(ordem.status, dto.status)
+    ) {
       throw new BadRequestException(
         `Transição de status inválida: ${ordem.status} → ${dto.status}.`,
       );
@@ -137,8 +173,13 @@ export class OrdensServicoService {
     // Resolve preços snapshot dos serviços a adicionar
     const servicosData = await Promise.all(
       (dto.servicos ?? []).map(async (item) => {
-        const servico = await this.prisma.servico.findUnique({ where: { id: item.servicoId } });
-        if (!servico) throw new NotFoundException(`Serviço "${item.servicoId}" não encontrado.`);
+        const servico = await this.prisma.servico.findUnique({
+          where: { id: item.servicoId },
+        });
+        if (!servico)
+          throw new NotFoundException(
+            `Serviço "${item.servicoId}" não encontrado.`,
+          );
         return {
           servicoId: item.servicoId,
           quantidade: item.quantidade ?? 1,
@@ -150,8 +191,11 @@ export class OrdensServicoService {
     // Resolve preços snapshot das peças a adicionar
     const pecasData = await Promise.all(
       (dto.pecas ?? []).map(async (item) => {
-        const peca = await this.prisma.peca.findUnique({ where: { id: item.pecaId } });
-        if (!peca) throw new NotFoundException(`Peça "${item.pecaId}" não encontrada.`);
+        const peca = await this.prisma.peca.findUnique({
+          where: { id: item.pecaId },
+        });
+        if (!peca)
+          throw new NotFoundException(`Peça "${item.pecaId}" não encontrada.`);
         return {
           pecaId: item.pecaId,
           quantidade: item.quantidade,
@@ -167,19 +211,29 @@ export class OrdensServicoService {
         descricaoProblema: dto.descricaoProblema,
         diagnostico: dto.diagnostico,
         iniciadaEm:
-          dto.status === StatusOS.EM_EXECUCAO && !ordem.iniciadaEm ? new Date() : undefined,
+          dto.status === StatusOS.EM_EXECUCAO && !ordem.iniciadaEm
+            ? new Date()
+            : undefined,
         finalizadaEm:
-          dto.status === StatusOS.FINALIZADA && !ordem.finalizadaEm ? new Date() : undefined,
+          dto.status === StatusOS.FINALIZADA && !ordem.finalizadaEm
+            ? new Date()
+            : undefined,
         entregueEm:
-          dto.status === StatusOS.ENTREGUE && !ordem.entregueEm ? new Date() : undefined,
+          dto.status === StatusOS.ENTREGUE && !ordem.entregueEm
+            ? new Date()
+            : undefined,
         servicos: servicosData.length ? { create: servicosData } : undefined,
         pecas: pecasData.length ? { create: pecasData } : undefined,
       },
       include: {
         cliente: { select: { id: true, nome: true } },
         veiculo: { select: { id: true, placa: true, modelo: true } },
-        servicos: { include: { servico: { select: { id: true, nome: true } } } },
-        pecas: { include: { peca: { select: { id: true, codigo: true, nome: true } } } },
+        servicos: {
+          include: { servico: { select: { id: true, nome: true } } },
+        },
+        pecas: {
+          include: { peca: { select: { id: true, codigo: true, nome: true } } },
+        },
       },
     });
 
@@ -198,7 +252,8 @@ export class OrdensServicoService {
 
   async remove(id: string) {
     const ordem = await this.prisma.ordemServico.findUnique({ where: { id } });
-    if (!ordem) throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
+    if (!ordem)
+      throw new NotFoundException(`Ordem de serviço "${id}" não encontrada.`);
     await this.prisma.ordemServico.delete({ where: { id } });
     return { message: `Ordem de serviço "${id}" removida com sucesso.` };
   }
@@ -239,7 +294,9 @@ export class OrdensServicoService {
       0,
     );
 
-    const tempoMedioExecucaoMs = execucao.length ? somaExecucao / execucao.length : 0;
+    const tempoMedioExecucaoMs = execucao.length
+      ? somaExecucao / execucao.length
+      : 0;
     const tempoMedioCicloTotalMs = ciclo.length ? somaCiclo / ciclo.length : 0;
 
     return {
@@ -247,9 +304,13 @@ export class OrdensServicoService {
       totalFinalizadas: execucao.length,
       totalEntregues: ciclo.length,
       tempoMedioExecucaoMs,
-      tempoMedioExecucaoHoras: Number((tempoMedioExecucaoMs / 3_600_000).toFixed(2)),
+      tempoMedioExecucaoHoras: Number(
+        (tempoMedioExecucaoMs / 3_600_000).toFixed(2),
+      ),
       tempoMedioCicloTotalMs,
-      tempoMedioCicloTotalHoras: Number((tempoMedioCicloTotalMs / 3_600_000).toFixed(2)),
+      tempoMedioCicloTotalHoras: Number(
+        (tempoMedioCicloTotalMs / 3_600_000).toFixed(2),
+      ),
       filtros: {
         dataInicio: dataInicio ?? null,
         dataFim: dataFim ?? null,

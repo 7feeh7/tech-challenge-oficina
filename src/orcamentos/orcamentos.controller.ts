@@ -47,7 +47,11 @@ export class OrcamentosController {
   @ApiOperation({ summary: 'Listar orçamentos com paginação' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'ordemServicoId', required: false, description: 'Filtrar por OS' })
+  @ApiQuery({
+    name: 'ordemServicoId',
+    required: false,
+    description: 'Filtrar por OS',
+  })
   @ApiResponse({ status: 200, description: 'Lista paginada de orçamentos.' })
   findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
@@ -67,7 +71,9 @@ export class OrcamentosController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualizar orçamento (valor, status, aprovação/rejeição)' })
+  @ApiOperation({
+    summary: 'Atualizar orçamento (valor, status, aprovação/rejeição)',
+  })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Orçamento atualizado.' })
   @ApiResponse({ status: 400, description: 'Motivo de rejeição obrigatório.' })

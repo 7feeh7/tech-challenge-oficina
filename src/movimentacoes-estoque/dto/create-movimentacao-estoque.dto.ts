@@ -1,4 +1,11 @@
-import { IsUUID, IsEnum, IsInt, Min, IsOptional, IsString } from 'class-validator';
+import {
+  IsUUID,
+  IsEnum,
+  IsInt,
+  Min,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TipoMovimentacaoEstoque } from '@/generated/prisma/enums';
@@ -8,7 +15,10 @@ export class CreateMovimentacaoEstoqueDto {
   @IsUUID()
   pecaId: string;
 
-  @ApiProperty({ enum: TipoMovimentacaoEstoque, description: 'Tipo: ENTRADA ou BAIXA' })
+  @ApiProperty({
+    enum: TipoMovimentacaoEstoque,
+    description: 'Tipo: ENTRADA ou BAIXA',
+  })
   @IsEnum(TipoMovimentacaoEstoque)
   tipo: TipoMovimentacaoEstoque;
 
@@ -18,7 +28,10 @@ export class CreateMovimentacaoEstoqueDto {
   @Type(() => Number)
   quantidade: number;
 
-  @ApiPropertyOptional({ description: 'ID da OS (quando for baixa por OS)', format: 'uuid' })
+  @ApiPropertyOptional({
+    description: 'ID da OS (quando for baixa por OS)',
+    format: 'uuid',
+  })
   @IsUUID()
   @IsOptional()
   ordemServicoId?: string;

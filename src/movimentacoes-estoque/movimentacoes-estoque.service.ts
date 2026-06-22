@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { CreateMovimentacaoEstoqueDto } from './dto/create-movimentacao-estoque.dto';
 import { TipoMovimentacaoEstoque } from '@/generated/prisma/enums';
@@ -8,8 +12,11 @@ export class MovimentacoesEstoqueService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateMovimentacaoEstoqueDto) {
-    const peca = await this.prisma.peca.findUnique({ where: { id: dto.pecaId } });
-    if (!peca) throw new NotFoundException(`Peça "${dto.pecaId}" não encontrada.`);
+    const peca = await this.prisma.peca.findUnique({
+      where: { id: dto.pecaId },
+    });
+    if (!peca)
+      throw new NotFoundException(`Peça "${dto.pecaId}" não encontrada.`);
 
     if (dto.tipo === TipoMovimentacaoEstoque.BAIXA) {
       if (peca.quantidadeEstoque < dto.quantidade) {
@@ -69,7 +76,10 @@ export class MovimentacoesEstoqueService {
       where: { id },
       include: { peca: { select: { id: true, codigo: true, nome: true } } },
     });
-    if (!mov) throw new NotFoundException(`Movimentação de estoque "${id}" não encontrada.`);
+    if (!mov)
+      throw new NotFoundException(
+        `Movimentação de estoque "${id}" não encontrada.`,
+      );
     return this.mapMovimentacao(mov);
   }
 

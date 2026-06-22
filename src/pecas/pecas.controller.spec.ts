@@ -52,7 +52,7 @@ describe('PecasController', () => {
       serviceMock.create.mockResolvedValue(pecaMock);
 
       // Act
-      const result = await controller.create(dto as any);
+      const result = await controller.create(dto);
 
       // Assert
       expect(serviceMock.create).toHaveBeenCalledWith(dto);
@@ -64,7 +64,9 @@ describe('PecasController', () => {
       serviceMock.create.mockRejectedValue(new ConflictException());
 
       // Act & Assert
-      await expect(controller.create(dto as any)).rejects.toThrow(ConflictException);
+      await expect(controller.create(dto as any)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -116,7 +118,9 @@ describe('PecasController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -127,10 +131,14 @@ describe('PecasController', () => {
       serviceMock.update.mockResolvedValue(updated);
 
       // Act
-      const result = await controller.update('uuid-p1', { quantidadeEstoque: 20 });
+      const result = await controller.update('uuid-p1', {
+        quantidadeEstoque: 20,
+      });
 
       // Assert
-      expect(serviceMock.update).toHaveBeenCalledWith('uuid-p1', { quantidadeEstoque: 20 });
+      expect(serviceMock.update).toHaveBeenCalledWith('uuid-p1', {
+        quantidadeEstoque: 20,
+      });
       expect(result).toMatchObject({ quantidadeEstoque: 20 });
     });
 
@@ -139,7 +147,9 @@ describe('PecasController', () => {
       serviceMock.update.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(controller.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve propagar ConflictException quando código já está em uso', async () => {
@@ -156,14 +166,18 @@ describe('PecasController', () => {
   describe('remove', () => {
     it('deve remover uma peça e retornar mensagem de sucesso', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Peça "uuid-p1" removida com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Peça "uuid-p1" removida com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('uuid-p1');
 
       // Assert
       expect(serviceMock.remove).toHaveBeenCalledWith('uuid-p1');
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-p1') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-p1'),
+      });
     });
 
     it('deve propagar NotFoundException quando peça não existe', async () => {
@@ -171,7 +185,9 @@ describe('PecasController', () => {
       serviceMock.remove.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

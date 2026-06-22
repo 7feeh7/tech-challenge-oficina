@@ -15,10 +15,7 @@ export const TRANSICOES_VALIDAS: Record<StatusOS, StatusOS[]> = {
   [StatusOS.ENTREGUE]: [],
 };
 
-export function transicaoPermitida(
-  atual: StatusOS,
-  novo: StatusOS,
-): boolean {
+export function transicaoPermitida(atual: StatusOS, novo: StatusOS): boolean {
   if (atual === novo) return true;
   return TRANSICOES_VALIDAS[atual]?.includes(novo) ?? false;
 }

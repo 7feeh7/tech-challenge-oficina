@@ -29,23 +29,35 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
 @Controller('movimentacoes-estoque')
 export class MovimentacoesEstoqueController {
-  constructor(private readonly movimentacoesEstoqueService: MovimentacoesEstoqueService) {}
+  constructor(
+    private readonly movimentacoesEstoqueService: MovimentacoesEstoqueService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar entrada ou baixa de peça no estoque' })
-  @ApiResponse({ status: 201, description: 'Movimentação registrada com sucesso.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Movimentação registrada com sucesso.',
+  })
   @ApiResponse({ status: 400, description: 'Estoque insuficiente para baixa.' })
   @ApiResponse({ status: 404, description: 'Peça não encontrada.' })
   create(@Body() createMovimentacaoEstoqueDto: CreateMovimentacaoEstoqueDto) {
-    return this.movimentacoesEstoqueService.create(createMovimentacaoEstoqueDto);
+    return this.movimentacoesEstoqueService.create(
+      createMovimentacaoEstoqueDto,
+    );
   }
 
   @Get()
   @ApiOperation({ summary: 'Listar movimentações de estoque' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'pecaId', required: false, description: 'Filtrar por peça', format: 'uuid' })
+  @ApiQuery({
+    name: 'pecaId',
+    required: false,
+    description: 'Filtrar por peça',
+    format: 'uuid',
+  })
   @ApiResponse({ status: 200, description: 'Lista paginada de movimentações.' })
   findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,

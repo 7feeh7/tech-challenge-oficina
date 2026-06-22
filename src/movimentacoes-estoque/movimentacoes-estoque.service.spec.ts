@@ -45,7 +45,9 @@ describe('MovimentacoesEstoqueService', () => {
       ],
     }).compile();
 
-    service = module.get<MovimentacoesEstoqueService>(MovimentacoesEstoqueService);
+    service = module.get<MovimentacoesEstoqueService>(
+      MovimentacoesEstoqueService,
+    );
     jest.clearAllMocks();
   });
 
@@ -70,15 +72,26 @@ describe('MovimentacoesEstoqueService', () => {
 
       // Assert
       expect(prismaMock.$transaction).toHaveBeenCalled();
-      expect(result).toMatchObject({ tipo: TipoMovimentacaoEstoque.ENTRADA, quantidade: 5 });
+      expect(result).toMatchObject({
+        tipo: TipoMovimentacaoEstoque.ENTRADA,
+        quantidade: 5,
+      });
     });
 
     it('deve registrar baixa de estoque com sucesso', async () => {
       // Arrange
-      const dtoBaixa = { ...dtoEntrada, tipo: TipoMovimentacaoEstoque.BAIXA, quantidade: 3 };
+      const dtoBaixa = {
+        ...dtoEntrada,
+        tipo: TipoMovimentacaoEstoque.BAIXA,
+        quantidade: 3,
+      };
       prismaMock.peca.findUnique.mockResolvedValue(pecaMock);
       prismaMock.$transaction.mockResolvedValue([
-        { ...movimentacaoMock, tipo: TipoMovimentacaoEstoque.BAIXA, quantidade: 3 },
+        {
+          ...movimentacaoMock,
+          tipo: TipoMovimentacaoEstoque.BAIXA,
+          quantidade: 3,
+        },
         pecaMock,
       ]);
 
@@ -91,11 +104,17 @@ describe('MovimentacoesEstoqueService', () => {
 
     it('deve lançar BadRequestException quando estoque insuficiente para baixa', async () => {
       // Arrange
-      const dtoBaixa = { ...dtoEntrada, tipo: TipoMovimentacaoEstoque.BAIXA, quantidade: 20 };
+      const dtoBaixa = {
+        ...dtoEntrada,
+        tipo: TipoMovimentacaoEstoque.BAIXA,
+        quantidade: 20,
+      };
       prismaMock.peca.findUnique.mockResolvedValue(pecaMock); // quantidadeEstoque: 10
 
       // Act & Assert
-      await expect(service.create(dtoBaixa)).rejects.toThrow(BadRequestException);
+      await expect(service.create(dtoBaixa)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('deve lançar NotFoundException quando peça não existe', async () => {
@@ -103,14 +122,18 @@ describe('MovimentacoesEstoqueService', () => {
       prismaMock.peca.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.create(dtoEntrada)).rejects.toThrow(NotFoundException);
+      await expect(service.create(dtoEntrada)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('findAll', () => {
     it('deve retornar lista paginada de movimentações', async () => {
       // Arrange
-      prismaMock.movimentacaoEstoque.findMany.mockResolvedValue([movimentacaoMock]);
+      prismaMock.movimentacaoEstoque.findMany.mockResolvedValue([
+        movimentacaoMock,
+      ]);
       prismaMock.movimentacaoEstoque.count.mockResolvedValue(1);
 
       // Act
@@ -118,7 +141,12 @@ describe('MovimentacoesEstoqueService', () => {
 
       // Assert
       expect(result.data).toHaveLength(1);
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve filtrar por pecaId quando informado', async () => {
@@ -139,13 +167,18 @@ describe('MovimentacoesEstoqueService', () => {
   describe('findOne', () => {
     it('deve retornar a movimentação pelo id', async () => {
       // Arrange
-      prismaMock.movimentacaoEstoque.findUnique.mockResolvedValue(movimentacaoMock);
+      prismaMock.movimentacaoEstoque.findUnique.mockResolvedValue(
+        movimentacaoMock,
+      );
 
       // Act
       const result = await service.findOne('mov-uuid');
 
       // Assert
-      expect(result).toMatchObject({ id: 'mov-uuid', tipo: TipoMovimentacaoEstoque.ENTRADA });
+      expect(result).toMatchObject({
+        id: 'mov-uuid',
+        tipo: TipoMovimentacaoEstoque.ENTRADA,
+      });
     });
 
     it('deve lançar NotFoundException quando não encontrada', async () => {
@@ -153,7 +186,9 @@ describe('MovimentacoesEstoqueService', () => {
       prismaMock.movimentacaoEstoque.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

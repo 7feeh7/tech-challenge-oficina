@@ -43,7 +43,10 @@ export class OrdensServicoController {
   @ApiOperation({ summary: 'Criar nova ordem de serviço' })
   @ApiResponse({ status: 201, description: 'OS criada com sucesso.' })
   @ApiResponse({ status: 400, description: 'Veículo não pertence ao cliente.' })
-  @ApiResponse({ status: 404, description: 'Cliente ou veículo não encontrado.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Cliente ou veículo não encontrado.',
+  })
   create(@Body() createOrdemServicoDto: CreateOrdemServicoDto) {
     return this.ordensServicoService.create(createOrdemServicoDto);
   }
@@ -52,8 +55,15 @@ export class OrdensServicoController {
   @ApiOperation({ summary: 'Listar ordens de serviço com paginação' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
-  @ApiQuery({ name: 'status', required: false, description: 'Filtrar por status da OS' })
-  @ApiResponse({ status: 200, description: 'Lista paginada de ordens de serviço.' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filtrar por status da OS',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista paginada de ordens de serviço.',
+  })
   findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -68,8 +78,18 @@ export class OrdensServicoController {
     description:
       'Calcula o tempo médio entre iniciadaEm/finalizadaEm e o ciclo total (criadoEm/entregueEm). Aceita filtros opcionais de período (baseados em criadoEm).',
   })
-  @ApiQuery({ name: 'dataInicio', required: false, type: String, example: '2026-01-01' })
-  @ApiQuery({ name: 'dataFim', required: false, type: String, example: '2026-12-31' })
+  @ApiQuery({
+    name: 'dataInicio',
+    required: false,
+    type: String,
+    example: '2026-01-01',
+  })
+  @ApiQuery({
+    name: 'dataFim',
+    required: false,
+    type: String,
+    example: '2026-12-31',
+  })
   @ApiResponse({ status: 200, description: 'Métricas calculadas.' })
   tempoMedio(
     @Query('dataInicio') dataInicio?: string,
@@ -91,7 +111,9 @@ export class OrdensServicoController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualizar ordem de serviço (status, diagnóstico etc.)' })
+  @ApiOperation({
+    summary: 'Atualizar ordem de serviço (status, diagnóstico etc.)',
+  })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'OS atualizada com sucesso.' })
   @ApiResponse({ status: 404, description: 'OS não encontrada.' })

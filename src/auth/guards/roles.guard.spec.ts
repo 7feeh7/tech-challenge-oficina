@@ -24,7 +24,9 @@ describe('RolesGuard', () => {
     jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
 
     // Act & Assert
-    expect(guard.canActivate(buildContext({ perfil: PerfilUsuario.ATENDENTE }))).toBe(true);
+    expect(
+      guard.canActivate(buildContext({ perfil: PerfilUsuario.ATENDENTE })),
+    ).toBe(true);
   });
 
   it('deve permitir acesso quando o perfil do usuário está incluído', () => {
@@ -34,7 +36,9 @@ describe('RolesGuard', () => {
       .mockReturnValue([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE]);
 
     // Act & Assert
-    expect(guard.canActivate(buildContext({ perfil: PerfilUsuario.ATENDENTE }))).toBe(true);
+    expect(
+      guard.canActivate(buildContext({ perfil: PerfilUsuario.ATENDENTE })),
+    ).toBe(true);
   });
 
   it('deve lançar ForbiddenException quando o perfil não tem permissão', () => {
@@ -56,6 +60,8 @@ describe('RolesGuard', () => {
       .mockReturnValue([PerfilUsuario.ADMINISTRADOR]);
 
     // Act & Assert
-    expect(() => guard.canActivate(buildContext(undefined))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(buildContext(undefined))).toThrow(
+      ForbiddenException,
+    );
   });
 });

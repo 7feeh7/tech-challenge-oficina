@@ -1,16 +1,28 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { OrdensServicoService } from './ordens-servico.service';
 import { PrismaService } from '@/database/prisma.service';
 import { StatusOS } from '@/generated/prisma/enums';
 
 const clienteMock = { id: 'cliente-uuid', nome: 'João Silva' };
-const veiculoMock = { id: 'veiculo-uuid', placa: 'ABC1234', modelo: 'Civic', clienteId: 'cliente-uuid' };
-const servicoMock = { id: 'servico-uuid', nome: 'Troca de óleo', precoBase: '150.00' };
-const pecaMock = { id: 'peca-uuid', codigo: 'FLT-001', nome: 'Filtro', precoUnitario: '29.90', quantidadeEstoque: 10 };
+const veiculoMock = {
+  id: 'veiculo-uuid',
+  placa: 'ABC1234',
+  modelo: 'Civic',
+  clienteId: 'cliente-uuid',
+};
+const servicoMock = {
+  id: 'servico-uuid',
+  nome: 'Troca de óleo',
+  precoBase: '150.00',
+};
+const pecaMock = {
+  id: 'peca-uuid',
+  codigo: 'FLT-001',
+  nome: 'Filtro',
+  precoUnitario: '29.90',
+  quantidadeEstoque: 10,
+};
 
 const ordemMock = {
   id: 'ordem-uuid',
@@ -115,8 +127,12 @@ describe('OrdensServicoService', () => {
       const result = await service.create(dtoComItens);
 
       // Assert
-      expect(prismaMock.servico.findUnique).toHaveBeenCalledWith({ where: { id: 'servico-uuid' } });
-      expect(prismaMock.peca.findUnique).toHaveBeenCalledWith({ where: { id: 'peca-uuid' } });
+      expect(prismaMock.servico.findUnique).toHaveBeenCalledWith({
+        where: { id: 'servico-uuid' },
+      });
+      expect(prismaMock.peca.findUnique).toHaveBeenCalledWith({
+        where: { id: 'peca-uuid' },
+      });
       expect(result).toBeDefined();
     });
 
@@ -140,7 +156,10 @@ describe('OrdensServicoService', () => {
     it('deve lançar BadRequestException quando veículo não pertence ao cliente', async () => {
       // Arrange
       prismaMock.cliente.findUnique.mockResolvedValue(clienteMock);
-      prismaMock.veiculo.findUnique.mockResolvedValue({ ...veiculoMock, clienteId: 'outro-cliente' });
+      prismaMock.veiculo.findUnique.mockResolvedValue({
+        ...veiculoMock,
+        clienteId: 'outro-cliente',
+      });
 
       // Act & Assert
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
@@ -158,7 +177,12 @@ describe('OrdensServicoService', () => {
 
       // Assert
       expect(result.data).toHaveLength(1);
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve filtrar por status quando informado', async () => {
@@ -193,7 +217,9 @@ describe('OrdensServicoService', () => {
       prismaMock.ordemServico.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -201,11 +227,16 @@ describe('OrdensServicoService', () => {
     it('deve atualizar a OS com sucesso', async () => {
       // Arrange
       prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
-      prismaMock.ordemServico.update.mockResolvedValue({ ...ordemMock, diagnostico: 'Válvula desgastada' });
+      prismaMock.ordemServico.update.mockResolvedValue({
+        ...ordemMock,
+        diagnostico: 'Válvula desgastada',
+      });
       prismaMock.historicoStatusOS.create.mockResolvedValue({});
 
       // Act
-      const result = await service.update('ordem-uuid', { diagnostico: 'Válvula desgastada' });
+      const result = await service.update('ordem-uuid', {
+        diagnostico: 'Válvula desgastada',
+      });
 
       // Assert
       expect(result).toMatchObject({ diagnostico: 'Válvula desgastada' });
@@ -214,7 +245,10 @@ describe('OrdensServicoService', () => {
     it('deve registrar histórico ao mudar status', async () => {
       // Arrange
       prismaMock.ordemServico.findUnique.mockResolvedValue(ordemMock);
-      prismaMock.ordemServico.update.mockResolvedValue({ ...ordemMock, status: StatusOS.EM_DIAGNOSTICO });
+      prismaMock.ordemServico.update.mockResolvedValue({
+        ...ordemMock,
+        status: StatusOS.EM_DIAGNOSTICO,
+      });
       prismaMock.historicoStatusOS.create.mockResolvedValue({});
 
       // Act
@@ -222,7 +256,11 @@ describe('OrdensServicoService', () => {
 
       // Assert
       expect(prismaMock.historicoStatusOS.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ statusNovo: StatusOS.EM_DIAGNOSTICO }) }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            statusNovo: StatusOS.EM_DIAGNOSTICO,
+          }),
+        }),
       );
     });
 
@@ -231,7 +269,9 @@ describe('OrdensServicoService', () => {
       prismaMock.ordemServico.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.update('inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(service.update('inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('deve lançar BadRequestException em transição de status inválida', async () => {
@@ -254,8 +294,17 @@ describe('OrdensServicoService', () => {
       prismaMock.peca.findUnique.mockResolvedValue(pecaMock);
       prismaMock.ordemServico.update.mockResolvedValue({
         ...ordemMock,
-        servicos: [{ id: 's1', servico: servicoMock, quantidade: 1, precoUnitario: '150.00' }],
-        pecas: [{ id: 'p1', peca: pecaMock, quantidade: 2, precoUnitario: '29.90' }],
+        servicos: [
+          {
+            id: 's1',
+            servico: servicoMock,
+            quantidade: 1,
+            precoUnitario: '150.00',
+          },
+        ],
+        pecas: [
+          { id: 'p1', peca: pecaMock, quantidade: 2, precoUnitario: '29.90' },
+        ],
       });
 
       // Act
@@ -268,8 +317,20 @@ describe('OrdensServicoService', () => {
       expect(prismaMock.ordemServico.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            servicos: { create: [{ servicoId: 'servico-uuid', quantidade: 1, precoUnitario: '150.00' }] },
-            pecas: { create: [{ pecaId: 'peca-uuid', quantidade: 2, precoUnitario: '29.90' }] },
+            servicos: {
+              create: [
+                {
+                  servicoId: 'servico-uuid',
+                  quantidade: 1,
+                  precoUnitario: '150.00',
+                },
+              ],
+            },
+            pecas: {
+              create: [
+                { pecaId: 'peca-uuid', quantidade: 2, precoUnitario: '29.90' },
+              ],
+            },
           }),
         }),
       );
@@ -282,7 +343,9 @@ describe('OrdensServicoService', () => {
 
       // Act & Assert
       await expect(
-        service.update('ordem-uuid', { servicos: [{ servicoId: 'inexistente', quantidade: 1 }] }),
+        service.update('ordem-uuid', {
+          servicos: [{ servicoId: 'inexistente', quantidade: 1 }],
+        }),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -297,7 +360,9 @@ describe('OrdensServicoService', () => {
       const result = await service.remove('ordem-uuid');
 
       // Assert
-      expect(result).toMatchObject({ message: expect.stringContaining('ordem-uuid') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('ordem-uuid'),
+      });
     });
 
     it('deve lançar NotFoundException quando OS não existe', async () => {
@@ -305,7 +370,9 @@ describe('OrdensServicoService', () => {
       prismaMock.ordemServico.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.remove('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -341,7 +408,12 @@ describe('OrdensServicoService', () => {
     it('deve retornar zeros quando não há OS finalizadas/entregues', async () => {
       // Arrange
       prismaMock.ordemServico.findMany.mockResolvedValue([
-        { criadoEm: new Date(), iniciadaEm: null, finalizadaEm: null, entregueEm: null },
+        {
+          criadoEm: new Date(),
+          iniciadaEm: null,
+          finalizadaEm: null,
+          entregueEm: null,
+        },
       ]);
 
       // Act

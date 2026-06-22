@@ -66,7 +66,10 @@ export class PecasController {
     type: String,
     description: 'Filtro por nome ou código da peça',
   })
-  @ApiResponse({ status: 200, description: 'Lista de peças retornada com sucesso' })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de peças retornada com sucesso',
+  })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -91,7 +94,10 @@ export class PecasController {
   @ApiResponse({ status: 200, description: 'Peça atualizada com sucesso' })
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 404, description: 'Peça não encontrada' })
-  @ApiResponse({ status: 409, description: 'Código já está em uso por outra peça' })
+  @ApiResponse({
+    status: 409,
+    description: 'Código já está em uso por outra peça',
+  })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updatePecaDto: UpdatePecaDto,

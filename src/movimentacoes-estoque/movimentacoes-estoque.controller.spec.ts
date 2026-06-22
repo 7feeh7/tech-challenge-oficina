@@ -27,10 +27,14 @@ describe('MovimentacoesEstoqueController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [MovimentacoesEstoqueController],
-      providers: [{ provide: MovimentacoesEstoqueService, useValue: serviceMock }],
+      providers: [
+        { provide: MovimentacoesEstoqueService, useValue: serviceMock },
+      ],
     }).compile();
 
-    controller = module.get<MovimentacoesEstoqueController>(MovimentacoesEstoqueController);
+    controller = module.get<MovimentacoesEstoqueController>(
+      MovimentacoesEstoqueController,
+    );
     jest.clearAllMocks();
   });
 
@@ -50,7 +54,7 @@ describe('MovimentacoesEstoqueController', () => {
       serviceMock.create.mockResolvedValue(movimentacaoMock);
 
       // Act
-      const result = await controller.create(dto as any);
+      const result = await controller.create(dto);
 
       // Assert
       expect(serviceMock.create).toHaveBeenCalledWith(dto);
@@ -62,7 +66,9 @@ describe('MovimentacoesEstoqueController', () => {
       serviceMock.create.mockRejectedValue(new BadRequestException());
 
       // Act & Assert
-      await expect(controller.create(dto as any)).rejects.toThrow(BadRequestException);
+      await expect(controller.create(dto as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('deve propagar NotFoundException quando peça não existe', async () => {
@@ -70,7 +76,9 @@ describe('MovimentacoesEstoqueController', () => {
       serviceMock.create.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.create(dto as any)).rejects.toThrow(NotFoundException);
+      await expect(controller.create(dto as any)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -120,7 +128,9 @@ describe('MovimentacoesEstoqueController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

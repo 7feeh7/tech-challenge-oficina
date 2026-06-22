@@ -15,12 +15,18 @@ describe('Controle de acesso por perfil (@Roles)', () => {
 
   it('ClientesController deve exigir ADMINISTRADOR ou ATENDENTE', () => {
     const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, ClientesController);
-    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE]);
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
   });
 
   it('VeiculosController deve exigir ADMINISTRADOR ou ATENDENTE', () => {
     const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, VeiculosController);
-    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE]);
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
   });
 
   it('UsuariosController deve exigir ADMINISTRADOR', () => {
@@ -29,7 +35,10 @@ describe('Controle de acesso por perfil (@Roles)', () => {
   });
 
   it('OrdensServicoController deve aceitar ADMIN, ATENDENTE e MECANICO', () => {
-    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, OrdensServicoController);
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      OrdensServicoController,
+    );
     expect(roles).toEqual([
       PerfilUsuario.ADMINISTRADOR,
       PerfilUsuario.ATENDENTE,
@@ -38,13 +47,25 @@ describe('Controle de acesso por perfil (@Roles)', () => {
   });
 
   it('OrcamentosController deve aceitar ADMIN e ATENDENTE', () => {
-    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, OrcamentosController);
-    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE]);
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      OrcamentosController,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
   });
 
   it('MovimentacoesEstoqueController deve aceitar ADMIN e ALMOXARIFE', () => {
-    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, MovimentacoesEstoqueController);
-    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE]);
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      MovimentacoesEstoqueController,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ALMOXARIFE,
+    ]);
   });
 
   it('ServicosController.create deve exigir ADMINISTRADOR', () => {
@@ -60,6 +81,9 @@ describe('Controle de acesso por perfil (@Roles)', () => {
       ROLES_KEY,
       PecasController.prototype.create,
     );
-    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE]);
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ALMOXARIFE,
+    ]);
   });
 });

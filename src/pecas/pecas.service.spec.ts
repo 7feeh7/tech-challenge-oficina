@@ -68,7 +68,10 @@ describe('PecasService', () => {
       // Assert
       expect(prismaMock.peca.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ codigo: 'FLT-001', nome: 'Filtro de óleo' }),
+          data: expect.objectContaining({
+            codigo: 'FLT-001',
+            nome: 'Filtro de óleo',
+          }),
         }),
       );
       expect(result.precoUnitario).toBe(29.9);
@@ -78,15 +81,27 @@ describe('PecasService', () => {
     it('deve usar quantidadeEstoque=0 e estoqueMinimo=0 quando não informados', async () => {
       // Arrange
       prismaMock.peca.findUnique.mockResolvedValue(null);
-      prismaMock.peca.create.mockResolvedValue({ ...pecaMock, quantidadeEstoque: 0, estoqueMinimo: 0 });
+      prismaMock.peca.create.mockResolvedValue({
+        ...pecaMock,
+        quantidadeEstoque: 0,
+        estoqueMinimo: 0,
+      });
 
       // Act
-      await service.create({ codigo: 'FLT-002', nome: 'Filtro de ar', precoUnitario: 15 });
+      await service.create({
+        codigo: 'FLT-002',
+        nome: 'Filtro de ar',
+        precoUnitario: 15,
+      });
 
       // Assert
       expect(prismaMock.peca.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ quantidadeEstoque: 0, estoqueMinimo: 0, ativo: true }),
+          data: expect.objectContaining({
+            quantidadeEstoque: 0,
+            estoqueMinimo: 0,
+            ativo: true,
+          }),
         }),
       );
     });
@@ -112,10 +127,19 @@ describe('PecasService', () => {
 
       // Assert
       expect(prismaMock.peca.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0, take: 10, orderBy: { nome: 'asc' } }),
+        expect.objectContaining({
+          skip: 0,
+          take: 10,
+          orderBy: { nome: 'asc' },
+        }),
       );
       expect(result.data[0].precoUnitario).toBe(29.9);
-      expect(result.meta).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(result.meta).toMatchObject({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
     });
 
     it('deve filtrar por nome e código simultaneamente', async () => {
@@ -164,7 +188,9 @@ describe('PecasService', () => {
       const result = await service.findOne('uuid-p1');
 
       // Assert
-      expect(prismaMock.peca.findUnique).toHaveBeenCalledWith({ where: { id: 'uuid-p1' } });
+      expect(prismaMock.peca.findUnique).toHaveBeenCalledWith({
+        where: { id: 'uuid-p1' },
+      });
       expect(result.precoUnitario).toBe(29.9);
       expect(result).toMatchObject({ id: 'uuid-p1', codigo: 'FLT-001' });
     });
@@ -174,7 +200,9 @@ describe('PecasService', () => {
       prismaMock.peca.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -195,17 +223,25 @@ describe('PecasService', () => {
     it('deve verificar conflito de código ao atualizar', async () => {
       // Arrange
       prismaMock.peca.findUnique.mockResolvedValue(pecaMock);
-      prismaMock.peca.findFirst.mockResolvedValue({ id: 'outro-uuid', codigo: 'FLT-002' });
+      prismaMock.peca.findFirst.mockResolvedValue({
+        id: 'outro-uuid',
+        codigo: 'FLT-002',
+      });
 
       // Act & Assert
-      await expect(service.update('uuid-p1', { codigo: 'FLT-002' })).rejects.toThrow(ConflictException);
+      await expect(
+        service.update('uuid-p1', { codigo: 'FLT-002' }),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('deve atualizar o código quando não há conflito', async () => {
       // Arrange
       prismaMock.peca.findUnique.mockResolvedValue(pecaMock);
       prismaMock.peca.findFirst.mockResolvedValue(null);
-      prismaMock.peca.update.mockResolvedValue({ ...pecaMock, codigo: 'FLT-999' });
+      prismaMock.peca.update.mockResolvedValue({
+        ...pecaMock,
+        codigo: 'FLT-999',
+      });
 
       // Act
       const result = await service.update('uuid-p1', { codigo: 'FLT-999' });
@@ -219,7 +255,9 @@ describe('PecasService', () => {
       prismaMock.peca.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(service.update('uuid-inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -233,8 +271,12 @@ describe('PecasService', () => {
       const result = await service.remove('uuid-p1');
 
       // Assert
-      expect(prismaMock.peca.delete).toHaveBeenCalledWith({ where: { id: 'uuid-p1' } });
-      expect(result).toMatchObject({ message: expect.stringContaining('uuid-p1') });
+      expect(prismaMock.peca.delete).toHaveBeenCalledWith({
+        where: { id: 'uuid-p1' },
+      });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('uuid-p1'),
+      });
     });
 
     it('deve lançar NotFoundException se peça não existir', async () => {
@@ -242,7 +284,9 @@ describe('PecasService', () => {
       prismaMock.peca.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.remove('uuid-inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('uuid-inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

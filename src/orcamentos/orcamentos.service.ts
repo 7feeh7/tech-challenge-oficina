@@ -74,13 +74,15 @@ export class OrcamentosService {
 
   async findOne(id: string) {
     const orcamento = await this.prisma.orcamento.findUnique({ where: { id } });
-    if (!orcamento) throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
+    if (!orcamento)
+      throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
     return this.mapOrcamento(orcamento);
   }
 
   async update(id: string, dto: UpdateOrcamentoDto) {
     const orcamento = await this.prisma.orcamento.findUnique({ where: { id } });
-    if (!orcamento) throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
+    if (!orcamento)
+      throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
 
     if (dto.status === StatusOrcamento.REJEITADO && !dto.motivoRejeicao) {
       throw new BadRequestException('Informe o motivo da rejeição.');
@@ -131,7 +133,9 @@ export class OrcamentosService {
 
     // Valida estoque disponível antes de iniciar a transação
     for (const item of ordem.pecas) {
-      const peca = await this.prisma.peca.findUnique({ where: { id: item.pecaId } });
+      const peca = await this.prisma.peca.findUnique({
+        where: { id: item.pecaId },
+      });
       if (!peca || peca.quantidadeEstoque < item.quantidade) {
         throw new BadRequestException(
           `Estoque insuficiente para a peça "${item.pecaId}". Disponível: ${peca?.quantidadeEstoque ?? 0}, solicitado: ${item.quantidade}.`,
@@ -151,7 +155,10 @@ export class OrcamentosService {
       }),
       this.prisma.ordemServico.update({
         where: { id: ordem.id },
-        data: { status: StatusOS.EM_EXECUCAO, iniciadaEm: ordem.iniciadaEm ?? new Date() },
+        data: {
+          status: StatusOS.EM_EXECUCAO,
+          iniciadaEm: ordem.iniciadaEm ?? new Date(),
+        },
       }),
       this.prisma.historicoStatusOS.create({
         data: {
@@ -189,7 +196,8 @@ export class OrcamentosService {
 
   async remove(id: string) {
     const orcamento = await this.prisma.orcamento.findUnique({ where: { id } });
-    if (!orcamento) throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
+    if (!orcamento)
+      throw new NotFoundException(`Orçamento "${id}" não encontrado.`);
     await this.prisma.orcamento.delete({ where: { id } });
     return { message: `Orçamento "${id}" removido com sucesso.` };
   }

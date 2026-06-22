@@ -39,7 +39,7 @@ export class AuthService {
     });
 
     return {
-      token: accessToken
+      token: accessToken,
     };
   }
 }

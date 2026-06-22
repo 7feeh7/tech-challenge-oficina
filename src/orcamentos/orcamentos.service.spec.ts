@@ -150,7 +150,9 @@ describe('OrcamentosService', () => {
       prismaMock.orcamento.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -173,7 +175,13 @@ describe('OrcamentosService', () => {
         id: 'peca-uuid',
         quantidadeEstoque: 10,
       });
-      prismaMock.$transaction.mockResolvedValue([orcamentoAprovado, {}, {}, {}, {}]);
+      prismaMock.$transaction.mockResolvedValue([
+        orcamentoAprovado,
+        {},
+        {},
+        {},
+        {},
+      ]);
 
       // Act
       const result = await service.update('orcamento-uuid', {
@@ -257,7 +265,9 @@ describe('OrcamentosService', () => {
       prismaMock.orcamento.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.update('inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(service.update('inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -271,7 +281,9 @@ describe('OrcamentosService', () => {
       const result = await service.remove('orcamento-uuid');
 
       // Assert
-      expect(result).toMatchObject({ message: expect.stringContaining('orcamento-uuid') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('orcamento-uuid'),
+      });
     });
 
     it('deve lançar NotFoundException quando não encontrado', async () => {
@@ -279,7 +291,9 @@ describe('OrcamentosService', () => {
       prismaMock.orcamento.findUnique.mockResolvedValue(null);
 
       // Act & Assert
-      await expect(service.remove('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

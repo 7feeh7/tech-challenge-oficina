@@ -44,7 +44,9 @@ export class CreateOrdemServicoDto {
   @IsUUID()
   veiculoId: string;
 
-  @ApiPropertyOptional({ description: 'Descrição do problema relatado pelo cliente' })
+  @ApiPropertyOptional({
+    description: 'Descrição do problema relatado pelo cliente',
+  })
   @IsString()
   @IsOptional()
   descricaoProblema?: string;
@@ -54,14 +56,20 @@ export class CreateOrdemServicoDto {
   @IsOptional()
   diagnostico?: string;
 
-  @ApiPropertyOptional({ type: [ItemServicoDto], description: 'Serviços vinculados à OS' })
+  @ApiPropertyOptional({
+    type: [ItemServicoDto],
+    description: 'Serviços vinculados à OS',
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ItemServicoDto)
   @IsOptional()
   servicos?: ItemServicoDto[];
 
-  @ApiPropertyOptional({ type: [ItemPecaDto], description: 'Peças utilizadas na OS' })
+  @ApiPropertyOptional({
+    type: [ItemPecaDto],
+    description: 'Peças utilizadas na OS',
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ItemPecaDto)

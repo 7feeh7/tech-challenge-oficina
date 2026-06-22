@@ -49,7 +49,7 @@ describe('OrdensServicoController', () => {
       serviceMock.create.mockResolvedValue(ordemMock);
 
       // Act
-      const result = await controller.create(dto as any);
+      const result = await controller.create(dto);
 
       // Assert
       expect(serviceMock.create).toHaveBeenCalledWith(dto);
@@ -61,7 +61,9 @@ describe('OrdensServicoController', () => {
       serviceMock.create.mockRejectedValue(new BadRequestException());
 
       // Act & Assert
-      await expect(controller.create(dto as any)).rejects.toThrow(BadRequestException);
+      await expect(controller.create(dto as any)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('deve propagar NotFoundException quando cliente não existe', async () => {
@@ -69,14 +71,19 @@ describe('OrdensServicoController', () => {
       serviceMock.create.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.create(dto as any)).rejects.toThrow(NotFoundException);
+      await expect(controller.create(dto as any)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('findAll', () => {
     it('deve retornar lista paginada', async () => {
       // Arrange
-      const paginated = { data: [ordemMock], meta: { total: 1, page: 1, limit: 10, totalPages: 1 } };
+      const paginated = {
+        data: [ordemMock],
+        meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
+      };
       serviceMock.findAll.mockResolvedValue(paginated);
 
       // Act
@@ -95,7 +102,11 @@ describe('OrdensServicoController', () => {
       await controller.findAll(1, 10, StatusOS.EM_EXECUCAO);
 
       // Assert
-      expect(serviceMock.findAll).toHaveBeenCalledWith(1, 10, StatusOS.EM_EXECUCAO);
+      expect(serviceMock.findAll).toHaveBeenCalledWith(
+        1,
+        10,
+        StatusOS.EM_EXECUCAO,
+      );
     });
   });
 
@@ -116,7 +127,9 @@ describe('OrdensServicoController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -127,7 +140,9 @@ describe('OrdensServicoController', () => {
       serviceMock.update.mockResolvedValue(updated);
 
       // Act
-      const result = await controller.update('ordem-uuid', { status: StatusOS.EM_EXECUCAO });
+      const result = await controller.update('ordem-uuid', {
+        status: StatusOS.EM_EXECUCAO,
+      });
 
       // Assert
       expect(result).toMatchObject({ status: StatusOS.EM_EXECUCAO });
@@ -138,20 +153,26 @@ describe('OrdensServicoController', () => {
       serviceMock.update.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.update('inexistente', {})).rejects.toThrow(NotFoundException);
+      await expect(controller.update('inexistente', {})).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('remove', () => {
     it('deve remover a OS', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Ordem de serviço "ordem-uuid" removida com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Ordem de serviço "ordem-uuid" removida com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('ordem-uuid');
 
       // Assert
-      expect(result).toMatchObject({ message: expect.stringContaining('ordem-uuid') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('ordem-uuid'),
+      });
     });
 
     it('deve propagar NotFoundException quando OS não existe', async () => {
@@ -159,7 +180,9 @@ describe('OrdensServicoController', () => {
       serviceMock.remove.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.remove('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.remove('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -182,7 +205,10 @@ describe('OrdensServicoController', () => {
       const result = await controller.tempoMedio();
 
       // Assert
-      expect(serviceMock.tempoMedioExecucao).toHaveBeenCalledWith(undefined, undefined);
+      expect(serviceMock.tempoMedioExecucao).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
       expect(result).toEqual(metricas);
     });
 
@@ -197,7 +223,9 @@ describe('OrdensServicoController', () => {
       const [inicio, fim] = serviceMock.tempoMedioExecucao.mock.calls[0];
       expect(inicio).toBeInstanceOf(Date);
       expect(fim).toBeInstanceOf(Date);
-      expect((inicio as Date).toISOString().startsWith('2026-01-01')).toBe(true);
+      expect((inicio as Date).toISOString().startsWith('2026-01-01')).toBe(
+        true,
+      );
       expect((fim as Date).toISOString().startsWith('2026-12-31')).toBe(true);
     });
   });

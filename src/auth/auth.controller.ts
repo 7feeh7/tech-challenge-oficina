@@ -31,7 +31,7 @@ export class AuthController {
     description: 'Login realizado com sucesso',
     schema: {
       properties: {
-        token: { type: 'string' }
+        token: { type: 'string' },
       },
     },
   })

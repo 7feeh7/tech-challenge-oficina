@@ -43,7 +43,7 @@ describe('OrcamentosController', () => {
       const dto = { ordemServicoId: 'ordem-uuid', valorTotal: 350 };
 
       // Act
-      const result = await controller.create(dto as any);
+      const result = await controller.create(dto);
 
       // Assert
       expect(serviceMock.create).toHaveBeenCalledWith(dto);
@@ -55,14 +55,19 @@ describe('OrcamentosController', () => {
       serviceMock.create.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.create({} as any)).rejects.toThrow(NotFoundException);
+      await expect(controller.create({} as any)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('findAll', () => {
     it('deve retornar lista paginada', async () => {
       // Arrange
-      const paginated = { data: [orcamentoMock], meta: { total: 1, page: 1, limit: 10, totalPages: 1 } };
+      const paginated = {
+        data: [orcamentoMock],
+        meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
+      };
       serviceMock.findAll.mockResolvedValue(paginated);
 
       // Act
@@ -91,17 +96,24 @@ describe('OrcamentosController', () => {
       serviceMock.findOne.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.findOne('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.findOne('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('update', () => {
     it('deve aprovar o orçamento', async () => {
       // Arrange
-      serviceMock.update.mockResolvedValue({ ...orcamentoMock, status: StatusOrcamento.APROVADO });
+      serviceMock.update.mockResolvedValue({
+        ...orcamentoMock,
+        status: StatusOrcamento.APROVADO,
+      });
 
       // Act
-      const result = await controller.update('orcamento-uuid', { status: StatusOrcamento.APROVADO });
+      const result = await controller.update('orcamento-uuid', {
+        status: StatusOrcamento.APROVADO,
+      });
 
       // Assert
       expect(result).toMatchObject({ status: StatusOrcamento.APROVADO });
@@ -113,7 +125,9 @@ describe('OrcamentosController', () => {
 
       // Act & Assert
       await expect(
-        controller.update('orcamento-uuid', { status: StatusOrcamento.REJEITADO }),
+        controller.update('orcamento-uuid', {
+          status: StatusOrcamento.REJEITADO,
+        }),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -121,13 +135,17 @@ describe('OrcamentosController', () => {
   describe('remove', () => {
     it('deve remover o orçamento', async () => {
       // Arrange
-      serviceMock.remove.mockResolvedValue({ message: 'Orçamento "orcamento-uuid" removido com sucesso.' });
+      serviceMock.remove.mockResolvedValue({
+        message: 'Orçamento "orcamento-uuid" removido com sucesso.',
+      });
 
       // Act
       const result = await controller.remove('orcamento-uuid');
 
       // Assert
-      expect(result).toMatchObject({ message: expect.stringContaining('orcamento-uuid') });
+      expect(result).toMatchObject({
+        message: expect.stringContaining('orcamento-uuid'),
+      });
     });
 
     it('deve propagar NotFoundException', async () => {
@@ -135,7 +153,9 @@ describe('OrcamentosController', () => {
       serviceMock.remove.mockRejectedValue(new NotFoundException());
 
       // Act & Assert
-      await expect(controller.remove('inexistente')).rejects.toThrow(NotFoundException);
+      await expect(controller.remove('inexistente')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });
