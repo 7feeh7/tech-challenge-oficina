@@ -1,0 +1,47 @@
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcryptjs';
+import { PrismaService } from '@/database/prisma.service';
+import { PerfilUsuario } from '@/generated/prisma/enums';
+
+@Injectable()
+export class AdminSeedService implements OnModuleInit {
+  private readonly logger = new Logger(AdminSeedService.name);
+
+  constructor(
+    private readonly prismaService: PrismaService,
+    private readonly configService: ConfigService,
+  ) { }
+
+  async onModuleInit(): Promise<void> {
+    const adminJaExiste = await this.prismaService.usuario.findFirst({
+      where: { perfil: PerfilUsuario.ADMINISTRADOR },
+    });
+
+    if (adminJaExiste) {
+      return;
+    }
+
+    const nome = this.configService.get<string>('ADMIN_NOME') ?? 'Administrador';
+    const email =
+      this.configService.get<string>('ADMIN_EMAIL') ?? 'admin@oficina.com';
+    const senha =
+      this.configService.get<string>('ADMIN_SENHA') ?? 'admin12345';
+
+    const senhaHash = await bcrypt.hash(senha, 10);
+
+    await this.prismaService.usuario.create({
+      data: {
+        nome,
+        email,
+        senhaHash,
+        perfil: PerfilUsuario.ADMINISTRADOR,
+      },
+    });
+
+    this.logger.log(
+      `Usuário administrador inicial criado com o e-mail "${email}". ` +
+      'Altere a senha após o primeiro login.',
+    );
+  }
+}
