@@ -17,7 +17,7 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Estrutura do Projeto
 
-Os módulos **`usuarios`**, **`clientes`**, **`veiculos`**, **`servicos`**, **`pecas`** e **`movimentacoes-estoque`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
+**Todos os módulos de negócio seguem a Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Cada módulo tem a mesma anatomia — `domain/` (entidades, enums e erros), `application/` (casos de uso, portas e mappers) e `infra/` (controllers, DTOs e adaptadores de persistência).
 
 ```
 src/
@@ -133,8 +133,37 @@ src/
 │   │   └── persistence/             # PrismaMovimentacaoEstoqueGateway (transação: histórico + saldo)
 │   └── movimentacoes-estoque.module.ts
 │
-├── ordens-servico/                  # Ordens de serviço + máquina de estados (status-os.transitions.ts)
-├── orcamentos/                      # Orçamentos (aprovação baixa o estoque)
+├── ordens-servico/                  # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # OrdemServico (máquina de estados + marcos) e itens com preço congelado
+│   │   ├── errors/                  # Erros de domínio da OS
+│   │   └── status-os.ts             # Enum de domínio + transições válidas
+│   ├── application/
+│   │   ├── ports/                   # OrdemServicoGateway + CatalogoGateway (cliente, veículo e preços)
+│   │   ├── use-cases/               # criar, listar, buscar, atualizar, remover e tempo médio
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # OrdensServicoController
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaOrdemServicoGateway (transação: OS + itens + histórico)
+│   └── ordens-servico.module.ts
+│
+├── orcamentos/                      # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # Orcamento: aprovar/rejeitar (rejeição exige motivo)
+│   │   ├── errors/                  # Erros de domínio do orçamento
+│   │   └── status-orcamento.ts      # Enum de domínio
+│   ├── application/
+│   │   ├── ports/                   # OrcamentoGateway (criação e aprovação atômicas)
+│   │   ├── use-cases/               # criar, listar, buscar, atualizar (aprovar/rejeitar) e remover
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # OrcamentosController
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaOrcamentoGateway (aprovar = OS + histórico + baixa de estoque)
+│   └── orcamentos.module.ts
 │
 ├── common/                          # Blocos compartilhados entre módulos
 │   ├── exceptions/                  # DomainError: base dos erros de domínio (validação, conflito, ...)

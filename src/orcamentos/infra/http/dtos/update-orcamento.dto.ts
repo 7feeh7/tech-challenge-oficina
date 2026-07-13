@@ -1,7 +1,7 @@
 import { PartialType, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { StatusOrcamento } from '@/orcamentos/domain/status-orcamento';
 import { CreateOrcamentoDto } from './create-orcamento.dto';
-import { StatusOrcamento } from '@/generated/prisma/enums';
 
 export class UpdateOrcamentoDto extends PartialType(CreateOrcamentoDto) {
   @ApiPropertyOptional({
