@@ -17,7 +17,7 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Estrutura do Projeto
 
-Os módulos **`usuarios`** e **`clientes`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
+Os módulos **`usuarios`**, **`clientes`** e **`veiculos`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
 
 ```
 src/
@@ -72,7 +72,21 @@ src/
 │   │   └── persistence/             # PrismaClienteGateway + mapper Prisma ↔ domínio
 │   └── clientes.module.ts
 │
-├── veiculos/                        # CRUD de veículos
+├── veiculos/                        # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # Veiculo: placa (Mercosul/antiga), marca, modelo e ano validados
+│   │   └── errors/                  # Erros de domínio de veículo
+│   ├── application/
+│   │   ├── ports/                   # VeiculoGateway + ClienteConsultaGateway (o dono precisa existir)
+│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover veículo
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # VeiculosController (injeta os casos de uso)
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaVeiculoGateway + PrismaClienteConsultaGateway
+│   └── veiculos.module.ts
+│
 ├── servicos/                        # Catálogo de serviços
 ├── pecas/                           # Catálogo de peças
 ├── movimentacoes-estoque/           # Entradas e saídas de estoque

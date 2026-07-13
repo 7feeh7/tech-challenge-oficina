@@ -21,18 +21,28 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { VeiculosService } from './veiculos.service';
-import { CreateVeiculoDto } from './dto/create-veiculo.dto';
-import { UpdateVeiculoDto } from './dto/update-veiculo.dto';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { AtualizarVeiculoUseCase } from '@/veiculos/application/use-cases/atualizar-veiculo.use-case';
+import { BuscarVeiculoUseCase } from '@/veiculos/application/use-cases/buscar-veiculo.use-case';
+import { CriarVeiculoUseCase } from '@/veiculos/application/use-cases/criar-veiculo.use-case';
+import { ListarVeiculosUseCase } from '@/veiculos/application/use-cases/listar-veiculos.use-case';
+import { RemoverVeiculoUseCase } from '@/veiculos/application/use-cases/remover-veiculo.use-case';
+import { CreateVeiculoDto } from '@/veiculos/infra/http/dtos/create-veiculo.dto';
+import { UpdateVeiculoDto } from '@/veiculos/infra/http/dtos/update-veiculo.dto';
 
 @ApiTags('Veículos')
 @ApiBearerAuth()
 @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
 @Controller('veiculos')
 export class VeiculosController {
-  constructor(private readonly veiculosService: VeiculosService) {}
+  constructor(
+    private readonly criarVeiculo: CriarVeiculoUseCase,
+    private readonly listarVeiculos: ListarVeiculosUseCase,
+    private readonly buscarVeiculo: BuscarVeiculoUseCase,
+    private readonly atualizarVeiculo: AtualizarVeiculoUseCase,
+    private readonly removerVeiculo: RemoverVeiculoUseCase,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -42,7 +52,7 @@ export class VeiculosController {
   @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
   @ApiResponse({ status: 409, description: 'Placa já cadastrada' })
   async create(@Body() createVeiculoDto: CreateVeiculoDto) {
-    return await this.veiculosService.create(createVeiculoDto);
+    return await this.criarVeiculo.execute(createVeiculoDto);
   }
 
   @Get()
@@ -76,7 +86,7 @@ export class VeiculosController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('search') search?: string,
   ) {
-    return await this.veiculosService.findAll(page, limit, search);
+    return await this.listarVeiculos.execute(page, limit, search);
   }
 
   @Get(':id')
@@ -85,7 +95,7 @@ export class VeiculosController {
   @ApiResponse({ status: 200, description: 'Veículo encontrado' })
   @ApiResponse({ status: 404, description: 'Veículo não encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.veiculosService.findOne(id);
+    return await this.buscarVeiculo.execute(id);
   }
 
   @Patch(':id')
@@ -102,7 +112,7 @@ export class VeiculosController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateVeiculoDto: UpdateVeiculoDto,
   ) {
-    return await this.veiculosService.update(id, updateVeiculoDto);
+    return await this.atualizarVeiculo.execute(id, updateVeiculoDto);
   }
 
   @Delete(':id')
@@ -112,6 +122,6 @@ export class VeiculosController {
   @ApiResponse({ status: 200, description: 'Veículo removido com sucesso' })
   @ApiResponse({ status: 404, description: 'Veículo não encontrado' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.veiculosService.remove(id);
+    return await this.removerVeiculo.execute(id);
   }
 }

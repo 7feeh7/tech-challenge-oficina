@@ -2,7 +2,7 @@ import { Reflector } from '@nestjs/core';
 import { PerfilUsuario } from '@/generated/prisma/enums';
 import { ROLES_KEY } from './decorators/roles.decorator';
 import { ClientesController } from '@/clientes/infra/http/controllers/clientes.controller';
-import { VeiculosController } from '@/veiculos/veiculos.controller';
+import { VeiculosController } from '@/veiculos/infra/http/controllers/veiculos.controller';
 import { UsuariosController } from '@/usuarios/infra/http/controllers/usuarios.controller';
 import { OrdensServicoController } from '@/ordens-servico/ordens-servico.controller';
 import { OrcamentosController } from '@/orcamentos/orcamentos.controller';
