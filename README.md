@@ -17,7 +17,7 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Estrutura do Projeto
 
-Os módulos **`usuarios`**, **`clientes`**, **`veiculos`** e **`servicos`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
+Os módulos **`usuarios`**, **`clientes`**, **`veiculos`**, **`servicos`** e **`pecas`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
 
 ```
 src/
@@ -102,7 +102,21 @@ src/
 │   │   └── persistence/             # PrismaServicoGateway + mapper (Decimal ↔ number)
 │   └── servicos.module.ts
 │
-├── pecas/                           # Catálogo de peças
+├── pecas/                           # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # Peca: código único, preço, estoque e estoque mínimo
+│   │   └── errors/                  # Erros de domínio de peça
+│   ├── application/
+│   │   ├── ports/                   # PecaGateway + token de injeção
+│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover peça
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # PecasController (injeta os casos de uso)
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaPecaGateway + mapper (Decimal ↔ number)
+│   └── pecas.module.ts
+│
 ├── movimentacoes-estoque/           # Entradas e saídas de estoque
 ├── ordens-servico/                  # Ordens de serviço + máquina de estados (status-os.transitions.ts)
 ├── orcamentos/                      # Orçamentos (aprovação baixa o estoque)

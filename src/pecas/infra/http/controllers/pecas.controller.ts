@@ -21,17 +21,27 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { PecasService } from './pecas.service';
-import { CreatePecaDto } from './dto/create-peca.dto';
-import { UpdatePecaDto } from './dto/update-peca.dto';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { AtualizarPecaUseCase } from '@/pecas/application/use-cases/atualizar-peca.use-case';
+import { BuscarPecaUseCase } from '@/pecas/application/use-cases/buscar-peca.use-case';
+import { CriarPecaUseCase } from '@/pecas/application/use-cases/criar-peca.use-case';
+import { ListarPecasUseCase } from '@/pecas/application/use-cases/listar-pecas.use-case';
+import { RemoverPecaUseCase } from '@/pecas/application/use-cases/remover-peca.use-case';
+import { CreatePecaDto } from '@/pecas/infra/http/dtos/create-peca.dto';
+import { UpdatePecaDto } from '@/pecas/infra/http/dtos/update-peca.dto';
 
 @ApiTags('Peças')
 @ApiBearerAuth()
 @Controller('pecas')
 export class PecasController {
-  constructor(private readonly pecasService: PecasService) {}
+  constructor(
+    private readonly criarPeca: CriarPecaUseCase,
+    private readonly listarPecas: ListarPecasUseCase,
+    private readonly buscarPeca: BuscarPecaUseCase,
+    private readonly atualizarPeca: AtualizarPecaUseCase,
+    private readonly removerPeca: RemoverPecaUseCase,
+  ) {}
 
   @Post()
   @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ALMOXARIFE)
@@ -41,7 +51,7 @@ export class PecasController {
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 409, description: 'Código de peça já cadastrado' })
   async create(@Body() createPecaDto: CreatePecaDto) {
-    return await this.pecasService.create(createPecaDto);
+    return await this.criarPeca.execute(createPecaDto);
   }
 
   @Get()
@@ -75,7 +85,7 @@ export class PecasController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('search') search?: string,
   ) {
-    return await this.pecasService.findAll(page, limit, search);
+    return await this.listarPecas.execute(page, limit, search);
   }
 
   @Get(':id')
@@ -84,7 +94,7 @@ export class PecasController {
   @ApiResponse({ status: 200, description: 'Peça encontrada' })
   @ApiResponse({ status: 404, description: 'Peça não encontrada' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.pecasService.findOne(id);
+    return await this.buscarPeca.execute(id);
   }
 
   @Patch(':id')
@@ -102,7 +112,7 @@ export class PecasController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updatePecaDto: UpdatePecaDto,
   ) {
-    return await this.pecasService.update(id, updatePecaDto);
+    return await this.atualizarPeca.execute(id, updatePecaDto);
   }
 
   @Delete(':id')
@@ -113,6 +123,6 @@ export class PecasController {
   @ApiResponse({ status: 200, description: 'Peça removida com sucesso' })
   @ApiResponse({ status: 404, description: 'Peça não encontrada' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.pecasService.remove(id);
+    return await this.removerPeca.execute(id);
   }
 }

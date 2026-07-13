@@ -8,7 +8,7 @@ import { OrdensServicoController } from '@/ordens-servico/ordens-servico.control
 import { OrcamentosController } from '@/orcamentos/orcamentos.controller';
 import { MovimentacoesEstoqueController } from '@/movimentacoes-estoque/movimentacoes-estoque.controller';
 import { ServicosController } from '@/servicos/infra/http/controllers/servicos.controller';
-import { PecasController } from '@/pecas/pecas.controller';
+import { PecasController } from '@/pecas/infra/http/controllers/pecas.controller';
 
 describe('Controle de acesso por perfil (@Roles)', () => {
   const reflector = new Reflector();
