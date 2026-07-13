@@ -7,7 +7,7 @@ import { UsuariosController } from '@/usuarios/infra/http/controllers/usuarios.c
 import { OrdensServicoController } from '@/ordens-servico/ordens-servico.controller';
 import { OrcamentosController } from '@/orcamentos/orcamentos.controller';
 import { MovimentacoesEstoqueController } from '@/movimentacoes-estoque/movimentacoes-estoque.controller';
-import { ServicosController } from '@/servicos/servicos.controller';
+import { ServicosController } from '@/servicos/infra/http/controllers/servicos.controller';
 import { PecasController } from '@/pecas/pecas.controller';
 
 describe('Controle de acesso por perfil (@Roles)', () => {

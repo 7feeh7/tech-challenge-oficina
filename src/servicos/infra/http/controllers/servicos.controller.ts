@@ -21,17 +21,27 @@ import {
   ApiTags,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { ServicosService } from './servicos.service';
-import { CreateServicoDto } from './dto/create-servico.dto';
-import { UpdateServicoDto } from './dto/update-servico.dto';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { AtualizarServicoUseCase } from '@/servicos/application/use-cases/atualizar-servico.use-case';
+import { BuscarServicoUseCase } from '@/servicos/application/use-cases/buscar-servico.use-case';
+import { CriarServicoUseCase } from '@/servicos/application/use-cases/criar-servico.use-case';
+import { ListarServicosUseCase } from '@/servicos/application/use-cases/listar-servicos.use-case';
+import { RemoverServicoUseCase } from '@/servicos/application/use-cases/remover-servico.use-case';
+import { CreateServicoDto } from '@/servicos/infra/http/dtos/create-servico.dto';
+import { UpdateServicoDto } from '@/servicos/infra/http/dtos/update-servico.dto';
 
 @ApiTags('Serviços')
 @ApiBearerAuth()
 @Controller('servicos')
 export class ServicosController {
-  constructor(private readonly servicosService: ServicosService) {}
+  constructor(
+    private readonly criarServico: CriarServicoUseCase,
+    private readonly listarServicos: ListarServicosUseCase,
+    private readonly buscarServico: BuscarServicoUseCase,
+    private readonly atualizarServico: AtualizarServicoUseCase,
+    private readonly removerServico: RemoverServicoUseCase,
+  ) {}
 
   @Post()
   @Roles(PerfilUsuario.ADMINISTRADOR)
@@ -41,7 +51,7 @@ export class ServicosController {
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 409, description: 'Nome de serviço já cadastrado' })
   async create(@Body() createServicoDto: CreateServicoDto) {
-    return await this.servicosService.create(createServicoDto);
+    return await this.criarServico.execute(createServicoDto);
   }
 
   @Get()
@@ -75,7 +85,7 @@ export class ServicosController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('search') search?: string,
   ) {
-    return await this.servicosService.findAll(page, limit, search);
+    return await this.listarServicos.execute(page, limit, search);
   }
 
   @Get(':id')
@@ -84,7 +94,7 @@ export class ServicosController {
   @ApiResponse({ status: 200, description: 'Serviço encontrado' })
   @ApiResponse({ status: 404, description: 'Serviço não encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.servicosService.findOne(id);
+    return await this.buscarServico.execute(id);
   }
 
   @Patch(':id')
@@ -102,7 +112,7 @@ export class ServicosController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateServicoDto: UpdateServicoDto,
   ) {
-    return await this.servicosService.update(id, updateServicoDto);
+    return await this.atualizarServico.execute(id, updateServicoDto);
   }
 
   @Delete(':id')
@@ -113,6 +123,6 @@ export class ServicosController {
   @ApiResponse({ status: 200, description: 'Serviço removido com sucesso' })
   @ApiResponse({ status: 404, description: 'Serviço não encontrado' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.servicosService.remove(id);
+    return await this.removerServico.execute(id);
   }
 }
