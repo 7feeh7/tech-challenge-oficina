@@ -10,7 +10,7 @@ import {
   VeiculoDaOrdem,
 } from '../../application/ports/ordem-servico.gateway';
 import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
-import { StatusOS } from '../../domain/status-os';
+import { STATUS_ENCERRADOS, StatusOS } from '../../domain/status-os';
 import {
   ItemPecaPrisma,
   ItemServicoPrisma,
@@ -72,6 +72,16 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
     };
   }
 
+  /**
+   * Fila de trabalho: sem as OS encerradas, priorizando Em Execução >
+   * Aguardando Aprovação > Diagnóstico > Recebida e, dentro de cada status,
+   * as mais antigas primeiro.
+   *
+   * O Postgres ordena enums pela ordem de DECLARAÇÃO no schema, que aqui é a
+   * cronológica (RECEBIDA → … → ENTREGUE). Invertê-la (`desc`) produz
+   * exatamente a prioridade da fila. O spec de `status-os` trava essa ordem de
+   * declaração para que ninguém a mude sem perceber que a listagem depende dela.
+   */
   async listar(
     page: number,
     limit: number,
@@ -79,12 +89,18 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
   ): Promise<PaginaOrdensServico> {
     const where = status
       ? { status: PrismaOrdemServicoMapper.toStatusPrisma(status) }
-      : {};
+      : {
+          status: {
+            notIn: STATUS_ENCERRADOS.map(
+              PrismaOrdemServicoMapper.toStatusPrisma,
+            ),
+          },
+        };
 
     const [raw, total] = await Promise.all([
       this.prisma.ordemServico.findMany({
         where,
-        orderBy: { criadoEm: 'desc' },
+        orderBy: [{ status: 'desc' }, { criadoEm: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
         include: {

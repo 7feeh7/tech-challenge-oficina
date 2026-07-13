@@ -146,6 +146,7 @@ src/
 │   │   ├── http/
 │   │   │   ├── controllers/         # OrdensServicoController
 │   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   ├── notification/            # SendGrid: avisa o cliente a cada mudança de status
 │   │   └── persistence/             # PrismaOrdemServicoGateway (transação: OS + itens + histórico)
 │   └── ordens-servico.module.ts
 │
@@ -223,6 +224,10 @@ Os testes (`*.spec.ts`) ficam ao lado do arquivo que exercitam.
    | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | Credenciais do container Postgres |
    | `JWT_SECRET` | Segredo usado para assinar os tokens JWT (**obrigatório alterar em produção**) |
    | `PORT` | Porta da API (padrão `3000`) |
+   | `SENDGRID_API_KEY` | Chave da API do SendGrid (notificação de status da OS) |
+   | `SENDGRID_FROM_EMAIL` | Remetente dos e-mails — precisa ser um *Verified Sender* no SendGrid |
+
+   > Sem as variáveis do SendGrid a API sobe normalmente: o envio é apenas registrado como aviso no log. A notificação é *best-effort* e nunca bloqueia a atualização da OS.
 
 ## Como rodar
 
@@ -350,10 +355,29 @@ Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orca
 - `GET|POST|PATCH|DELETE /veiculos`
 - `GET|POST|PATCH|DELETE /servicos`
 - `GET|POST|PATCH|DELETE /pecas`
-- `GET|POST|PATCH|DELETE /ordens-servico`
+- `POST /ordens-servico` — abre a OS com cliente, veículo, serviços e peças
+- `GET /ordens-servico` — fila de trabalho (ver abaixo)
+- `GET /ordens-servico/:id` — status atual e detalhes da OS
+- `PATCH /ordens-servico/:id` — muda o status da OS (notifica o cliente por e-mail)
 - `GET /ordens-servico/metricas/tempo-medio` — tempo médio de execução / ciclo total
 - `GET|POST|PATCH|DELETE /orcamentos` — aprovar orçamento baixa estoque automaticamente
 - `GET|POST /movimentacoes-estoque`
 - `GET|POST|PATCH|DELETE /usuarios` (somente ADMINISTRADOR)
 
 Consulte o Swagger (`/docs`) para a documentação completa de cada endpoint.
+
+### Fila de ordens de serviço (`GET /ordens-servico`)
+
+Sem filtro, a listagem devolve a **fila de trabalho**:
+
+- **Exclusão lógica** das OS `FINALIZADA` e `ENTREGUE` — elas continuam no banco, apenas somem da fila;
+- Ordenação por prioridade de status: **Em Execução > Aguardando Aprovação > Diagnóstico > Recebida**;
+- Dentro de cada status, as **mais antigas primeiro**.
+
+Informar `?status=` consulta um status específico, inclusive os encerrados (útil para auditoria e para o histórico do cliente).
+
+### Notificação de status por e-mail
+
+Toda mudança de status via `PATCH /ordens-servico/:id` dispara um e-mail ao cliente da OS, pelo **SendGrid**. O envio é *best-effort*: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada.
+
+A regra vive no caso de uso, mas ele só conhece a porta `NotificadorDeStatusGateway` — trocar SendGrid por SMS ou webhook é escrever outro adaptador em `infra/notification/`, sem tocar no domínio.

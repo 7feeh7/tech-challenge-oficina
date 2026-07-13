@@ -3,6 +3,7 @@ import {
   OrdemServicoProps,
 } from '../../domain/entities/ordem-servico.entity';
 import { CatalogoGateway } from '../ports/catalogo.gateway';
+import { NotificadorDeStatusGateway } from '../ports/notificador-status.gateway';
 import {
   OrdemServicoDetalhe,
   OrdemServicoGateway,
@@ -10,7 +11,11 @@ import {
 
 /** Dublês compartilhados pelos specs dos casos de uso. */
 
-export const clienteFake = { id: 'uuid-c1', nome: 'João Silva' };
+export const clienteFake = {
+  id: 'uuid-c1',
+  nome: 'João Silva',
+  email: 'joao@email.com',
+};
 export const veiculoFake = {
   id: 'uuid-v1',
   placa: 'ABC1D23',
@@ -48,6 +53,11 @@ export const criarGatewayMock = (): jest.Mocked<OrdemServicoGateway> => ({
   remover: jest.fn(),
   buscarMarcosDeTempo: jest.fn(),
 });
+
+export const criarNotificadorMock =
+  (): jest.Mocked<NotificadorDeStatusGateway> => ({
+    notificarMudancaDeStatus: jest.fn().mockResolvedValue(undefined),
+  });
 
 export const criarCatalogoMock = (): jest.Mocked<CatalogoGateway> => ({
   clienteExiste: jest.fn().mockResolvedValue(true),

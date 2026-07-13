@@ -68,14 +68,20 @@ export class OrdensServicoController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar ordens de serviço' })
+  @ApiOperation({
+    summary: 'Listar a fila de ordens de serviço',
+    description:
+      'Sem filtro, retorna apenas as OS em aberto (exclusão lógica das FINALIZADA e ENTREGUE), ' +
+      'ordenadas por Em Execução > Aguardando Aprovação > Diagnóstico > Recebida e, dentro de cada ' +
+      'status, as mais antigas primeiro. Informar `status` consulta um status específico, inclusive os encerrados.',
+  })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiQuery({
     name: 'status',
     required: false,
     enum: StatusOS,
-    description: 'Filtrar por status',
+    description: 'Consultar um status específico (inclusive os encerrados)',
   })
   @ApiResponse({ status: 200, description: 'Lista paginada de OS.' })
   async findAll(

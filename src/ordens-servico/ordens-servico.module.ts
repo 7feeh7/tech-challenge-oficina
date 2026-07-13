@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/database/prisma.module';
 import { CatalogoGateway } from './application/ports/catalogo.gateway';
+import { NotificadorDeStatusGateway } from './application/ports/notificador-status.gateway';
 import { OrdemServicoGateway } from './application/ports/ordem-servico.gateway';
 import {
   CATALOGO_GATEWAY,
+  NOTIFICADOR_STATUS_GATEWAY,
   ORDEM_SERVICO_GATEWAY,
 } from './application/ports/tokens';
 import { AtualizarOrdemServicoUseCase } from './application/use-cases/atualizar-ordem-servico.use-case';
@@ -13,6 +15,7 @@ import { CriarOrdemServicoUseCase } from './application/use-cases/criar-ordem-se
 import { ListarOrdensServicoUseCase } from './application/use-cases/listar-ordens-servico.use-case';
 import { RemoverOrdemServicoUseCase } from './application/use-cases/remover-ordem-servico.use-case';
 import { OrdensServicoController } from './infra/http/controllers/ordens-servico.controller';
+import { SendGridNotificadorStatusGateway } from './infra/notification/sendgrid-notificador-status.gateway';
 import { PrismaCatalogoGateway } from './infra/persistence/prisma-catalogo.gateway';
 import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-servico.gateway';
 
@@ -27,8 +30,13 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
   providers: [
     PrismaOrdemServicoGateway,
     PrismaCatalogoGateway,
+    SendGridNotificadorStatusGateway,
     { provide: ORDEM_SERVICO_GATEWAY, useExisting: PrismaOrdemServicoGateway },
     { provide: CATALOGO_GATEWAY, useExisting: PrismaCatalogoGateway },
+    {
+      provide: NOTIFICADOR_STATUS_GATEWAY,
+      useExisting: SendGridNotificadorStatusGateway,
+    },
     {
       provide: CriarOrdemServicoUseCase,
       useFactory: (ordens: OrdemServicoGateway, catalogo: CatalogoGateway) =>
@@ -49,9 +57,16 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
     },
     {
       provide: AtualizarOrdemServicoUseCase,
-      useFactory: (ordens: OrdemServicoGateway, catalogo: CatalogoGateway) =>
-        new AtualizarOrdemServicoUseCase(ordens, catalogo),
-      inject: [ORDEM_SERVICO_GATEWAY, CATALOGO_GATEWAY],
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        catalogo: CatalogoGateway,
+        notificador: NotificadorDeStatusGateway,
+      ) => new AtualizarOrdemServicoUseCase(ordens, catalogo, notificador),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        CATALOGO_GATEWAY,
+        NOTIFICADOR_STATUS_GATEWAY,
+      ],
     },
     {
       provide: RemoverOrdemServicoUseCase,

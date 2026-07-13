@@ -5,6 +5,7 @@ import {
   OrdemServicoOutputMapper,
 } from '../mappers/ordem-servico-output.mapper';
 import { CatalogoGateway } from '../ports/catalogo.gateway';
+import { NotificadorDeStatusGateway } from '../ports/notificador-status.gateway';
 import {
   OrdemServicoGateway,
   RegistroDeStatus,
@@ -27,6 +28,7 @@ export class AtualizarOrdemServicoUseCase {
   constructor(
     private readonly ordens: OrdemServicoGateway,
     private readonly catalogo: CatalogoGateway,
+    private readonly notificador: NotificadorDeStatusGateway,
   ) {}
 
   async execute(
@@ -63,6 +65,18 @@ export class AtualizarOrdemServicoUseCase {
         : { statusAnterior, statusNovo: ordem.status };
 
     const detalhe = await this.ordens.atualizar(id, ordem, registro);
+
+    if (registro) {
+      await this.notificador.notificarMudancaDeStatus({
+        destinatario: {
+          nome: detalhe.cliente.nome,
+          email: detalhe.cliente.email ?? '',
+        },
+        numeroOS: detalhe.ordem.numero,
+        statusAnterior: registro.statusAnterior,
+        statusNovo: registro.statusNovo,
+      });
+    }
 
     return OrdemServicoOutputMapper.toOutput(detalhe);
   }

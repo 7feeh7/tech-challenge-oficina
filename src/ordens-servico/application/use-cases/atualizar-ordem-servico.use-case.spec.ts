@@ -5,21 +5,25 @@ import {
 import { StatusOS } from '../../domain/status-os';
 import { AtualizarOrdemServicoUseCase } from './atualizar-ordem-servico.use-case';
 import {
+  clienteFake,
   criarCatalogoMock,
   criarDetalheFake,
   criarGatewayMock,
+  criarNotificadorMock,
   criarOrdemFake,
 } from './test-doubles';
 
 describe('AtualizarOrdemServicoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
   let catalogo: ReturnType<typeof criarCatalogoMock>;
+  let notificador: ReturnType<typeof criarNotificadorMock>;
   let useCase: AtualizarOrdemServicoUseCase;
 
   beforeEach(() => {
     gateway = criarGatewayMock();
     catalogo = criarCatalogoMock();
-    useCase = new AtualizarOrdemServicoUseCase(gateway, catalogo);
+    notificador = criarNotificadorMock();
+    useCase = new AtualizarOrdemServicoUseCase(gateway, catalogo, notificador);
     gateway.atualizar.mockImplementation((_id, ordem) =>
       Promise.resolve({ ...criarDetalheFake(), ordem }),
     );
@@ -80,5 +84,37 @@ describe('AtualizarOrdemServicoUseCase', () => {
     const ordemPersistida = gateway.atualizar.mock.calls[0][1];
     expect(ordemPersistida.pecasAdicionadas).toHaveLength(1);
     expect(ordemPersistida.valorTotal()).toBe(160);
+  });
+
+  describe('notificação de status', () => {
+    it('avisa o cliente quando o status muda', async () => {
+      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
+
+      await useCase.execute('uuid-os1', { status: StatusOS.EM_DIAGNOSTICO });
+
+      expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
+        destinatario: { nome: clienteFake.nome, email: clienteFake.email },
+        numeroOS: 1,
+        statusAnterior: StatusOS.RECEBIDA,
+        statusNovo: StatusOS.EM_DIAGNOSTICO,
+      });
+    });
+
+    it('não avisa o cliente quando só os dados mudam', async () => {
+      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
+
+      await useCase.execute('uuid-os1', { diagnostico: 'Correia gasta' });
+
+      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
+    });
+
+    it('não avisa o cliente quando a transição é recusada', async () => {
+      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
+
+      await expect(
+        useCase.execute('uuid-os1', { status: StatusOS.ENTREGUE }),
+      ).rejects.toThrow(TransicaoStatusInvalidaError);
+      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
+    });
   });
 });
