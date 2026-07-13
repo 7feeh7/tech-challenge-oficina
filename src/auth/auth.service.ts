@@ -1,32 +1,19 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcryptjs';
+import { ValidarCredenciaisUseCase } from '@/usuarios/application/use-cases/validar-credenciais.use-case';
 import { LoginDto } from './dto/login.dto';
-import { UsuariosService } from '@/usuarios/usuarios.service';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly usuariosService: UsuariosService,
+    private readonly validarCredenciais: ValidarCredenciaisUseCase,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
   async login(loginDto: LoginDto) {
-    const usuario = await this.usuariosService.findByEmailParaAuth(
-      loginDto.email,
-    );
-
-    if (!usuario || !usuario.ativo) {
-      throw new UnauthorizedException('Credenciais inválidas.');
-    }
-
-    const senhaValida = await bcrypt.compare(loginDto.senha, usuario.senhaHash);
-
-    if (!senhaValida) {
-      throw new UnauthorizedException('Credenciais inválidas.');
-    }
+    const usuario = await this.validarCredenciais.execute(loginDto);
 
     const payload = {
       sub: usuario.id,

@@ -1,30 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { ValidarCredenciaisUseCase } from '@/usuarios/application/use-cases/validar-credenciais.use-case';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { CredenciaisInvalidasError } from '@/usuarios/domain/usuario.errors';
+import { Usuario } from '@/usuarios/entities/usuario.entity';
 import { AuthService } from './auth.service';
-import { UsuariosService } from '@/usuarios/usuarios.service';
-import { PerfilUsuario } from '@/generated/prisma/enums';
 
-jest.mock('bcryptjs', () => ({
-  compare: jest.fn(),
-}));
-
-import * as bcrypt from 'bcryptjs';
-
-const usuarioMock = {
+const usuarioMock = new Usuario({
   id: 'uuid-u1',
   nome: 'Admin',
   email: 'admin@oficina.com',
   senhaHash: 'hash-fake',
   perfil: PerfilUsuario.ADMINISTRADOR,
-  ativo: true,
-  criadoEm: new Date(),
-  atualizadoEm: new Date(),
-};
+});
 
-const usuariosServiceMock = {
-  findByEmailParaAuth: jest.fn(),
+const validarCredenciaisMock = {
+  execute: jest.fn(),
 };
 
 const jwtServiceMock = {
@@ -42,7 +34,10 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        { provide: UsuariosService, useValue: usuariosServiceMock },
+        {
+          provide: ValidarCredenciaisUseCase,
+          useValue: validarCredenciaisMock,
+        },
         { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
       ],
@@ -59,57 +54,35 @@ describe('AuthService', () => {
   describe('login', () => {
     const loginDto = { email: 'admin@oficina.com', senha: 'senhaSegura123' };
 
-    it('deve retornar accessToken e dados do usuário quando credenciais são válidas', async () => {
+    it('deve retornar o token quando as credenciais são válidas', async () => {
       // Arrange
-      usuariosServiceMock.findByEmailParaAuth.mockResolvedValue(usuarioMock);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      validarCredenciaisMock.execute.mockResolvedValue(usuarioMock);
       jwtServiceMock.signAsync.mockResolvedValue('token-fake');
 
       // Act
       const result = await service.login(loginDto);
 
       // Assert
+      expect(validarCredenciaisMock.execute).toHaveBeenCalledWith(loginDto);
       expect(result).toHaveProperty('token', 'token-fake');
     });
 
-    it('deve lançar UnauthorizedException quando usuário não existe', async () => {
+    it('deve propagar CredenciaisInvalidasError quando o caso de uso recusa o login', async () => {
       // Arrange
-      usuariosServiceMock.findByEmailParaAuth.mockResolvedValue(null);
+      validarCredenciaisMock.execute.mockRejectedValue(
+        new CredenciaisInvalidasError(),
+      );
 
       // Act & Assert
       await expect(service.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
+        CredenciaisInvalidasError,
       );
-    });
-
-    it('deve lançar UnauthorizedException quando usuário está inativo', async () => {
-      // Arrange
-      usuariosServiceMock.findByEmailParaAuth.mockResolvedValue({
-        ...usuarioMock,
-        ativo: false,
-      });
-
-      // Act & Assert
-      await expect(service.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('deve lançar UnauthorizedException quando senha é inválida', async () => {
-      // Arrange
-      usuariosServiceMock.findByEmailParaAuth.mockResolvedValue(usuarioMock);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
-
-      // Act & Assert
-      await expect(service.login(loginDto)).rejects.toThrow(
-        UnauthorizedException,
-      );
+      expect(jwtServiceMock.signAsync).not.toHaveBeenCalled();
     });
 
     it('deve chamar jwtService.signAsync com payload correto', async () => {
       // Arrange
-      usuariosServiceMock.findByEmailParaAuth.mockResolvedValue(usuarioMock);
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      validarCredenciaisMock.execute.mockResolvedValue(usuarioMock);
 
       // Act
       await service.login(loginDto);
@@ -117,8 +90,8 @@ describe('AuthService', () => {
       // Assert
       expect(jwtServiceMock.signAsync).toHaveBeenCalledWith(
         {
-          sub: usuarioMock.id,
-          email: usuarioMock.email,
+          sub: 'uuid-u1',
+          email: 'admin@oficina.com',
           perfil: PerfilUsuario.ADMINISTRADOR,
         },
         { secret: 'secret-de-teste' },

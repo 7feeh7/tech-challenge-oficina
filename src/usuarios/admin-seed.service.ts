@@ -11,7 +11,7 @@ export class AdminSeedService implements OnModuleInit {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly configService: ConfigService,
-  ) { }
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const adminJaExiste = await this.prismaService.usuario.findFirst({
@@ -22,11 +22,11 @@ export class AdminSeedService implements OnModuleInit {
       return;
     }
 
-    const nome = this.configService.get<string>('ADMIN_NOME') ?? 'Administrador';
+    const nome =
+      this.configService.get<string>('ADMIN_NOME') ?? 'Administrador';
     const email =
       this.configService.get<string>('ADMIN_EMAIL') ?? 'admin@oficina.com';
-    const senha =
-      this.configService.get<string>('ADMIN_SENHA') ?? 'admin12345';
+    const senha = this.configService.get<string>('ADMIN_SENHA') ?? 'admin12345';
 
     const senhaHash = await bcrypt.hash(senha, 10);
 
@@ -41,7 +41,7 @@ export class AdminSeedService implements OnModuleInit {
 
     this.logger.log(
       `Usuário administrador inicial criado com o e-mail "${email}". ` +
-      'Altere a senha após o primeiro login.',
+        'Altere a senha após o primeiro login.',
     );
   }
 }

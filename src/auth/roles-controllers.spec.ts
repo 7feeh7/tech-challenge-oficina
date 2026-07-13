@@ -3,7 +3,7 @@ import { PerfilUsuario } from '@/generated/prisma/enums';
 import { ROLES_KEY } from './decorators/roles.decorator';
 import { ClientesController } from '@/clientes/clientes.controller';
 import { VeiculosController } from '@/veiculos/veiculos.controller';
-import { UsuariosController } from '@/usuarios/usuarios.controller';
+import { UsuariosController } from '@/usuarios/infra/http/controllers/usuarios.controller';
 import { OrdensServicoController } from '@/ordens-servico/ordens-servico.controller';
 import { OrcamentosController } from '@/orcamentos/orcamentos.controller';
 import { MovimentacoesEstoqueController } from '@/movimentacoes-estoque/movimentacoes-estoque.controller';

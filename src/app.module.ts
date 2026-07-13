@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { DomainExceptionFilter } from './common/filters/domain-exception.filter';
 import { ClientesModule } from './clientes/clientes.module';
 import { ServicosModule } from './servicos/servicos.module';
 import { VeiculosModule } from './veiculos/veiculos.module';
@@ -42,6 +43,10 @@ import { RolesGuard } from './auth/guards/roles.guard';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: DomainExceptionFilter,
     },
   ],
 })

@@ -14,25 +14,35 @@ import {
   DefaultValuePipe,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { UsuariosService } from './usuarios.service';
-import { CreateUsuarioDto } from './dto/create-usuario.dto';
-import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { CreateUsuarioDto } from '@/usuarios/dto/create-usuario.dto';
+import { UpdateUsuarioDto } from '@/usuarios/dto/update-usuario.dto';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { AtualizarUsuarioUseCase } from '@/usuarios/application/use-cases/atualizar-usuario.use-case';
+import { BuscarUsuarioUseCase } from '@/usuarios/application/use-cases/buscar-usuario.use-case';
+import { CriarUsuarioUseCase } from '@/usuarios/application/use-cases/criar-usuario.use-case';
+import { ListarUsuariosUseCase } from '@/usuarios/application/use-cases/listar-usuarios.use-case';
+import { RemoverUsuarioUseCase } from '@/usuarios/application/use-cases/remover-usuario.use-case';
 
 @ApiTags('Usuários')
 @ApiBearerAuth()
 @Roles(PerfilUsuario.ADMINISTRADOR)
 @Controller('usuarios')
 export class UsuariosController {
-  constructor(private readonly usuariosService: UsuariosService) {}
+  constructor(
+    private readonly criarUsuario: CriarUsuarioUseCase,
+    private readonly listarUsuarios: ListarUsuariosUseCase,
+    private readonly buscarUsuario: BuscarUsuarioUseCase,
+    private readonly atualizarUsuario: AtualizarUsuarioUseCase,
+    private readonly removerUsuario: RemoverUsuarioUseCase,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -41,7 +51,7 @@ export class UsuariosController {
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 409, description: 'E-mail já cadastrado' })
   async create(@Body() createUsuarioDto: CreateUsuarioDto) {
-    return await this.usuariosService.create(createUsuarioDto);
+    return await this.criarUsuario.execute(createUsuarioDto);
   }
 
   @Get()
@@ -75,7 +85,7 @@ export class UsuariosController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('search') search?: string,
   ) {
-    return await this.usuariosService.findAll(page, limit, search);
+    return await this.listarUsuarios.execute(page, limit, search);
   }
 
   @Get(':id')
@@ -84,7 +94,7 @@ export class UsuariosController {
   @ApiResponse({ status: 200, description: 'Usuário encontrado' })
   @ApiResponse({ status: 404, description: 'Usuário não encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.usuariosService.findOne(id);
+    return await this.buscarUsuario.execute(id);
   }
 
   @Patch(':id')
@@ -98,7 +108,7 @@ export class UsuariosController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateUsuarioDto: UpdateUsuarioDto,
   ) {
-    return await this.usuariosService.update(id, updateUsuarioDto);
+    return await this.atualizarUsuario.execute(id, updateUsuarioDto);
   }
 
   @Delete(':id')
@@ -108,6 +118,6 @@ export class UsuariosController {
   @ApiResponse({ status: 200, description: 'Usuário removido com sucesso' })
   @ApiResponse({ status: 404, description: 'Usuário não encontrado' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.usuariosService.remove(id);
+    return await this.removerUsuario.execute(id);
   }
 }
