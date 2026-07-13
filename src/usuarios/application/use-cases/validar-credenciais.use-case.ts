@@ -1,5 +1,5 @@
-import { CredenciaisInvalidasError } from '../../domain/usuario.errors';
-import { Usuario } from '../../entities/usuario.entity';
+import { CredenciaisInvalidasError } from '../../domain/errors/usuario.errors';
+import { Usuario } from '../../domain/entities/usuario.entity';
 import { SenhaHasher } from '../ports/senha-hasher';
 import { UsuarioGateway } from '../ports/usuario.gateway';
 

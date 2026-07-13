@@ -1,4 +1,4 @@
-import { UsuarioNaoEncontradoError } from '../../domain/usuario.errors';
+import { UsuarioNaoEncontradoError } from '../../domain/errors/usuario.errors';
 import { UsuarioGateway } from '../ports/usuario.gateway';
 
 export class RemoverUsuarioUseCase {

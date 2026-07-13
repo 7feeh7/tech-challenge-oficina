@@ -1,5 +1,5 @@
-import { PerfilUsuario } from '../domain/perfil-usuario';
-import { NomeUsuarioInvalidoError } from '../domain/usuario.errors';
+import { PerfilUsuario } from '../perfil-usuario';
+import { NomeUsuarioInvalidoError } from '../errors/usuario.errors';
 import { Usuario } from './usuario.entity';
 
 const props = {

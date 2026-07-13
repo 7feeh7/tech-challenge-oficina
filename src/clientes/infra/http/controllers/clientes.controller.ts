@@ -13,9 +13,6 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
 } from '@nestjs/common';
-import { ClientesService } from './clientes.service';
-import { CreateClienteDto } from './dto/create-cliente.dto';
-import { UpdateClienteDto } from './dto/update-cliente.dto';
 import {
   ApiOperation,
   ApiParam,
@@ -25,14 +22,27 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { AtualizarClienteUseCase } from '@/clientes/application/use-cases/atualizar-cliente.use-case';
+import { BuscarClienteUseCase } from '@/clientes/application/use-cases/buscar-cliente.use-case';
+import { CriarClienteUseCase } from '@/clientes/application/use-cases/criar-cliente.use-case';
+import { ListarClientesUseCase } from '@/clientes/application/use-cases/listar-clientes.use-case';
+import { RemoverClienteUseCase } from '@/clientes/application/use-cases/remover-cliente.use-case';
+import { CreateClienteDto } from '@/clientes/infra/http/dtos/create-cliente.dto';
+import { UpdateClienteDto } from '@/clientes/infra/http/dtos/update-cliente.dto';
 
 @ApiTags('Clientes')
 @ApiBearerAuth()
 @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
 @Controller('clientes')
 export class ClientesController {
-  constructor(private readonly clientesService: ClientesService) {}
+  constructor(
+    private readonly criarCliente: CriarClienteUseCase,
+    private readonly listarClientes: ListarClientesUseCase,
+    private readonly buscarCliente: BuscarClienteUseCase,
+    private readonly atualizarCliente: AtualizarClienteUseCase,
+    private readonly removerCliente: RemoverClienteUseCase,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -41,7 +51,7 @@ export class ClientesController {
   @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 409, description: 'E-mail ou CPF/CNPJ já cadastrado' })
   async create(@Body() createClienteDto: CreateClienteDto) {
-    return await this.clientesService.create(createClienteDto);
+    return await this.criarCliente.execute(createClienteDto);
   }
 
   @Get()
@@ -75,7 +85,7 @@ export class ClientesController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('search') search?: string,
   ) {
-    return await this.clientesService.findAll(page, limit, search);
+    return await this.listarClientes.execute(page, limit, search);
   }
 
   @Get(':id')
@@ -84,7 +94,7 @@ export class ClientesController {
   @ApiResponse({ status: 200, description: 'Cliente encontrado' })
   @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.clientesService.findOne(id);
+    return await this.buscarCliente.execute(id);
   }
 
   @Patch(':id')
@@ -101,7 +111,7 @@ export class ClientesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateClienteDto: UpdateClienteDto,
   ) {
-    return await this.clientesService.update(id, updateClienteDto);
+    return await this.atualizarCliente.execute(id, updateClienteDto);
   }
 
   @Delete(':id')
@@ -111,6 +121,6 @@ export class ClientesController {
   @ApiResponse({ status: 200, description: 'Cliente removido com sucesso' })
   @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
   async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.clientesService.remove(id);
+    return await this.removerCliente.execute(id);
   }
 }

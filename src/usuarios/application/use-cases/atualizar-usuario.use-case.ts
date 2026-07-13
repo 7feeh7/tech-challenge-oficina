@@ -2,7 +2,7 @@ import { PerfilUsuario } from '../../domain/perfil-usuario';
 import {
   EmailUsuarioJaExisteError,
   UsuarioNaoEncontradoError,
-} from '../../domain/usuario.errors';
+} from '../../domain/errors/usuario.errors';
 import {
   UsuarioOutput,
   UsuarioOutputMapper,

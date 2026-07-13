@@ -3,8 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ValidarCredenciaisUseCase } from '@/usuarios/application/use-cases/validar-credenciais.use-case';
 import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
-import { CredenciaisInvalidasError } from '@/usuarios/domain/usuario.errors';
-import { Usuario } from '@/usuarios/entities/usuario.entity';
+import { CredenciaisInvalidasError } from '@/usuarios/domain/errors/usuario.errors';
+import { Usuario } from '@/usuarios/domain/entities/usuario.entity';
 import { AuthService } from './auth.service';
 
 const usuarioMock = new Usuario({

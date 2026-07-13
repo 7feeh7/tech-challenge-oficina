@@ -5,7 +5,7 @@ import {
   EmailUsuarioJaExisteError,
   NomeUsuarioInvalidoError,
   UsuarioNaoEncontradoError,
-} from '@/usuarios/domain/usuario.errors';
+} from '@/usuarios/domain/errors/usuario.errors';
 import { DomainExceptionFilter } from './domain-exception.filter';
 
 describe('DomainExceptionFilter', () => {

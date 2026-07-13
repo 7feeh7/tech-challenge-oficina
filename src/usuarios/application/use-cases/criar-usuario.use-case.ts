@@ -1,6 +1,6 @@
-import { Usuario } from '../../entities/usuario.entity';
+import { Usuario } from '../../domain/entities/usuario.entity';
 import { PerfilUsuario } from '../../domain/perfil-usuario';
-import { EmailUsuarioJaExisteError } from '../../domain/usuario.errors';
+import { EmailUsuarioJaExisteError } from '../../domain/errors/usuario.errors';
 import {
   UsuarioOutput,
   UsuarioOutputMapper,

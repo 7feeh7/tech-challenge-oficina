@@ -15,6 +15,106 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 - **Docker** / **Docker Compose**
 - **SonarQube** (análise de qualidade)
 
+## Estrutura do Projeto
+
+Os módulos **`usuarios`** e **`clientes`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
+
+```
+src/
+├── usuarios/                        # ✅ Refatorado para Clean Architecture (módulo de referência)
+│   ├── domain/                      # Camada mais interna — zero dependências externas
+│   │   ├── entities/
+│   │   │   └── usuario.entity.ts    # Entidade rica: valida e normaliza nome, e-mail e senha
+│   │   ├── errors/
+│   │   │   └── usuario.errors.ts    # Erros de domínio (herdam de DomainError)
+│   │   └── perfil-usuario.ts        # Enum de domínio (ADMINISTRADOR, ATENDENTE, MECANICO, ALMOXARIFE)
+│   ├── application/                 # Regras da aplicação — não conhece Nest nem Prisma
+│   │   ├── ports/                   # Interfaces implementadas pela infra (inversão de dependência)
+│   │   │   ├── usuario.gateway.ts   # Porta de persistência
+│   │   │   ├── senha-hasher.ts      # Porta de criptografia (hash / comparar)
+│   │   │   └── tokens.ts            # Símbolos de injeção das portas
+│   │   ├── use-cases/               # Um caso de uso por arquivo, classes puras (sem decorators)
+│   │   │   ├── criar-usuario.use-case.ts
+│   │   │   ├── listar-usuarios.use-case.ts
+│   │   │   ├── buscar-usuario.use-case.ts
+│   │   │   ├── atualizar-usuario.use-case.ts
+│   │   │   ├── remover-usuario.use-case.ts
+│   │   │   └── validar-credenciais.use-case.ts   # Consumido pelo módulo auth
+│   │   └── mappers/
+│   │       └── usuario-output.mapper.ts          # Entidade → saída da API (nunca expõe senhaHash)
+│   ├── infra/                       # Adaptadores — camada mais externa
+│   │   ├── http/
+│   │   │   ├── controllers/         # UsuariosController (injeta os casos de uso diretamente)
+│   │   │   └── dtos/                # Contrato de entrada HTTP (class-validator + Swagger)
+│   │   ├── persistence/             # PrismaUsuarioGateway + mapper Prisma ↔ domínio
+│   │   └── crypto/                  # BcryptSenhaHasher
+│   ├── admin-seed.service.ts        # Cria o administrador inicial no bootstrap
+│   └── usuarios.module.ts           # Wiring: liga as portas aos adaptadores
+│
+├── auth/                            # Autenticação JWT + autorização por perfil
+│   ├── decorators/                  # @Public(), @Roles()
+│   ├── guards/                      # JwtAuthGuard (global) e RolesGuard
+│   ├── dto/                         # LoginDto
+│   └── auth.service.ts              # Assina o JWT; a validação de credenciais é um caso de uso
+│
+├── clientes/                        # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # Cliente: nome, e-mail, telefone e CPF/CNPJ validados
+│   │   └── errors/                  # Erros de domínio de cliente
+│   ├── application/
+│   │   ├── ports/                   # ClienteGateway + token de injeção
+│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover cliente
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # ClientesController (injeta os casos de uso)
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaClienteGateway + mapper Prisma ↔ domínio
+│   └── clientes.module.ts
+│
+├── veiculos/                        # CRUD de veículos
+├── servicos/                        # Catálogo de serviços
+├── pecas/                           # Catálogo de peças
+├── movimentacoes-estoque/           # Entradas e saídas de estoque
+├── ordens-servico/                  # Ordens de serviço + máquina de estados (status-os.transitions.ts)
+├── orcamentos/                      # Orçamentos (aprovação baixa o estoque)
+│
+├── common/                          # Blocos compartilhados entre módulos
+│   ├── exceptions/                  # DomainError: base dos erros de domínio (validação, conflito, ...)
+│   ├── filters/                     # DomainExceptionFilter: traduz erro de domínio em status HTTP
+│   └── validators/                  # Validador de CPF/CNPJ
+│
+├── database/                        # PrismaService e PrismaModule
+├── generated/prisma/                # Client gerado pelo Prisma (não versionar manualmente)
+├── app.module.ts                    # Composição raiz: módulos, guards e filtros globais
+└── main.ts                          # Bootstrap (Fastify, ValidationPipe, Swagger)
+```
+
+Fora de `src/`:
+
+```
+prisma/                              # schema.prisma e migrations
+test/                                # testes end-to-end
+docs/                                # material de apoio
+Dockerfile · docker-compose.yml      # containerização
+```
+
+### Camadas e regra de dependência
+
+| Camada | O que vive aqui | Pode depender de |
+|---|---|---|
+| `domain` | Entidades, enums e erros de negócio | Nada (nem framework, nem banco) |
+| `application` | Casos de uso, portas e mappers de saída | `domain` |
+| `infra` | Controllers, DTOs HTTP, gateway Prisma, hasher bcrypt | `application` e `domain` |
+
+Os **DTOs ficam em `infra/http/dtos/`** porque são o contrato do mecanismo de entrega: carregam decorators de `class-validator` e Swagger, e só o controller os conhece. O contrato da camada de aplicação são as interfaces `...Input` declaradas junto de cada caso de uso, e o `...Output` dos mappers — esses sim independem de HTTP.
+
+Os casos de uso dependem apenas de **interfaces** (`UsuarioGateway`, `SenhaHasher`). Quem escolhe as implementações concretas é o `usuarios.module.ts`, o que permite testá-los isoladamente com dublês — sem banco e sem subir o Nest.
+
+Erros de domínio (`UsuarioNaoEncontradoError`, `EmailUsuarioJaExisteError`, ...) herdam das categorias de `common/exceptions` e são convertidos em respostas HTTP (404, 409, 400, 401) pelo `DomainExceptionFilter`, registrado globalmente. Assim nenhum caso de uso precisa importar exceções do NestJS.
+
+Os testes (`*.spec.ts`) ficam ao lado do arquivo que exercitam.
+
 ## Pré-requisitos
 
 - Node.js 24+

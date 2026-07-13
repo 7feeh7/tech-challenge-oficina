@@ -3,7 +3,7 @@ import {
   EmailUsuarioJaExisteError,
   NomeUsuarioInvalidoError,
   UsuarioNaoEncontradoError,
-} from '../../domain/usuario.errors';
+} from '../../domain/errors/usuario.errors';
 import { AtualizarUsuarioUseCase } from './atualizar-usuario.use-case';
 import {
   criarGatewayMock,

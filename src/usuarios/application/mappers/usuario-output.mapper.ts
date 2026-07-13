@@ -1,4 +1,4 @@
-import { Usuario } from '../../entities/usuario.entity';
+import { Usuario } from '../../domain/entities/usuario.entity';
 
 export interface UsuarioOutput {
   id?: string;

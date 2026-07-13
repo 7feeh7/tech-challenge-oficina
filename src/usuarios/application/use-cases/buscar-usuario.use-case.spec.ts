@@ -1,4 +1,4 @@
-import { UsuarioNaoEncontradoError } from '../../domain/usuario.errors';
+import { UsuarioNaoEncontradoError } from '../../domain/errors/usuario.errors';
 import { BuscarUsuarioUseCase } from './buscar-usuario.use-case';
 import { criarGatewayMock, criarUsuarioFake } from './test-doubles';
 

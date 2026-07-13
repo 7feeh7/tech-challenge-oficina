@@ -8,7 +8,7 @@ import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
 import {
   EmailUsuarioJaExisteError,
   UsuarioNaoEncontradoError,
-} from '@/usuarios/domain/usuario.errors';
+} from '@/usuarios/domain/errors/usuario.errors';
 import { UsuariosController } from './usuarios.controller';
 
 const usuarioMock = {

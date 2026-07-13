@@ -3,8 +3,8 @@ import {
   EmailUsuarioInvalidoError,
   EmailUsuarioJaExisteError,
   NomeUsuarioInvalidoError,
-} from '../../domain/usuario.errors';
-import { Usuario } from '../../entities/usuario.entity';
+} from '../../domain/errors/usuario.errors';
+import { Usuario } from '../../domain/entities/usuario.entity';
 import { CriarUsuarioUseCase } from './criar-usuario.use-case';
 import {
   criarGatewayMock,

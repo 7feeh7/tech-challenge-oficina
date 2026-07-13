@@ -1,5 +1,5 @@
 import { PerfilUsuario as PerfilPrisma } from '@/generated/prisma/enums';
-import { Usuario } from '../../entities/usuario.entity';
+import { Usuario } from '../../domain/entities/usuario.entity';
 import { PerfilUsuario } from '../../domain/perfil-usuario';
 
 interface UsuarioPrisma {

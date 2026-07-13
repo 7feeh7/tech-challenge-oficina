@@ -1,5 +1,5 @@
 import { PerfilUsuario } from '../../domain/perfil-usuario';
-import { Usuario, UsuarioProps } from '../../entities/usuario.entity';
+import { Usuario, UsuarioProps } from '../../domain/entities/usuario.entity';
 import { SenhaHasher } from '../ports/senha-hasher';
 import { UsuarioGateway } from '../ports/usuario.gateway';
 

@@ -6,7 +6,7 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { PerfilUsuario } from '../domain/perfil-usuario';
+import { PerfilUsuario } from '../../../domain/perfil-usuario';
 export class CreateUsuarioDto {
   @ApiProperty({
     example: 'Maria Souza',

@@ -1,9 +1,9 @@
-import { PerfilUsuario } from '../domain/perfil-usuario';
+import { PerfilUsuario } from '../perfil-usuario';
 import {
   EmailUsuarioInvalidoError,
   NomeUsuarioInvalidoError,
   SenhaHashInvalidaError,
-} from '../domain/usuario.errors';
+} from '../errors/usuario.errors';
 
 export interface UsuarioProps {
   id?: string;

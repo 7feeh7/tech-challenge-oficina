@@ -22,8 +22,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { CreateUsuarioDto } from '@/usuarios/dto/create-usuario.dto';
-import { UpdateUsuarioDto } from '@/usuarios/dto/update-usuario.dto';
+import { CreateUsuarioDto } from '@/usuarios/infra/http/dtos/create-usuario.dto';
+import { UpdateUsuarioDto } from '@/usuarios/infra/http/dtos/update-usuario.dto';
 import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
 import { AtualizarUsuarioUseCase } from '@/usuarios/application/use-cases/atualizar-usuario.use-case';
 import { BuscarUsuarioUseCase } from '@/usuarios/application/use-cases/buscar-usuario.use-case';

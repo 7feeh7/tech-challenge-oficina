@@ -1,4 +1,4 @@
-import { CredenciaisInvalidasError } from '../../domain/usuario.errors';
+import { CredenciaisInvalidasError } from '../../domain/errors/usuario.errors';
 import { ValidarCredenciaisUseCase } from './validar-credenciais.use-case';
 import {
   criarGatewayMock,
