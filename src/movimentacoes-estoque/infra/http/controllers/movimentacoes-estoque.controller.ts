@@ -4,25 +4,27 @@ import {
   Post,
   Body,
   Param,
-  Query,
-  ParseUUIDPipe,
-  ParseIntPipe,
-  DefaultValuePipe,
   HttpCode,
   HttpStatus,
+  ParseUUIDPipe,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import {
-  ApiTags,
   ApiOperation,
-  ApiResponse,
   ApiParam,
   ApiQuery,
+  ApiResponse,
+  ApiTags,
+  ApiBearerAuth,
 } from '@nestjs/swagger';
-import { MovimentacoesEstoqueService } from './movimentacoes-estoque.service';
-import { CreateMovimentacaoEstoqueDto } from './dto/create-movimentacao-estoque.dto';
 import { Roles } from '@/auth/decorators/roles.decorator';
-import { PerfilUsuario } from '@/generated/prisma/enums';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
+import { BuscarMovimentacaoUseCase } from '@/movimentacoes-estoque/application/use-cases/buscar-movimentacao.use-case';
+import { ListarMovimentacoesUseCase } from '@/movimentacoes-estoque/application/use-cases/listar-movimentacoes.use-case';
+import { RegistrarMovimentacaoUseCase } from '@/movimentacoes-estoque/application/use-cases/registrar-movimentacao.use-case';
+import { CreateMovimentacaoEstoqueDto } from '@/movimentacoes-estoque/infra/http/dtos/create-movimentacao-estoque.dto';
 
 @ApiTags('Movimentações de Estoque')
 @ApiBearerAuth()
@@ -30,7 +32,9 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 @Controller('movimentacoes-estoque')
 export class MovimentacoesEstoqueController {
   constructor(
-    private readonly movimentacoesEstoqueService: MovimentacoesEstoqueService,
+    private readonly registrarMovimentacao: RegistrarMovimentacaoUseCase,
+    private readonly listarMovimentacoes: ListarMovimentacoesUseCase,
+    private readonly buscarMovimentacao: BuscarMovimentacaoUseCase,
   ) {}
 
   @Post()
@@ -42,8 +46,10 @@ export class MovimentacoesEstoqueController {
   })
   @ApiResponse({ status: 400, description: 'Estoque insuficiente para baixa.' })
   @ApiResponse({ status: 404, description: 'Peça não encontrada.' })
-  create(@Body() createMovimentacaoEstoqueDto: CreateMovimentacaoEstoqueDto) {
-    return this.movimentacoesEstoqueService.create(
+  async create(
+    @Body() createMovimentacaoEstoqueDto: CreateMovimentacaoEstoqueDto,
+  ) {
+    return await this.registrarMovimentacao.execute(
       createMovimentacaoEstoqueDto,
     );
   }
@@ -59,12 +65,12 @@ export class MovimentacoesEstoqueController {
     format: 'uuid',
   })
   @ApiResponse({ status: 200, description: 'Lista paginada de movimentações.' })
-  findAll(
+  async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query('pecaId') pecaId?: string,
   ) {
-    return this.movimentacoesEstoqueService.findAll(page, limit, pecaId);
+    return await this.listarMovimentacoes.execute(page, limit, pecaId);
   }
 
   @Get(':id')
@@ -72,7 +78,7 @@ export class MovimentacoesEstoqueController {
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Movimentação encontrada.' })
   @ApiResponse({ status: 404, description: 'Movimentação não encontrada.' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.movimentacoesEstoqueService.findOne(id);
+  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.buscarMovimentacao.execute(id);
   }
 }

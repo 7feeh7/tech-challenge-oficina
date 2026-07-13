@@ -17,7 +17,7 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Estrutura do Projeto
 
-Os módulos **`usuarios`**, **`clientes`**, **`veiculos`**, **`servicos`** e **`pecas`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
+Os módulos **`usuarios`**, **`clientes`**, **`veiculos`**, **`servicos`**, **`pecas`** e **`movimentacoes-estoque`** já seguem a **Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Os demais módulos ainda seguem o layout flat da Fase 1 (`*.controller.ts` + `*.service.ts`) e estão sendo migrados para esse mesmo padrão.
 
 ```
 src/
@@ -117,7 +117,22 @@ src/
 │   │   └── persistence/             # PrismaPecaGateway + mapper (Decimal ↔ number)
 │   └── pecas.module.ts
 │
-├── movimentacoes-estoque/           # Entradas e saídas de estoque
+├── movimentacoes-estoque/           # ✅ Refatorado para Clean Architecture (mesmas camadas)
+│   ├── domain/
+│   │   ├── entities/                # MovimentacaoEstoque: calcula o saldo e recusa baixa sem estoque
+│   │   ├── errors/                  # Erros de domínio (inclui EstoqueInsuficienteError)
+│   │   └── tipo-movimentacao-estoque.ts   # Enum de domínio (ENTRADA / BAIXA)
+│   ├── application/
+│   │   ├── ports/                   # MovimentacaoEstoqueGateway (registro atômico) + token
+│   │   ├── use-cases/               # registrar, listar e buscar movimentação
+│   │   └── mappers/                 # Entidade → saída da API
+│   ├── infra/
+│   │   ├── http/
+│   │   │   ├── controllers/         # MovimentacoesEstoqueController
+│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   └── persistence/             # PrismaMovimentacaoEstoqueGateway (transação: histórico + saldo)
+│   └── movimentacoes-estoque.module.ts
+│
 ├── ordens-servico/                  # Ordens de serviço + máquina de estados (status-os.transitions.ts)
 ├── orcamentos/                      # Orçamentos (aprovação baixa o estoque)
 │

@@ -6,7 +6,7 @@ import { VeiculosController } from '@/veiculos/infra/http/controllers/veiculos.c
 import { UsuariosController } from '@/usuarios/infra/http/controllers/usuarios.controller';
 import { OrdensServicoController } from '@/ordens-servico/ordens-servico.controller';
 import { OrcamentosController } from '@/orcamentos/orcamentos.controller';
-import { MovimentacoesEstoqueController } from '@/movimentacoes-estoque/movimentacoes-estoque.controller';
+import { MovimentacoesEstoqueController } from '@/movimentacoes-estoque/infra/http/controllers/movimentacoes-estoque.controller';
 import { ServicosController } from '@/servicos/infra/http/controllers/servicos.controller';
 import { PecasController } from '@/pecas/infra/http/controllers/pecas.controller';
 

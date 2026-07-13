@@ -8,25 +8,25 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { TipoMovimentacaoEstoque } from '@/generated/prisma/enums';
+import { TipoMovimentacaoEstoque } from '@/movimentacoes-estoque/domain/tipo-movimentacao-estoque';
 
 export class CreateMovimentacaoEstoqueDto {
   @ApiProperty({ description: 'ID da peça', format: 'uuid' })
   @IsUUID()
-  pecaId: string;
+  pecaId!: string;
 
   @ApiProperty({
     enum: TipoMovimentacaoEstoque,
     description: 'Tipo: ENTRADA ou BAIXA',
   })
   @IsEnum(TipoMovimentacaoEstoque)
-  tipo: TipoMovimentacaoEstoque;
+  tipo!: TipoMovimentacaoEstoque;
 
   @ApiProperty({ description: 'Quantidade movimentada', minimum: 1 })
   @IsInt()
   @Min(1)
   @Type(() => Number)
-  quantidade: number;
+  quantidade!: number;
 
   @ApiPropertyOptional({
     description: 'ID da OS (quando for baixa por OS)',
