@@ -22,6 +22,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Roles } from '@/auth/decorators/roles.decorator';
+import { Public } from '@/auth/decorators/public.decorator'; // TEMPORÁRIO — remover
 import { CreateUsuarioDto } from '@/usuarios/infra/http/dtos/create-usuario.dto';
 import { UpdateUsuarioDto } from '@/usuarios/infra/http/dtos/update-usuario.dto';
 import { PerfilUsuario } from '@/usuarios/domain/perfil-usuario';
@@ -45,6 +46,12 @@ export class UsuariosController {
   ) {}
 
   @Post()
+  // ⚠️ TEMPORÁRIO — abre o cadastro de usuário sem login para recuperar o acesso.
+  // REVERTER depois: apague as duas linhas abaixo (@Public e @Roles()) e o import
+  // do Public. @Public() fura o JwtAuthGuard global; @Roles() vazio sobrepõe o
+  // @Roles(ADMINISTRADOR) da classe para o RolesGuard liberar esta rota.
+  @Public()
+  @Roles()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastra um novo usuário' })
   @ApiResponse({ status: 201, description: 'Usuário cadastrado com sucesso' })
