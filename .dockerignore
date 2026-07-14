@@ -1,6 +1,11 @@
 node_modules
 dist
 coverage
+
+# O client do Prisma é gerado dentro da imagem (ver Dockerfile). Copiar o da
+# máquina do dev mascararia a ausência do passo de generate — foi o que quebrou
+# o CI, onde o diretório não existe por não ser versionado.
+src/generated
 .scannerwork
 .env
 .env.*

@@ -19,6 +19,11 @@ jobs:
   test:
     name: Build e Testes
     runs-on: ubuntu-latest
+    env:
+      # O prisma.config.ts resolve DATABASE_URL ao ser carregado, e o runner não
+      # tem .env. Nada aqui conecta no banco (generate/lint/build/testes unitários
+      # são offline), então um valor fictício basta. O real vem do Secret do k8s.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,6 +36,11 @@ jobs:
 
       - name: Instalar dependências
         run: yarn install --frozen-lockfile
+
+      # src/generated/prisma não é versionado (está no .gitignore). Sem este passo
+      # o TypeScript não resolve nenhum tipo do Prisma e lint/build/testes quebram.
+      - name: Gerar o Prisma Client
+        run: yarn prisma generate
 
       - name: Lint
         run: yarn lint
