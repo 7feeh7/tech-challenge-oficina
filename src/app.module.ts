@@ -15,6 +15,7 @@ import { MovimentacoesEstoqueModule } from './movimentacoes-estoque/movimentacoe
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
       envFilePath: '.env',
     }),
     AuthModule,
+    HealthModule,
     ClientesModule,
     ServicosModule,
     VeiculosModule,
