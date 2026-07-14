@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/database/prisma.module';
+import { NotificadorDeStatusGateway } from '@/ordens-servico/application/ports/notificador-status.gateway';
+import { NOTIFICADOR_STATUS_GATEWAY } from '@/ordens-servico/application/ports/tokens';
+import { OrdensServicoModule } from '@/ordens-servico/ordens-servico.module';
 import { OrcamentoGateway } from './application/ports/orcamento.gateway';
 import { ORCAMENTO_GATEWAY } from './application/ports/tokens';
 import { AtualizarOrcamentoUseCase } from './application/use-cases/atualizar-orcamento.use-case';
@@ -14,18 +17,24 @@ import { PrismaOrcamentoGateway } from './infra/persistence/prisma-orcamento.gat
  * Wiring do módulo: liga a porta da camada de aplicação ao adaptador de
  * persistência. Os casos de uso são classes puras, por isso são instanciados
  * por factory em vez de resolvidos por decorator.
+ *
+ * Importa `OrdensServicoModule` porque gerar, aprovar e recusar um orçamento
+ * movem a OS pelo fluxo — e o cliente é avisado pelo mesmo notificador. A
+ * dependência é de mão única: o módulo de OS não conhece orçamentos.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, OrdensServicoModule],
   controllers: [OrcamentosController],
   providers: [
     PrismaOrcamentoGateway,
     { provide: ORCAMENTO_GATEWAY, useExisting: PrismaOrcamentoGateway },
     {
       provide: CriarOrcamentoUseCase,
-      useFactory: (gateway: OrcamentoGateway) =>
-        new CriarOrcamentoUseCase(gateway),
-      inject: [ORCAMENTO_GATEWAY],
+      useFactory: (
+        gateway: OrcamentoGateway,
+        notificador: NotificadorDeStatusGateway,
+      ) => new CriarOrcamentoUseCase(gateway, notificador),
+      inject: [ORCAMENTO_GATEWAY, NOTIFICADOR_STATUS_GATEWAY],
     },
     {
       provide: ListarOrcamentosUseCase,
@@ -41,9 +50,11 @@ import { PrismaOrcamentoGateway } from './infra/persistence/prisma-orcamento.gat
     },
     {
       provide: AtualizarOrcamentoUseCase,
-      useFactory: (gateway: OrcamentoGateway) =>
-        new AtualizarOrcamentoUseCase(gateway),
-      inject: [ORCAMENTO_GATEWAY],
+      useFactory: (
+        gateway: OrcamentoGateway,
+        notificador: NotificadorDeStatusGateway,
+      ) => new AtualizarOrcamentoUseCase(gateway, notificador),
+      inject: [ORCAMENTO_GATEWAY, NOTIFICADOR_STATUS_GATEWAY],
     },
     {
       provide: RemoverOrcamentoUseCase,

@@ -1,3 +1,4 @@
+import { NotificadorDeStatusGateway } from '@/ordens-servico/application/ports/notificador-status.gateway';
 import { Orcamento } from '../../domain/entities/orcamento.entity';
 import {
   EstoqueInsuficienteParaAprovacaoError,
@@ -9,7 +10,12 @@ import {
   OrcamentoOutput,
   OrcamentoOutputMapper,
 } from '../mappers/orcamento-output.mapper';
-import { BaixaDeEstoque, OrcamentoGateway } from '../ports/orcamento.gateway';
+import {
+  BaixaDeEstoque,
+  OrcamentoGateway,
+  ResultadoDaDecisao,
+} from '../ports/orcamento.gateway';
+import { notificarTransicao } from './notificar-transicao';
 
 export interface AtualizarOrcamentoInput {
   valorTotal?: number;
@@ -19,7 +25,10 @@ export interface AtualizarOrcamentoInput {
 }
 
 export class AtualizarOrcamentoUseCase {
-  constructor(private readonly orcamentos: OrcamentoGateway) {}
+  constructor(
+    private readonly orcamentos: OrcamentoGateway,
+    private readonly notificador: NotificadorDeStatusGateway,
+  ) {}
 
   async execute(
     id: string,
@@ -30,8 +39,12 @@ export class AtualizarOrcamentoUseCase {
       throw new OrcamentoNaoEncontradoError(id);
     }
 
+    // A decisão do cliente só repercute na OS na primeira vez: reenviar o mesmo
+    // status é idempotente e não baixa estoque nem mexe no fluxo de novo.
     const aprovandoAgora =
       input.status === StatusOrcamento.APROVADO && !orcamento.estaAprovado();
+    const rejeitandoAgora =
+      input.status === StatusOrcamento.REJEITADO && !orcamento.estaRejeitado();
 
     if (input.valorTotal !== undefined) {
       orcamento.alterarValorTotal(input.valorTotal);
@@ -47,7 +60,13 @@ export class AtualizarOrcamentoUseCase {
     }
 
     if (aprovandoAgora) {
-      return OrcamentoOutputMapper.toOutput(await this.aprovar(orcamento));
+      return await this.decidir(() => this.aprovar(orcamento));
+    }
+
+    if (rejeitandoAgora) {
+      return await this.decidir(() =>
+        this.orcamentos.rejeitarEDevolverParaDiagnostico(orcamento),
+      );
     }
 
     return OrcamentoOutputMapper.toOutput(
@@ -55,11 +74,22 @@ export class AtualizarOrcamentoUseCase {
     );
   }
 
+  /** Toda decisão que move a OS avisa o cliente da mudança de status. */
+  private async decidir(
+    aplicar: () => Promise<ResultadoDaDecisao>,
+  ): Promise<OrcamentoOutput> {
+    const resultado = await aplicar();
+
+    await notificarTransicao(this.notificador, resultado.transicao);
+
+    return OrcamentoOutputMapper.toOutput(resultado.orcamento);
+  }
+
   /**
    * Aprovar consome o estoque das peças da OS. A checagem acontece antes da
    * escrita: ou todas as baixas cabem, ou nenhuma é aplicada.
    */
-  private async aprovar(orcamento: Orcamento): Promise<Orcamento> {
+  private async aprovar(orcamento: Orcamento): Promise<ResultadoDaDecisao> {
     const ordem = await this.orcamentos.buscarOrdemComPecas(
       orcamento.ordemServicoId,
     );

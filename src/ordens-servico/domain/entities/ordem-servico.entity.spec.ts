@@ -64,6 +64,45 @@ describe('OrdemServico', () => {
     });
   });
 
+  describe('encerramento sem execução', () => {
+    it('encerra a OS quando o cliente desiste após recusar o orçamento', () => {
+      const ordem = criarOrdem(StatusOS.EM_DIAGNOSTICO);
+
+      ordem.alterarStatus(StatusOS.FINALIZADA);
+      ordem.alterarStatus(StatusOS.ENTREGUE);
+
+      expect(ordem.status).toBe(StatusOS.ENTREGUE);
+    });
+
+    it('encerra a OS que estava aguardando aprovação', () => {
+      const ordem = criarOrdem(StatusOS.AGUARDANDO_APROVACAO);
+
+      ordem.alterarStatus(StatusOS.FINALIZADA);
+
+      expect(ordem.status).toBe(StatusOS.FINALIZADA);
+    });
+
+    it('não carimba iniciadaEm numa OS encerrada sem execução', () => {
+      const ordem = criarOrdem(StatusOS.AGUARDANDO_APROVACAO);
+
+      ordem.alterarStatus(StatusOS.FINALIZADA);
+      ordem.alterarStatus(StatusOS.ENTREGUE);
+
+      // é isso que mantém a desistência fora das médias de tempo
+      expect(ordem.iniciadaEm).toBeNull();
+      expect(ordem.finalizadaEm).not.toBeNull();
+      expect(ordem.entregueEm).not.toBeNull();
+    });
+
+    it('não permite pular a execução a partir de RECEBIDA', () => {
+      const ordem = criarOrdem();
+
+      expect(() => ordem.alterarStatus(StatusOS.FINALIZADA)).toThrow(
+        TransicaoStatusInvalidaError,
+      );
+    });
+  });
+
   describe('marcos de tempo', () => {
     it('carimba iniciadaEm ao entrar em execução', () => {
       const ordem = criarOrdem(StatusOS.AGUARDANDO_APROVACAO);

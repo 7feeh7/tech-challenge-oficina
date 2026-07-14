@@ -81,5 +81,9 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
       inject: [ORDEM_SERVICO_GATEWAY],
     },
   ],
+  // O módulo de orçamentos também move a OS pelo fluxo (gerar, aprovar, recusar)
+  // e precisa avisar o cliente pelo mesmo canal — reusa esta porta em vez de
+  // declarar outro notificador.
+  exports: [NOTIFICADOR_STATUS_GATEWAY],
 })
 export class OrdensServicoModule {}

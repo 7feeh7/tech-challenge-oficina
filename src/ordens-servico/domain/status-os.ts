@@ -8,15 +8,28 @@ export enum StatusOS {
 }
 
 /**
+ * Fluxo normal:
  * RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → EM_EXECUCAO → FINALIZADA → ENTREGUE
- * (com os retornos permitidos para reavaliação)
+ *
+ * Retornos para reavaliação: a recusa de um orçamento devolve a OS ao
+ * diagnóstico, onde ela é revista e um novo orçamento é proposto.
+ *
+ * Encerramento sem execução: enquanto nada foi executado (nenhuma peça baixada),
+ * o cliente pode desistir. A OS vai direto para FINALIZADA — a oficina não tem
+ * mais o que fazer com o carro — e depois ENTREGUE, quando ele for retirado.
+ * A partir de EM_EXECUCAO isso não vale mais: o estoque já foi consumido.
  */
 export const TRANSICOES_VALIDAS: Record<StatusOS, StatusOS[]> = {
   [StatusOS.RECEBIDA]: [StatusOS.EM_DIAGNOSTICO, StatusOS.AGUARDANDO_APROVACAO],
-  [StatusOS.EM_DIAGNOSTICO]: [StatusOS.AGUARDANDO_APROVACAO, StatusOS.RECEBIDA],
+  [StatusOS.EM_DIAGNOSTICO]: [
+    StatusOS.AGUARDANDO_APROVACAO,
+    StatusOS.RECEBIDA,
+    StatusOS.FINALIZADA,
+  ],
   [StatusOS.AGUARDANDO_APROVACAO]: [
     StatusOS.EM_EXECUCAO,
     StatusOS.EM_DIAGNOSTICO,
+    StatusOS.FINALIZADA,
   ],
   [StatusOS.EM_EXECUCAO]: [StatusOS.FINALIZADA],
   [StatusOS.FINALIZADA]: [StatusOS.ENTREGUE],

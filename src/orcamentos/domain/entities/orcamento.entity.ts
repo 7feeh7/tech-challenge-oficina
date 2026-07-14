@@ -66,6 +66,10 @@ export class Orcamento {
     return this._status === StatusOrcamento.APROVADO;
   }
 
+  estaRejeitado(): boolean {
+    return this._status === StatusOrcamento.REJEITADO;
+  }
+
   alterarValorTotal(valorTotal: number): void {
     this._valorTotal = Orcamento.validarValor(valorTotal);
   }

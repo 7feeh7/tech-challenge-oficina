@@ -62,6 +62,31 @@ describe('CalcularTempoMedioUseCase', () => {
     expect(result.tempoMedioCicloTotalHoras).toBe(10);
   });
 
+  it('ignora no ciclo total a OS encerrada sem execução', async () => {
+    gateway.buscarMarcosDeTempo.mockResolvedValue([
+      // executada de verdade: 10h de ciclo
+      {
+        criadoEm: base,
+        iniciadaEm: somarHoras(1),
+        finalizadaEm: somarHoras(5),
+        entregueEm: somarHoras(10),
+      },
+      // cliente desistiu: foi entregue sem nunca ter entrado em execução
+      {
+        criadoEm: base,
+        iniciadaEm: null,
+        finalizadaEm: somarHoras(2),
+        entregueEm: somarHoras(100),
+      },
+    ]);
+
+    const result = await useCase.execute();
+
+    // as 100h da desistência não podem inflar o tempo de atendimento da oficina
+    expect(result.totalEntregues).toBe(1);
+    expect(result.tempoMedioCicloTotalHoras).toBe(10);
+  });
+
   it('devolve zero quando não há OS no período', async () => {
     gateway.buscarMarcosDeTempo.mockResolvedValue([]);
 

@@ -36,6 +36,46 @@ describe('StatusOS', () => {
   });
 
   /**
+   * O módulo de orçamentos move a OS por estas transições ao gerar, aprovar e
+   * recusar uma proposta. Apertar a máquina de estados sem rever aquele fluxo
+   * quebraria a criação de orçamentos em runtime — aqui isso falha antes.
+   */
+  describe('transições de que o fluxo de orçamento depende', () => {
+    it('gerar orçamento: da recepção ou do diagnóstico para aguardando aprovação', () => {
+      expect(
+        transicaoPermitida(StatusOS.RECEBIDA, StatusOS.AGUARDANDO_APROVACAO),
+      ).toBe(true);
+      expect(
+        transicaoPermitida(
+          StatusOS.EM_DIAGNOSTICO,
+          StatusOS.AGUARDANDO_APROVACAO,
+        ),
+      ).toBe(true);
+    });
+
+    it('aprovar: de aguardando aprovação para execução', () => {
+      expect(
+        transicaoPermitida(StatusOS.AGUARDANDO_APROVACAO, StatusOS.EM_EXECUCAO),
+      ).toBe(true);
+    });
+
+    it('recusar: de aguardando aprovação de volta ao diagnóstico', () => {
+      expect(
+        transicaoPermitida(
+          StatusOS.AGUARDANDO_APROVACAO,
+          StatusOS.EM_DIAGNOSTICO,
+        ),
+      ).toBe(true);
+    });
+
+    it('gerar orçamento para uma OS já em execução é recusado', () => {
+      expect(
+        transicaoPermitida(StatusOS.EM_EXECUCAO, StatusOS.AGUARDANDO_APROVACAO),
+      ).toBe(false);
+    });
+  });
+
+  /**
    * A listagem da fila ordena por `status: 'desc'` no Prisma, e o Postgres
    * ordena enums pela ordem de DECLARAÇÃO. Se alguém reordenar o enum no
    * schema, a prioridade da fila quebra silenciosamente — este teste falha

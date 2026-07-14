@@ -18,8 +18,12 @@ export interface TempoMedioOutput {
 
 /**
  * Tempo médio de execução (iniciadaEm → finalizadaEm) e de ciclo total
- * (criadoEm → entregueEm). Cada média considera apenas as OS que já
- * atingiram o marco correspondente.
+ * (criadoEm → entregueEm).
+ *
+ * As duas médias só olham para OS que passaram pela execução: uma OS encerrada
+ * sem execução — o cliente desistiu e levou o carro — tem `entregueEm` mas nunca
+ * teve `iniciadaEm`, e entraria no ciclo total distorcendo o tempo de atendimento
+ * real da oficina.
  */
 export class CalcularTempoMedioUseCase {
   constructor(private readonly ordens: OrdemServicoGateway) {}
@@ -28,7 +32,7 @@ export class CalcularTempoMedioUseCase {
     const marcos = await this.ordens.buscarMarcosDeTempo(dataInicio, dataFim);
 
     const executadas = marcos.filter((o) => o.iniciadaEm && o.finalizadaEm);
-    const entregues = marcos.filter((o) => o.entregueEm);
+    const entregues = marcos.filter((o) => o.entregueEm && o.iniciadaEm);
 
     const tempoMedioExecucaoMs = media(
       executadas.map(

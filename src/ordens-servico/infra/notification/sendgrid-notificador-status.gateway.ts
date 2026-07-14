@@ -68,7 +68,6 @@ export class SendGridNotificadorStatusGateway implements NotificadorDeStatusGate
         `Notificação da OS ${notificacao.numeroOS ?? '?'} enviada para ${notificacao.destinatario.email}.`,
       );
     } catch (error) {
-      // A OS já foi atualizada; o e-mail é um efeito colateral que pode falhar.
       this.logger.error(
         `Falha ao notificar a mudança de status da OS ${notificacao.numeroOS ?? '?'}.`,
         error instanceof Error ? error.stack : String(error),

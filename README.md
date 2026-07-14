@@ -376,8 +376,35 @@ Sem filtro, a listagem devolve a **fila de trabalho**:
 
 Informar `?status=` consulta um status específico, inclusive os encerrados (útil para auditoria e para o histórico do cliente).
 
+### Máquina de estados da OS
+
+As transições válidas vivem em [status-os.ts](src/ordens-servico/domain/status-os.ts) e são aplicadas pela entidade `OrdemServico.alterarStatus()`, que também carimba os marcos de tempo (`iniciadaEm`, `finalizadaEm`, `entregueEm`).
+
+**Todos** os caminhos que movem a OS passam por ela — inclusive os disparados pelo módulo de orçamentos, que carrega a entidade dentro da própria transação. Uma transição inválida devolve `400` e desfaz a transação inteira: não fica orçamento gravado com a OS parada.
+
+### Recusa do orçamento, renegociação e desistência
+
+A decisão do cliente sobre o preço **não é um status da OS** — os seis status descrevem onde o carro está no processo, e a decisão comercial vive no orçamento (`APROVADO` / `REJEITADO`, com `motivoRejeicao` e `rejeitadoEm`).
+
+- **Recusa** (`PATCH /orcamentos/:id` com `status: REJEITADO`): é uma rodada de negociação. O orçamento é rejeitado e a OS **volta para `EM_DIAGNOSTICO`**, para ser reavaliada.
+- **Nova proposta**: basta um novo `POST /orcamentos` com o mesmo `ordemServicoId` — uma OS aceita vários orçamentos, e a negociação inteira fica auditável em `GET /ordens-servico/:id`. Só pode existir **uma proposta viva por vez**: criar um segundo orçamento enquanto o atual aguarda aprovação devolve `409`.
+- **Desistência**: se o cliente não quer mais o serviço, a OS é encerrada **sem execução** — `EM_DIAGNOSTICO` ou `AGUARDANDO_APROVACAO` → `FINALIZADA` → `ENTREGUE`. Depois que a execução começou isso não vale mais, porque o estoque já foi consumido.
+
+Uma OS encerrada sem execução nunca tem `iniciadaEm`, e por isso **fica fora das métricas de tempo** — uma desistência não distorce o tempo médio de atendimento da oficina.
+
 ### Notificação de status por e-mail
 
-Toda mudança de status via `PATCH /ordens-servico/:id` dispara um e-mail ao cliente da OS, pelo **SendGrid**. O envio é *best-effort*: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada.
+**Toda** mudança de status da OS avisa o cliente por e-mail, pelo **SendGrid** — inclusive as disparadas pelo módulo de orçamentos:
 
-A regra vive no caso de uso, mas ele só conhece a porta `NotificadorDeStatusGateway` — trocar SendGrid por SMS ou webhook é escrever outro adaptador em `infra/notification/`, sem tocar no domínio.
+| Ação | Transição | Aviso |
+|---|---|---|
+| `PATCH /ordens-servico/:id` | qualquer transição válida | ✉️ |
+| `POST /orcamentos` | → `AGUARDANDO_APROVACAO` | ✉️ |
+| `PATCH /orcamentos/:id` (aprovar) | → `EM_EXECUCAO` | ✉️ |
+| `PATCH /orcamentos/:id` (recusar) | → `EM_DIAGNOSTICO` | ✉️ |
+
+O aviso só sai quando a OS **realmente muda de status**: reenviar a mesma decisão é idempotente e não gera novo e-mail.
+
+O envio é *best-effort*: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
+
+A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Trocar SendGrid por SMS ou webhook é escrever outro adaptador em `ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
