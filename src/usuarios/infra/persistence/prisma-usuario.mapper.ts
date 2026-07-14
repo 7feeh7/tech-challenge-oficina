@@ -14,7 +14,7 @@ interface UsuarioPrisma {
 }
 
 export class PrismaUsuarioMapper {
-  static toDomain(raw: UsuarioPrisma): Usuario {
+  static toDomain(this: void, raw: UsuarioPrisma): Usuario {
     return new Usuario({ ...raw, perfil: raw.perfil as PerfilUsuario });
   }
 

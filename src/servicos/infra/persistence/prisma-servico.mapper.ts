@@ -13,7 +13,7 @@ export interface ServicoPrisma {
 }
 
 export class PrismaServicoMapper {
-  static toDomain(raw: ServicoPrisma): Servico {
+  static toDomain(this: void, raw: ServicoPrisma): Servico {
     return new Servico({ ...raw, precoBase: Number(raw.precoBase) });
   }
 

@@ -16,7 +16,7 @@ export interface OrcamentoPrisma {
 }
 
 export class PrismaOrcamentoMapper {
-  static toDomain(raw: OrcamentoPrisma): Orcamento {
+  static toDomain(this: void, raw: OrcamentoPrisma): Orcamento {
     return new Orcamento({
       ...raw,
       valorTotal: Number(raw.valorTotal),

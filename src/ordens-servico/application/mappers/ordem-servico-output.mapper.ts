@@ -31,11 +31,10 @@ export interface OrdemServicoOutput extends OrdemServicoResumoOutput {
 }
 
 export class OrdemServicoOutputMapper {
-  static toResumo({
-    ordem,
-    cliente,
-    veiculo,
-  }: OrdemServicoResumo): OrdemServicoResumoOutput {
+  static toResumo(
+    this: void,
+    { ordem, cliente, veiculo }: OrdemServicoResumo,
+  ): OrdemServicoResumoOutput {
     return {
       id: ordem.id,
       numero: ordem.numero,

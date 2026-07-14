@@ -40,7 +40,11 @@ export class AtualizarServicoUseCase {
       servico.alterarTempoEstimado(input.tempoEstimadoMin);
     }
     if (input.ativo !== undefined) {
-      input.ativo ? servico.ativar() : servico.desativar();
+      if (input.ativo) {
+        servico.ativar();
+      } else {
+        servico.desativar();
+      }
     }
 
     return ServicoOutputMapper.toOutput(

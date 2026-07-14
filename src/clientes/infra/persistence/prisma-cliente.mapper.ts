@@ -11,7 +11,7 @@ export interface ClientePrisma {
 }
 
 export class PrismaClienteMapper {
-  static toDomain(raw: ClientePrisma): Cliente {
+  static toDomain(this: void, raw: ClientePrisma): Cliente {
     return new Cliente(raw);
   }
 

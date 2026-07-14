@@ -12,7 +12,7 @@ export interface VeiculoPrisma {
 }
 
 export class PrismaVeiculoMapper {
-  static toDomain(raw: VeiculoPrisma): Veiculo {
+  static toDomain(this: void, raw: VeiculoPrisma): Veiculo {
     return new Veiculo(raw);
   }
 

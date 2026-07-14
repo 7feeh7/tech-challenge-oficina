@@ -30,18 +30,39 @@ export class AdminSeedService implements OnModuleInit {
 
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    await this.prismaService.usuario.create({
-      data: {
-        nome,
-        email,
-        senhaHash,
-        perfil: PerfilUsuario.ADMINISTRADOR,
-      },
-    });
+    try {
+      await this.prismaService.usuario.create({
+        data: {
+          nome,
+          email,
+          senhaHash,
+          perfil: PerfilUsuario.ADMINISTRADOR,
+        },
+      });
+    } catch (erro) {
+      // Várias réplicas sobem juntas: todas podem passar pela verificação acima
+      // antes que qualquer uma insira. Quem perder a corrida recebe violação da
+      // constraint única de e-mail — o admin já existe, então não é erro. Sem
+      // isto, o pod perdedor quebraria o bootstrap e entraria em CrashLoopBackOff.
+      if (this.ehEmailDuplicado(erro)) {
+        return;
+      }
+
+      throw erro;
+    }
 
     this.logger.log(
       `Usuário administrador inicial criado com o e-mail "${email}". ` +
         'Altere a senha após o primeiro login.',
+    );
+  }
+
+  private ehEmailDuplicado(erro: unknown): boolean {
+    return (
+      typeof erro === 'object' &&
+      erro !== null &&
+      'code' in erro &&
+      erro.code === 'P2002'
     );
   }
 }

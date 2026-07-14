@@ -40,7 +40,11 @@ export class AtualizarPecaUseCase {
       peca.alterarEstoqueMinimo(input.estoqueMinimo);
     }
     if (input.ativo !== undefined) {
-      input.ativo ? peca.ativar() : peca.desativar();
+      if (input.ativo) {
+        peca.ativar();
+      } else {
+        peca.desativar();
+      }
     }
 
     return PecaOutputMapper.toOutput(await this.pecas.atualizar(id, peca));

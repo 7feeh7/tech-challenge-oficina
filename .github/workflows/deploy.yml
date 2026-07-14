@@ -1,0 +1,130 @@
+name: CI/CD - Build, Test e Deploy (EKS)
+
+# Executa somente na branch main.
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+  K8S_NAMESPACE: oficina
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Build da aplicação + execução dos testes automatizados
+  # ---------------------------------------------------------------------------
+  test:
+    name: Build e Testes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Instalar dependências
+        run: yarn install --frozen-lockfile
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
+
+      - name: Testes com cobertura
+        run: yarn test:cov
+
+  # ---------------------------------------------------------------------------
+  # 2) Build/push da imagem Docker (ECR) + deploy no cluster EKS
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy no EKS
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push da imagem Docker
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$ECR_REPOSITORY:latest"
+
+      - name: Configurar kubectl para o cluster EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "$EKS_CLUSTER_NAME"
+
+      - name: Namespace e ConfigMap
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+
+      - name: Criar/atualizar Secret a partir dos GitHub Secrets
+        run: |
+          kubectl create secret generic oficina-secret \
+            --namespace "$K8S_NAMESPACE" \
+            --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
+            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
+            --from-literal=SENDGRID_API_KEY='${{ secrets.SENDGRID_API_KEY }}' \
+            --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # As migrations rodam UMA vez, num Job dentro do cluster (o RDS é privado e
+      # não é alcançável a partir deste runner). Se o Job falhar, o deploy para
+      # aqui e os pods antigos seguem servindo.
+      - name: Migrations do banco (Job)
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # O spec de um Job é imutável: remove a execução anterior antes de recriar.
+          kubectl delete job oficina-migrate \
+            --namespace "$K8S_NAMESPACE" --ignore-not-found
+
+          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
+            k8s/migration-job.yaml | kubectl apply -f -
+
+          kubectl wait --for=condition=complete job/oficina-migrate \
+            --namespace "$K8S_NAMESPACE" --timeout=300s
+
+      - name: Logs das migrations em caso de falha
+        if: failure()
+        run: |
+          kubectl logs job/oficina-migrate --namespace "$K8S_NAMESPACE" --tail=100 || true
+
+      - name: Aplicar Deployment, Service e HPA
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Injeta a URL do ECR no manifesto antes de aplicar.
+          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
+            k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+
+      - name: Aguardar rollout
+        run: |
+          kubectl rollout status deployment/oficina-api \
+            --namespace "$K8S_NAMESPACE" --timeout=180s

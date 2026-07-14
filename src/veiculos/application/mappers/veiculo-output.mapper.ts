@@ -15,7 +15,7 @@ export interface VeiculoDetalheOutput extends VeiculoOutput {
 }
 
 export class VeiculoOutputMapper {
-  static toOutput(veiculo: Veiculo): VeiculoOutput {
+  static toOutput(this: void, veiculo: Veiculo): VeiculoOutput {
     return {
       id: veiculo.id,
       placa: veiculo.placa,

@@ -7,7 +7,7 @@ import { PrismaService } from '@/database/prisma.service';
 @Public()
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get()
   @ApiOperation({ summary: 'Liveness: o processo está de pé' })

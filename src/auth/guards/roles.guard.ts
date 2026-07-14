@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PerfilUsuario } from '@/generated/prisma/enums';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { RequisicaoAutenticada } from '../jwt-payload';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -20,9 +21,9 @@ export class RolesGuard implements CanActivate {
 
     if (!requiredRoles || requiredRoles.length === 0) return true;
 
-    const { user } = context.switchToHttp().getRequest();
+    const { user } = context.switchToHttp().getRequest<RequisicaoAutenticada>();
 
-    if (!requiredRoles.includes(user?.perfil)) {
+    if (!user || !requiredRoles.includes(user.perfil)) {
       throw new ForbiddenException(
         'Você não tem permissão para acessar este recurso.',
       );

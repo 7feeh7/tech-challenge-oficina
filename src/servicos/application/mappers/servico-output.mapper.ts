@@ -10,7 +10,7 @@ export interface ServicoOutput {
 }
 
 export class ServicoOutputMapper {
-  static toOutput(servico: Servico): ServicoOutput {
+  static toOutput(this: void, servico: Servico): ServicoOutput {
     return {
       id: servico.id,
       nome: servico.nome,

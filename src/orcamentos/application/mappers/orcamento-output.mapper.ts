@@ -14,7 +14,7 @@ export interface OrcamentoOutput {
 }
 
 export class OrcamentoOutputMapper {
-  static toOutput(orcamento: Orcamento): OrcamentoOutput {
+  static toOutput(this: void, orcamento: Orcamento): OrcamentoOutput {
     return {
       id: orcamento.id,
       ordemServicoId: orcamento.ordemServicoId,

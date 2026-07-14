@@ -12,7 +12,7 @@ export interface PecaOutput {
 }
 
 export class PecaOutputMapper {
-  static toOutput(peca: Peca): PecaOutput {
+  static toOutput(this: void, peca: Peca): PecaOutput {
     return {
       id: peca.id,
       codigo: peca.codigo,

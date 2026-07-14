@@ -9,7 +9,7 @@ export interface UsuarioOutput {
 }
 
 export class UsuarioOutputMapper {
-  static toOutput(usuario: Usuario): UsuarioOutput {
+  static toOutput(this: void, usuario: Usuario): UsuarioOutput {
     return {
       id: usuario.id,
       nome: usuario.nome,

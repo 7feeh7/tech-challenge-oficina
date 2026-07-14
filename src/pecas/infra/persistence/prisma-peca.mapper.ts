@@ -15,7 +15,7 @@ export interface PecaPrisma {
 }
 
 export class PrismaPecaMapper {
-  static toDomain(raw: PecaPrisma): Peca {
+  static toDomain(this: void, raw: PecaPrisma): Peca {
     return new Peca({ ...raw, precoUnitario: Number(raw.precoUnitario) });
   }
 

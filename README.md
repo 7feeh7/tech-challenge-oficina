@@ -241,7 +241,7 @@ docker compose up --build
 
 A API ficará disponível em `http://localhost:3000` e o Postgres em `localhost:5432`.
 
-> Na primeira execução, rode as migrations a partir da máquina host (ver passo abaixo) ou execute dentro do container.
+> O container da API aplica as migrations antes de subir (`command` no `docker-compose.yml`), então não é preciso rodar nada à mão. Em produção quem migra é o Job do Kubernetes, não o container da API.
 
 ### Opção 2 — API local + Postgres em Docker
 
@@ -408,3 +408,152 @@ O aviso só sai quando a OS **realmente muda de status**: reenviar a mesma decis
 O envio é *best-effort*: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
 
 A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Trocar SendGrid por SMS ou webhook é escrever outro adaptador em `ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
+
+---
+
+# Fase 2 — Infraestrutura, Escalabilidade e CI/CD
+
+Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resiliência e escalabilidade, adicionando conteinerização, orquestração com Kubernetes, infraestrutura como código (Terraform) e um pipeline de CI/CD.
+
+## Objetivos da fase
+
+- **Infraestrutura escalável e resiliente** com Kubernetes gerenciado (EKS) e autoescalonamento (HPA).
+- **Provisionamento automatizado** de toda a infraestrutura via Terraform.
+- **Deploy automatizado** por pipeline de CI/CD na branch `main`.
+- **Banco gerenciado** no Amazon RDS (PostgreSQL).
+
+## Arquitetura proposta
+
+Componentes da aplicação, infraestrutura provisionada e fluxo de deploy:
+
+```mermaid
+flowchart TB
+    dev([Desenvolvedor]) -->|git push main| gh[GitHub Actions CI/CD]
+
+    subgraph CI/CD
+        gh -->|build + testes| build[Build & Test]
+        build -->|docker build/push| ecr[(Amazon ECR)]
+        build -->|kubectl apply| deploy[Deploy EKS]
+    end
+
+    subgraph AWS["AWS — VPC"]
+        subgraph public["Subnets públicas"]
+            elb[Elastic Load Balancer]
+            nat[NAT Gateway]
+        end
+        subgraph private["Subnets privadas"]
+            subgraph eks["Amazon EKS"]
+                svc[Service LoadBalancer] --> pods[Pods NestJS API<br/>Deployment + HPA 2..10]
+                ms[metrics-server] -.métricas.-> hpa[HPA]
+                hpa -.escala.-> pods
+            end
+            rds[(Amazon RDS<br/>PostgreSQL 16)]
+        end
+        elb --> svc
+        pods -->|5432| rds
+        ecr -.pull imagem.-> pods
+    end
+
+    user([Cliente / Postman]) -->|HTTP| elb
+    deploy --> eks
+```
+
+**Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
+
+**Deploy do banco:** as migrations rodam **uma vez por deploy**, num Job do Kubernetes ([k8s/migration-job.yaml](k8s/migration-job.yaml)) que usa a mesma imagem da API, e não no boot de cada pod. Duas razões: com o HPA, cada pod novo criado durante um pico repetiria o `migrate deploy` justamente no pior momento; e uma migration com defeito derrubaria todos os pods, em vez de falhar no Job e preservar a versão em execução. O Job roda **dentro do cluster** porque o RDS é privado — o runner do GitHub Actions não alcança o banco. Se o Job falhar, o `rollout` não acontece.
+
+## Estrutura da infraestrutura
+
+```
+infra/            # Terraform (VPC, EKS, RDS, ECR, metrics-server)
+k8s/              # Manifestos Kubernetes (namespace, configmap, secret, deployment, service, hpa)
+.github/workflows/deploy.yml   # Pipeline CI/CD (build, testes, imagem, deploy)
+Dockerfile        # Imagem de produção (multi-stage)
+docker-compose.yml# Execução local (API + PostgreSQL)
+```
+
+## Serviços AWS utilizados
+
+| Serviço | Função |
+| --- | --- |
+| **Amazon EKS** | Cluster Kubernetes gerenciado que executa a API NestJS. |
+| **Amazon RDS (PostgreSQL 16)** | Banco de dados gerenciado, privado. |
+| **Amazon ECR** | Registro das imagens Docker da aplicação. |
+| **Elastic Load Balancer** | Exposição pública da API (Service `LoadBalancer`). |
+| **VPC / NAT Gateway** | Rede isolada com subnets públicas e privadas. |
+
+## Como executar
+
+### 1. Execução local (Docker Compose)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+API em `http://localhost:3000` e Swagger em `http://localhost:3000/docs`.
+
+### 2. Provisionamento da infraestrutura (Terraform)
+
+```bash
+cd infra
+cp terraform.tfvars.example terraform.tfvars   # defina db_password
+terraform init
+terraform apply
+$(terraform output -raw kubeconfig_command)     # configura o kubectl
+```
+
+Detalhes e lista de recursos em [infra/README.md](infra/README.md).
+
+### 3. Deploy no Kubernetes (EKS)
+
+O deploy é feito automaticamente pelo CI/CD a cada push na `main`. Para aplicar manualmente, veja [k8s/README.md](k8s/README.md).
+
+```bash
+kubectl get pods -n oficina
+kubectl get svc  -n oficina    # EXTERNAL-IP do LoadBalancer
+kubectl get hpa  -n oficina    # autoescalonamento
+```
+
+## Pipeline CI/CD
+
+Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
+
+1. **Build & testes** — `yarn install`, `yarn lint`, `yarn build`, `yarn test:cov`.
+2. **Imagem Docker** — build e push para o **ECR** (tags `sha` e `latest`).
+3. **Deploy** — `aws eks update-kubeconfig`, cria/atualiza o Secret a partir dos GitHub Secrets, aplica os manifestos e aguarda o `rollout`.
+
+### GitHub Secrets necessários
+
+| Secret | Descrição |
+| --- | --- |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credenciais AWS para o deploy. |
+| `AWS_REGION` | Região (ex.: `us-east-1`). |
+| `ECR_REPOSITORY` | URL do repositório ECR (`terraform output ecr_repository_url`). |
+| `EKS_CLUSTER_NAME` | Nome do cluster (`terraform output cluster_name`). |
+| `DATABASE_URL` | Connection string do RDS (`terraform output -raw database_url`). |
+| `JWT_SECRET` | Segredo de assinatura do JWT. |
+| `SENDGRID_API_KEY` | Chave do SendGrid (pode ficar vazio). |
+| `ADMIN_SENHA` | Senha do administrador inicial. |
+
+## Escalabilidade (HPA)
+
+O `HorizontalPodAutoscaler` escala de **2 a 10 pods** conforme o consumo de CPU (70%) e memória (80%). O `metrics-server` (instalado via Terraform) fornece as métricas.
+
+Para demonstrar o autoescalonamento **sem subir nada na AWS**, use o cluster local do Docker Desktop:
+
+```bash
+bash scripts/k8s-local.sh          # sobe API + Postgres + metrics-server + HPA
+
+kubectl get hpa -n oficina -w      # em um terminal, observe as réplicas
+npx autocannon -c 100 -d 120 http://localhost/health   # em outro, gere carga
+```
+
+Detalhes e o equivalente no EKS em [k8s/README.md](k8s/README.md).
+
+## Documentação e demonstração
+
+- **Swagger / OpenAPI:** `http://<EXTERNAL-IP>/docs` (ou `http://localhost:3000/docs` local).
+- **Vídeo demonstrativo:** _adicionar link do YouTube/Vimeo aqui_.
+
+> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Após a demonstração, rode `terraform destroy` em `infra/`.

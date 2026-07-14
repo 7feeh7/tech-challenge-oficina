@@ -16,10 +16,10 @@ export interface MovimentacaoEstoqueOutput {
 }
 
 export class MovimentacaoEstoqueOutputMapper {
-  static toOutput({
-    movimentacao,
-    peca,
-  }: MovimentacaoComPeca): MovimentacaoEstoqueOutput {
+  static toOutput(
+    this: void,
+    { movimentacao, peca }: MovimentacaoComPeca,
+  ): MovimentacaoEstoqueOutput {
     return {
       id: movimentacao.id,
       pecaId: movimentacao.pecaId,

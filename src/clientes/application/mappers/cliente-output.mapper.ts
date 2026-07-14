@@ -14,7 +14,7 @@ export interface ClienteDetalheOutput extends ClienteOutput {
 }
 
 export class ClienteOutputMapper {
-  static toOutput(cliente: Cliente): ClienteOutput {
+  static toOutput(this: void, cliente: Cliente): ClienteOutput {
     return {
       id: cliente.id,
       nome: cliente.nome,

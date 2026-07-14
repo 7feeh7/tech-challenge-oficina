@@ -73,7 +73,7 @@ export class PrismaOrdemServicoMapper {
     });
   }
 
-  static toStatusPrisma(status: StatusOS): StatusPrisma {
-    return status as unknown as StatusPrisma;
+  static toStatusPrisma(this: void, status: StatusOS): StatusPrisma {
+    return status;
   }
 }

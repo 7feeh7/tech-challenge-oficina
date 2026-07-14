@@ -30,6 +30,8 @@ COPY package.json yarn.lock ./
 
 EXPOSE 3000
 
-# Aplica as migrations pendentes e sobe a API.
-# O seed do admin roda automaticamente na inicialização da aplicação.
-CMD ["sh", "-c", "yarn prisma migrate deploy && yarn start:prod"]
+# Sobe apenas a API. As migrations NÃO rodam aqui: com o HPA, cada pod novo as
+# executaria de novo durante o pico. Em produção elas rodam uma única vez, no Job
+# k8s/migration-job.yaml, antes do rollout (a mesma imagem serve aos dois).
+# No docker-compose local o comando é sobrescrito para migrar antes de subir.
+CMD ["yarn", "start:prod"]

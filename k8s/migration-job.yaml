@@ -1,0 +1,41 @@
+# Aplica as migrations do Prisma UMA vez por deploy, antes do rollout da API.
+#
+# Roda dentro do cluster porque o RDS é privado (só os nodes do EKS o alcançam),
+# então o runner do GitHub Actions não conseguiria conectar direto no banco.
+#
+# Se o Job falhar, o pipeline para e o Deployment antigo continua servindo.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: oficina-migrate
+  namespace: oficina
+  labels:
+    app: oficina-migrate
+spec:
+  backoffLimit: 2
+  # Remove o Job automaticamente 10 min após terminar.
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: oficina-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # A tag é injetada pelo pipeline (mesma imagem da API).
+          image: ECR_REPOSITORY_URL:latest
+          imagePullPolicy: Always
+          command: ["yarn", "prisma", "migrate", "deploy"]
+          envFrom:
+            - configMapRef:
+                name: oficina-config
+            - secretRef:
+                name: oficina-secret
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

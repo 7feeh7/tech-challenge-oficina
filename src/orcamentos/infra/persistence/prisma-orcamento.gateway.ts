@@ -278,5 +278,5 @@ export class PrismaOrcamentoGateway implements OrcamentoGateway {
 
 /** Os dois enums têm os mesmos valores; só o tipo é diferente. */
 function paraStatusPrisma(status: StatusOS): StatusOSPrisma {
-  return status as unknown as StatusOSPrisma;
+  return status;
 }

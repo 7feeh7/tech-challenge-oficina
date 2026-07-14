@@ -21,7 +21,7 @@ export class CriarOrcamentoUseCase {
   constructor(
     private readonly orcamentos: OrcamentoGateway,
     private readonly notificador: NotificadorDeStatusGateway,
-  ) { }
+  ) {}
 
   async execute(input: CriarOrcamentoInput): Promise<OrcamentoOutput> {
     const ordem = await this.orcamentos.buscarOrdemComPecas(
@@ -43,7 +43,7 @@ export class CriarOrcamentoUseCase {
 
     const resultado =
       await this.orcamentos.criarEEnviarParaAprovacao(orcamento);
-    console.log("chegou aqui")
+    console.log('chegou aqui');
 
     await notificarTransicao(this.notificador, resultado.transicao);
 
