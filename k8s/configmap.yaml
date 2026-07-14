@@ -11,6 +11,7 @@ metadata:
 data:
   PORT: "3000"
   NODE_ENV: "production"
+  DATABASE_SSL: "true"
   ADMIN_NOME: "Administrador"
   ADMIN_EMAIL: "admin@oficina.com"
   SENDGRID_FROM_EMAIL: "oficina@seu-dominio.com"

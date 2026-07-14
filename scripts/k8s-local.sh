@@ -41,6 +41,11 @@ kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/local/postgres.yaml
 
+# O ConfigMap de produção liga o TLS (exigido pelo RDS). O Postgres em pod não
+# fala TLS e recusaria a conexão, então desligamos só no cluster local.
+kubectl patch configmap oficina-config --namespace "${NS}" --type merge \
+  -p '{"data":{"DATABASE_SSL":"false"}}'
+
 # Secret local — valores fakes para teste local, o Secret real do EKS vem do CI/CD.
 kubectl create secret generic oficina-secret --namespace "${NS}" \
   --from-literal=DATABASE_URL='postgresql://oficina:oficina@postgres:5432/oficina?schema=public' \
