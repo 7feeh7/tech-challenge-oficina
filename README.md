@@ -182,7 +182,8 @@ Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orca
 
 ### Cobertura de testes
 
-![Cobertura de testes no SonarQube](assets/cobertura.jpg)
+<img width="1452" height="943" alt="cobertura" src="https://github.com/user-attachments/assets/934a6b2f-c832-4d32-8c0d-e998f00d0e05" />
+
 
 ## Principais endpoints
 
@@ -260,7 +261,7 @@ Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resi
 
 Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
 
-![Arquitetura na AWS](assets/arquitetura.png)
+<img width="1201" height="811" alt="arquitetura" src="https://github.com/user-attachments/assets/42f65cf6-aa19-4bcd-b0c5-32d68fccdd1f" />
 
 **Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
 
@@ -323,7 +324,7 @@ kubectl get hpa  -n oficina    # autoescalonamento
 
 ## Pipeline CI/CD
 
-![Fluxo de deploy e CI/CD](assets/deploy.png)
+<img width="542" height="1076" alt="deploy" src="https://github.com/user-attachments/assets/87c3aa5e-61bf-4a42-8dba-641e4b7b3e9e" />
 
 Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
 
