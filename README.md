@@ -19,171 +19,40 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 **Todos os módulos de negócio seguem a Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Cada módulo tem a mesma anatomia — `domain/` (entidades, enums e erros), `application/` (casos de uso, portas e mappers) e `infra/` (controllers, DTOs e adaptadores de persistência).
 
+Um módulo está aberto abaixo para mostrar a anatomia; os demais seguem exatamente a mesma estrutura.
+
 ```
 src/
-├── usuarios/                        # ✅ Refatorado para Clean Architecture (módulo de referência)
+├── ordens-servico/                  # Crud de OS
 │   ├── domain/                      # Camada mais interna — zero dependências externas
-│   │   ├── entities/
-│   │   │   └── usuario.entity.ts    # Entidade rica: valida e normaliza nome, e-mail e senha
-│   │   ├── errors/
-│   │   │   └── usuario.errors.ts    # Erros de domínio (herdam de DomainError)
-│   │   └── perfil-usuario.ts        # Enum de domínio (ADMINISTRADOR, ATENDENTE, MECANICO, ALMOXARIFE)
+│   │   ├── entities/                # OrdemServico (máquina de estados) e itens com preço congelado
+│   │   ├── errors/                  # Erros de domínio da OS (herdam de DomainError)
+│   │   └── status-os.ts             # Enum de domínio + transições válidas
 │   ├── application/                 # Regras da aplicação — não conhece Nest nem Prisma
 │   │   ├── ports/                   # Interfaces implementadas pela infra (inversão de dependência)
-│   │   │   ├── usuario.gateway.ts   # Porta de persistência
-│   │   │   ├── senha-hasher.ts      # Porta de criptografia (hash / comparar)
-│   │   │   └── tokens.ts            # Símbolos de injeção das portas
 │   │   ├── use-cases/               # Um caso de uso por arquivo, classes puras (sem decorators)
-│   │   │   ├── criar-usuario.use-case.ts
-│   │   │   ├── listar-usuarios.use-case.ts
-│   │   │   ├── buscar-usuario.use-case.ts
-│   │   │   ├── atualizar-usuario.use-case.ts
-│   │   │   ├── remover-usuario.use-case.ts
-│   │   │   └── validar-credenciais.use-case.ts   # Consumido pelo módulo auth
-│   │   └── mappers/
-│   │       └── usuario-output.mapper.ts          # Entidade → saída da API (nunca expõe senhaHash)
+│   │   └── mappers/                 # Entidade → saída da API
 │   ├── infra/                       # Adaptadores — camada mais externa
-│   │   ├── http/
-│   │   │   ├── controllers/         # UsuariosController (injeta os casos de uso diretamente)
-│   │   │   └── dtos/                # Contrato de entrada HTTP (class-validator + Swagger)
-│   │   ├── persistence/             # PrismaUsuarioGateway + mapper Prisma ↔ domínio
-│   │   └── crypto/                  # BcryptSenhaHasher
-│   ├── admin-seed.service.ts        # Cria o administrador inicial no bootstrap
-│   └── usuarios.module.ts           # Wiring: liga as portas aos adaptadores
-│
-├── auth/                            # Autenticação JWT + autorização por perfil
-│   ├── decorators/                  # @Public(), @Roles()
-│   ├── guards/                      # JwtAuthGuard (global) e RolesGuard
-│   ├── dto/                         # LoginDto
-│   └── auth.service.ts              # Assina o JWT; a validação de credenciais é um caso de uso
-│
-├── clientes/                        # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # Cliente: nome, e-mail, telefone e CPF/CNPJ validados
-│   │   └── errors/                  # Erros de domínio de cliente
-│   ├── application/
-│   │   ├── ports/                   # ClienteGateway + token de injeção
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover cliente
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # ClientesController (injeta os casos de uso)
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaClienteGateway + mapper Prisma ↔ domínio
-│   └── clientes.module.ts
-│
-├── veiculos/                        # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # Veiculo: placa (Mercosul/antiga), marca, modelo e ano validados
-│   │   └── errors/                  # Erros de domínio de veículo
-│   ├── application/
-│   │   ├── ports/                   # VeiculoGateway + ClienteConsultaGateway (o dono precisa existir)
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover veículo
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # VeiculosController (injeta os casos de uso)
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaVeiculoGateway + PrismaClienteConsultaGateway
-│   └── veiculos.module.ts
-│
-├── servicos/                        # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # Servico: nome único, preço base, tempo estimado e ativo
-│   │   └── errors/                  # Erros de domínio de serviço
-│   ├── application/
-│   │   ├── ports/                   # ServicoGateway + token de injeção
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover serviço
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # ServicosController (injeta os casos de uso)
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaServicoGateway + mapper (Decimal ↔ number)
-│   └── servicos.module.ts
-│
-├── pecas/                           # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # Peca: código único, preço, estoque e estoque mínimo
-│   │   └── errors/                  # Erros de domínio de peça
-│   ├── application/
-│   │   ├── ports/                   # PecaGateway + token de injeção
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar e remover peça
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # PecasController (injeta os casos de uso)
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaPecaGateway + mapper (Decimal ↔ number)
-│   └── pecas.module.ts
-│
-├── movimentacoes-estoque/           # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # MovimentacaoEstoque: calcula o saldo e recusa baixa sem estoque
-│   │   ├── errors/                  # Erros de domínio (inclui EstoqueInsuficienteError)
-│   │   └── tipo-movimentacao-estoque.ts   # Enum de domínio (ENTRADA / BAIXA)
-│   ├── application/
-│   │   ├── ports/                   # MovimentacaoEstoqueGateway (registro atômico) + token
-│   │   ├── use-cases/               # registrar, listar e buscar movimentação
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # MovimentacoesEstoqueController
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaMovimentacaoEstoqueGateway (transação: histórico + saldo)
-│   └── movimentacoes-estoque.module.ts
-│
-├── ordens-servico/                  # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # OrdemServico (máquina de estados + marcos) e itens com preço congelado
-│   │   ├── errors/                  # Erros de domínio da OS
-│   │   └── status-os.ts             # Enum de domínio + transições válidas
-│   ├── application/
-│   │   ├── ports/                   # OrdemServicoGateway + CatalogoGateway (cliente, veículo e preços)
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar, remover e tempo médio
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # OrdensServicoController
-│   │   │   └── dtos/                # Contrato de entrada HTTP
+│   │   ├── http/                    # Controllers + DTOs (class-validator + Swagger)
 │   │   ├── notification/            # SendGrid: avisa o cliente a cada mudança de status
 │   │   └── persistence/             # PrismaOrdemServicoGateway (transação: OS + itens + histórico)
-│   └── ordens-servico.module.ts
+│   └── ordens-servico.module.ts     # Wiring: liga as portas aos adaptadores
 │
-├── orcamentos/                      # ✅ Refatorado para Clean Architecture (mesmas camadas)
-│   ├── domain/
-│   │   ├── entities/                # Orcamento: aprovar/rejeitar (rejeição exige motivo)
-│   │   ├── errors/                  # Erros de domínio do orçamento
-│   │   └── status-orcamento.ts      # Enum de domínio
-│   ├── application/
-│   │   ├── ports/                   # OrcamentoGateway (criação e aprovação atômicas)
-│   │   ├── use-cases/               # criar, listar, buscar, atualizar (aprovar/rejeitar) e remover
-│   │   └── mappers/                 # Entidade → saída da API
-│   ├── infra/
-│   │   ├── http/
-│   │   │   ├── controllers/         # OrcamentosController
-│   │   │   └── dtos/                # Contrato de entrada HTTP
-│   │   └── persistence/             # PrismaOrcamentoGateway (aprovar = OS + histórico + baixa de estoque)
-│   └── orcamentos.module.ts
+├── usuarios/                        # CRUD de usuários + seed do administrador inicial
+├── auth/                            # Autenticação JWT + autorização por perfil (@Public, @Roles, guards)
+├── clientes/                        # CRUD de clientes (CPF/CNPJ validado)
+├── veiculos/                        # CRUD de veículos (placa Mercosul/antiga validada)
+├── servicos/                        # Catálogo de serviços
+├── pecas/                           # Catálogo de peças/insumos
+├── movimentacoes-estoque/           # Controle de estoque (entrada/baixa atômica)
+├── orcamentos/                      # Orçamentos: aprovar/rejeitar (aprovar dá baixa no estoque)
 │
-├── common/                          # Blocos compartilhados entre módulos
-│   ├── exceptions/                  # DomainError: base dos erros de domínio (validação, conflito, ...)
-│   ├── filters/                     # DomainExceptionFilter: traduz erro de domínio em status HTTP
-│   └── validators/                  # Validador de CPF/CNPJ
-│
+├── health/                          # Endpoints de liveness/readiness (probes do Kubernetes)
+├── common/                          # Blocos compartilhados: DomainError, filtros HTTP, validador CPF/CNPJ
 ├── database/                        # PrismaService e PrismaModule
 ├── generated/prisma/                # Client gerado pelo Prisma (não versionar manualmente)
 ├── app.module.ts                    # Composição raiz: módulos, guards e filtros globais
 └── main.ts                          # Bootstrap (Fastify, ValidationPipe, Swagger)
-```
-
-Fora de `src/`:
-
-```
-prisma/                              # schema.prisma e migrations
-test/                                # testes end-to-end
-docs/                                # material de apoio
-Dockerfile · docker-compose.yml      # containerização
 ```
 
 ### Camadas e regra de dependência
@@ -193,14 +62,6 @@ Dockerfile · docker-compose.yml      # containerização
 | `domain` | Entidades, enums e erros de negócio | Nada (nem framework, nem banco) |
 | `application` | Casos de uso, portas e mappers de saída | `domain` |
 | `infra` | Controllers, DTOs HTTP, gateway Prisma, hasher bcrypt | `application` e `domain` |
-
-Os **DTOs ficam em `infra/http/dtos/`** porque são o contrato do mecanismo de entrega: carregam decorators de `class-validator` e Swagger, e só o controller os conhece. O contrato da camada de aplicação são as interfaces `...Input` declaradas junto de cada caso de uso, e o `...Output` dos mappers — esses sim independem de HTTP.
-
-Os casos de uso dependem apenas de **interfaces** (`UsuarioGateway`, `SenhaHasher`). Quem escolhe as implementações concretas é o `usuarios.module.ts`, o que permite testá-los isoladamente com dublês — sem banco e sem subir o Nest.
-
-Erros de domínio (`UsuarioNaoEncontradoError`, `EmailUsuarioJaExisteError`, ...) herdam das categorias de `common/exceptions` e são convertidos em respostas HTTP (404, 409, 400, 401) pelo `DomainExceptionFilter`, registrado globalmente. Assim nenhum caso de uso precisa importar exceções do NestJS.
-
-Os testes (`*.spec.ts`) ficam ao lado do arquivo que exercitam.
 
 ## Pré-requisitos
 
@@ -231,7 +92,7 @@ Os testes (`*.spec.ts`) ficam ao lado do arquivo que exercitam.
 
 ## Como rodar
 
-### Opção 1 — Tudo via Docker Compose (recomendado)
+### Docker Compose
 
 Sobe API + Postgres em containers:
 
@@ -240,35 +101,6 @@ docker compose up --build
 ```
 
 A API ficará disponível em `http://localhost:3000` e o Postgres em `localhost:5432`.
-
-> O container da API aplica as migrations antes de subir (`command` no `docker-compose.yml`), então não é preciso rodar nada à mão. Em produção quem migra é o Job do Kubernetes, não o container da API.
-
-### Opção 2 — API local + Postgres em Docker
-
-1. Suba apenas o banco:
-
-   ```bash
-   docker compose up -d postgres
-   ```
-
-2. Instale dependências e gere o client Prisma:
-
-   ```bash
-   yarn install
-   yarn prisma generate
-   ```
-
-3. Aplique as migrations:
-
-   ```bash
-   yarn prisma migrate deploy
-   ```
-
-4. Rode a API em modo de desenvolvimento:
-
-   ```bash
-   yarn start:dev
-   ```
 
 ## Documentação da API (Swagger)
 
@@ -348,6 +180,10 @@ yarn test:e2e           # end-to-end
 
 Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orcamentos`) seguem o padrão **Arrange / Act / Assert** com mínimo de 80% de cobertura.
 
+### Cobertura de testes
+
+![Cobertura de testes no SonarQube](assets/cobertura.jpg)
+
 ## Principais endpoints
 
 - `POST /auth/login` — autenticação
@@ -363,8 +199,6 @@ Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orca
 - `GET|POST|PATCH|DELETE /orcamentos` — aprovar orçamento baixa estoque automaticamente
 - `GET|POST /movimentacoes-estoque`
 - `GET|POST|PATCH|DELETE /usuarios` (somente ADMINISTRADOR)
-
-Consulte o Swagger (`/docs`) para a documentação completa de cada endpoint.
 
 ### Fila de ordens de serviço (`GET /ordens-servico`)
 
@@ -424,41 +258,13 @@ Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resi
 
 ## Arquitetura proposta
 
-Componentes da aplicação, infraestrutura provisionada e fluxo de deploy:
+Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
 
-```mermaid
-flowchart TB
-    dev([Desenvolvedor]) -->|git push main| gh[GitHub Actions CI/CD]
-
-    subgraph CI/CD
-        gh -->|build + testes| build[Build & Test]
-        build -->|docker build/push| ecr[(Amazon ECR)]
-        build -->|kubectl apply| deploy[Deploy EKS]
-    end
-
-    subgraph AWS["AWS — VPC"]
-        subgraph public["Subnets públicas"]
-            elb[Elastic Load Balancer]
-            nat[NAT Gateway]
-        end
-        subgraph private["Subnets privadas"]
-            subgraph eks["Amazon EKS"]
-                svc[Service LoadBalancer] --> pods[Pods NestJS API<br/>Deployment + HPA 2..10]
-                ms[metrics-server] -.métricas.-> hpa[HPA]
-                hpa -.escala.-> pods
-            end
-            rds[(Amazon RDS<br/>PostgreSQL 16)]
-        end
-        elb --> svc
-        pods -->|5432| rds
-        ecr -.pull imagem.-> pods
-    end
-
-    user([Cliente / Postman]) -->|HTTP| elb
-    deploy --> eks
-```
+![Arquitetura na AWS](assets/arquitetura.png)
 
 **Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
+
+**Conexão com o banco:** o RDS recusa conexão sem TLS (`rds.force_ssl`), e seu certificado é emitido por uma CA da Amazon que não está no trust store do Node. Por isso a aplicação conecta com TLS sem validar a cadeia, ligado pela variável `DATABASE_SSL` do ConfigMap. Localmente ela fica `false`, já que o Postgres em container não fala TLS.
 
 **Deploy do banco:** as migrations rodam **uma vez por deploy**, num Job do Kubernetes ([k8s/migration-job.yaml](k8s/migration-job.yaml)) que usa a mesma imagem da API, e não no boot de cada pod. Duas razões: com o HPA, cada pod novo criado durante um pico repetiria o `migrate deploy` justamente no pior momento; e uma migration com defeito derrubaria todos os pods, em vez de falhar no Job e preservar a versão em execução. O Job roda **dentro do cluster** porque o RDS é privado — o runner do GitHub Actions não alcança o banco. Se o Job falhar, o `rollout` não acontece.
 
@@ -516,6 +322,8 @@ kubectl get hpa  -n oficina    # autoescalonamento
 ```
 
 ## Pipeline CI/CD
+
+![Fluxo de deploy e CI/CD](assets/deploy.png)
 
 Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
 
