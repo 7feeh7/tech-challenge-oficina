@@ -260,7 +260,7 @@ Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resi
 
 Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
 
-<img width="1201" height="811" alt="arquitetura" src="assets/arquitetura-cloud.png" />
+<img width="1201" height="811" alt="arquitetura" src="assets/ARQUITETURA-CLOUD.png" />
 **Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
 
 **Conexão com o banco:** o RDS recusa conexão sem TLS (`rds.force_ssl`), e seu certificado é emitido por uma CA da Amazon que não está no trust store do Node. Por isso a aplicação conecta com TLS sem validar a cadeia, ligado pela variável `DATABASE_SSL` do ConfigMap. Localmente ela fica `false`, já que o Postgres em container não fala TLS.
