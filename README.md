@@ -57,11 +57,11 @@ src/
 
 ### Camadas e regra de dependência
 
-| Camada | O que vive aqui | Pode depender de |
-|---|---|---|
-| `domain` | Entidades, enums e erros de negócio | Nada (nem framework, nem banco) |
-| `application` | Casos de uso, portas e mappers de saída | `domain` |
-| `infra` | Controllers, DTOs HTTP, gateway Prisma, hasher bcrypt | `application` e `domain` |
+| Camada        | O que vive aqui                                       | Pode depender de                |
+| ------------- | ----------------------------------------------------- | ------------------------------- |
+| `domain`      | Entidades, enums e erros de negócio                   | Nada (nem framework, nem banco) |
+| `application` | Casos de uso, portas e mappers de saída               | `domain`                        |
+| `infra`       | Controllers, DTOs HTTP, gateway Prisma, hasher bcrypt | `application` e `domain`        |
 
 ## Pré-requisitos
 
@@ -79,16 +79,16 @@ src/
 
 2. Edite o `.env` conforme necessário. As variáveis principais:
 
-   | Variável | Descrição |
-   |---|---|
-   | `DATABASE_URL` | Connection string do PostgreSQL (Prisma) |
-   | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | Credenciais do container Postgres |
-   | `JWT_SECRET` | Segredo usado para assinar os tokens JWT (**obrigatório alterar em produção**) |
-   | `PORT` | Porta da API (padrão `3000`) |
-   | `SENDGRID_API_KEY` | Chave da API do SendGrid (notificação de status da OS) |
-   | `SENDGRID_FROM_EMAIL` | Remetente dos e-mails — precisa ser um *Verified Sender* no SendGrid |
+   | Variável                                                                | Descrição                                                                      |
+   | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+   | `DATABASE_URL`                                                          | Connection string do PostgreSQL (Prisma)                                       |
+   | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | Credenciais do container Postgres                                              |
+   | `JWT_SECRET`                                                            | Segredo usado para assinar os tokens JWT (**obrigatório alterar em produção**) |
+   | `PORT`                                                                  | Porta da API (padrão `3000`)                                                   |
+   | `SENDGRID_API_KEY`                                                      | Chave da API do SendGrid (notificação de status da OS)                         |
+   | `SENDGRID_FROM_EMAIL`                                                   | Remetente dos e-mails — precisa ser um _Verified Sender_ no SendGrid           |
 
-   > Sem as variáveis do SendGrid a API sobe normalmente: o envio é apenas registrado como aviso no log. A notificação é *best-effort* e nunca bloqueia a atualização da OS.
+   > Sem as variáveis do SendGrid a API sobe normalmente: o envio é apenas registrado como aviso no log. A notificação é _best-effort_ e nunca bloqueia a atualização da OS.
 
 ## Como rodar
 
@@ -136,29 +136,29 @@ A API é protegida globalmente por JWT. Rotas marcadas com `@Public()` (ex.: `PO
 
 O acesso aos endpoints é controlado por `@Roles` + `RolesGuard`:
 
-| Perfil | Acesso |
-|---|---|
-| `ADMINISTRADOR` | Acesso total |
-| `ATENDENTE` | Clientes, veículos, ordens de serviço, orçamentos |
-| `MECANICO` | Ordens de serviço |
-| `ALMOXARIFE` | Peças e movimentações de estoque |
+| Perfil          | Acesso                                            |
+| --------------- | ------------------------------------------------- |
+| `ADMINISTRADOR` | Acesso total                                      |
+| `ATENDENTE`     | Clientes, veículos, ordens de serviço, orçamentos |
+| `MECANICO`      | Ordens de serviço                                 |
+| `ALMOXARIFE`    | Peças e movimentações de estoque                  |
 
 ## Scripts disponíveis
 
-| Script | Descrição |
-|---|---|
-| `yarn start:dev` | Inicia a API em modo watch |
-| `yarn start:prod` | Executa o build de produção (`dist/main.js`) |
-| `yarn build` | Compila o projeto |
-| `yarn test` | Executa os testes unitários |
-| `yarn test:watch` | Testes em modo watch |
-| `yarn test:cov` | Testes com relatório de cobertura |
-| `yarn test:e2e` | Testes end-to-end |
-| `yarn lint` | ESLint com autofix |
-| `yarn format` | Prettier |
-| `yarn prisma migrate dev` | Cria e aplica nova migration (dev) |
-| `yarn prisma migrate deploy` | Aplica migrations existentes (prod/CI) |
-| `yarn prisma studio` | Abre o Prisma Studio |
+| Script                       | Descrição                                    |
+| ---------------------------- | -------------------------------------------- |
+| `yarn start:dev`             | Inicia a API em modo watch                   |
+| `yarn start:prod`            | Executa o build de produção (`dist/main.js`) |
+| `yarn build`                 | Compila o projeto                            |
+| `yarn test`                  | Executa os testes unitários                  |
+| `yarn test:watch`            | Testes em modo watch                         |
+| `yarn test:cov`              | Testes com relatório de cobertura            |
+| `yarn test:e2e`              | Testes end-to-end                            |
+| `yarn lint`                  | ESLint com autofix                           |
+| `yarn format`                | Prettier                                     |
+| `yarn prisma migrate dev`    | Cria e aplica nova migration (dev)           |
+| `yarn prisma migrate deploy` | Aplica migrations existentes (prod/CI)       |
+| `yarn prisma studio`         | Abre o Prisma Studio                         |
 
 ## Qualidade de código (SonarQube)
 
@@ -183,7 +183,6 @@ Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orca
 ### Cobertura de testes
 
 <img width="1452" height="943" alt="cobertura" src="https://github.com/user-attachments/assets/934a6b2f-c832-4d32-8c0d-e998f00d0e05" />
-
 
 ## Principais endpoints
 
@@ -231,16 +230,16 @@ Uma OS encerrada sem execução nunca tem `iniciadaEm`, e por isso **fica fora d
 
 **Toda** mudança de status da OS avisa o cliente por e-mail, pelo **SendGrid** — inclusive as disparadas pelo módulo de orçamentos:
 
-| Ação | Transição | Aviso |
-|---|---|---|
-| `PATCH /ordens-servico/:id` | qualquer transição válida | ✉️ |
-| `POST /orcamentos` | → `AGUARDANDO_APROVACAO` | ✉️ |
-| `PATCH /orcamentos/:id` (aprovar) | → `EM_EXECUCAO` | ✉️ |
-| `PATCH /orcamentos/:id` (recusar) | → `EM_DIAGNOSTICO` | ✉️ |
+| Ação                              | Transição                 | Aviso |
+| --------------------------------- | ------------------------- | ----- |
+| `PATCH /ordens-servico/:id`       | qualquer transição válida | ✉️    |
+| `POST /orcamentos`                | → `AGUARDANDO_APROVACAO`  | ✉️    |
+| `PATCH /orcamentos/:id` (aprovar) | → `EM_EXECUCAO`           | ✉️    |
+| `PATCH /orcamentos/:id` (recusar) | → `EM_DIAGNOSTICO`        | ✉️    |
 
 O aviso só sai quando a OS **realmente muda de status**: reenviar a mesma decisão é idempotente e não gera novo e-mail.
 
-O envio é *best-effort*: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
+O envio é _best-effort_: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
 
 A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Trocar SendGrid por SMS ou webhook é escrever outro adaptador em `ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
 
@@ -261,8 +260,7 @@ Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resi
 
 Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
 
-<img width="1201" height="811" alt="arquitetura" src="https://github.com/user-attachments/assets/42f65cf6-aa19-4bcd-b0c5-32d68fccdd1f" />
-
+<img width="1201" height="811" alt="arquitetura" src="assets/ARQUITETURA-CLOUD.png" />
 **Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
 
 **Conexão com o banco:** o RDS recusa conexão sem TLS (`rds.force_ssl`), e seu certificado é emitido por uma CA da Amazon que não está no trust store do Node. Por isso a aplicação conecta com TLS sem validar a cadeia, ligado pela variável `DATABASE_SSL` do ConfigMap. Localmente ela fica `false`, já que o Postgres em container não fala TLS.
@@ -281,13 +279,13 @@ docker-compose.yml# Execução local (API + PostgreSQL)
 
 ## Serviços AWS utilizados
 
-| Serviço | Função |
-| --- | --- |
-| **Amazon EKS** | Cluster Kubernetes gerenciado que executa a API NestJS. |
-| **Amazon RDS (PostgreSQL 16)** | Banco de dados gerenciado, privado. |
-| **Amazon ECR** | Registro das imagens Docker da aplicação. |
-| **Elastic Load Balancer** | Exposição pública da API (Service `LoadBalancer`). |
-| **VPC / NAT Gateway** | Rede isolada com subnets públicas e privadas. |
+| Serviço                        | Função                                                  |
+| ------------------------------ | ------------------------------------------------------- |
+| **Amazon EKS**                 | Cluster Kubernetes gerenciado que executa a API NestJS. |
+| **Amazon RDS (PostgreSQL 16)** | Banco de dados gerenciado, privado.                     |
+| **Amazon ECR**                 | Registro das imagens Docker da aplicação.               |
+| **Elastic Load Balancer**      | Exposição pública da API (Service `LoadBalancer`).      |
+| **VPC / NAT Gateway**          | Rede isolada com subnets públicas e privadas.           |
 
 ## Como executar
 
@@ -324,7 +322,7 @@ kubectl get hpa  -n oficina    # autoescalonamento
 
 ## Pipeline CI/CD
 
-<img width="542" height="1076" alt="deploy" src="https://github.com/user-attachments/assets/87c3aa5e-61bf-4a42-8dba-641e4b7b3e9e" />
+<img width="1201" height="811" alt="arquitetura" src="assets/DEPLOY.png" />
 
 Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
 
@@ -334,16 +332,16 @@ Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), execut
 
 ### GitHub Secrets necessários
 
-| Secret | Descrição |
-| --- | --- |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credenciais AWS para o deploy. |
-| `AWS_REGION` | Região (ex.: `us-east-1`). |
-| `ECR_REPOSITORY` | URL do repositório ECR (`terraform output ecr_repository_url`). |
-| `EKS_CLUSTER_NAME` | Nome do cluster (`terraform output cluster_name`). |
-| `DATABASE_URL` | Connection string do RDS (`terraform output -raw database_url`). |
-| `JWT_SECRET` | Segredo de assinatura do JWT. |
-| `SENDGRID_API_KEY` | Chave do SendGrid (pode ficar vazio). |
-| `ADMIN_SENHA` | Senha do administrador inicial. |
+| Secret                                        | Descrição                                                        |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credenciais AWS para o deploy.                                   |
+| `AWS_REGION`                                  | Região (ex.: `us-east-1`).                                       |
+| `ECR_REPOSITORY`                              | URL do repositório ECR (`terraform output ecr_repository_url`).  |
+| `EKS_CLUSTER_NAME`                            | Nome do cluster (`terraform output cluster_name`).               |
+| `DATABASE_URL`                                | Connection string do RDS (`terraform output -raw database_url`). |
+| `JWT_SECRET`                                  | Segredo de assinatura do JWT.                                    |
+| `SENDGRID_API_KEY`                            | Chave do SendGrid (pode ficar vazio).                            |
+| `ADMIN_SENHA`                                 | Senha do administrador inicial.                                  |
 
 ## Escalabilidade (HPA)
 
