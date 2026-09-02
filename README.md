@@ -322,7 +322,7 @@ kubectl get hpa  -n oficina    # autoescalonamento
 
 ## Pipeline CI/CD
 
-<img width="1201" height="811" alt="arquitetura" src="assets/DEPLOY.png" />
+<img width="1201" height="811" alt="deploy" src="assets/DEPLOY.png" />
 
 Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
 
