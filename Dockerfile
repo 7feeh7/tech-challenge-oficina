@@ -8,7 +8,7 @@ RUN yarn install --frozen-lockfile
 
 COPY . .
 
-# O client do Prisma (src/generated/prisma) não é versionado, então precisa ser
+# O client do Prisma (src/shared/generated/prisma) não é versionado, então precisa ser
 # gerado dentro da imagem — senão o build compila contra tipos inexistentes.
 # O generate não conecta no banco, mas o prisma.config.ts exige a variável; o
 # valor real vem do Secret em runtime. Este ENV vive só no estágio de build.

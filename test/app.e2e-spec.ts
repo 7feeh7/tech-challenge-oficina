@@ -13,7 +13,7 @@ import {
   PerfilUsuario,
   StatusOS,
   StatusOrcamento,
-} from '../src/generated/prisma/enums';
+} from '../src/shared/generated/prisma/enums';
 
 /**
  * E2E completo do fluxo principal da oficina:

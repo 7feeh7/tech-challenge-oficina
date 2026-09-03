@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   {
     // Código gerado pelo Prisma não é revisado nem editado à mão.
-    ignores: ['eslint.config.mjs', 'src/generated/**'],
+    ignores: ['eslint.config.mjs', 'src/shared/generated/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,

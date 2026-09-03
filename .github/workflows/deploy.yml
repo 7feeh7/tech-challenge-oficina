@@ -41,7 +41,7 @@ jobs:
       - name: Instalar dependências
         run: yarn install --frozen-lockfile
 
-      # src/generated/prisma não é versionado (está no .gitignore). Sem este passo
+      # src/shared/generated/prisma não é versionado (está no .gitignore). Sem este passo
       # o TypeScript não resolve nenhum tipo do Prisma e lint/build/testes quebram.
       - name: Gerar o Prisma Client
         run: yarn prisma generate

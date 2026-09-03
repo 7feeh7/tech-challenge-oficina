@@ -58,8 +58,8 @@ pids
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-src/shared/generated
-docs
+src/shared/generated/prisma
+docs/local
 
 .claude
 .cursor
