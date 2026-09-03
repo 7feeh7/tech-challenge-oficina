@@ -1,21 +1,21 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { DomainExceptionFilter } from './common/filters/domain-exception.filter';
-import { ClientesModule } from './clientes/clientes.module';
-import { ServicosModule } from './servicos/servicos.module';
-import { VeiculosModule } from './veiculos/veiculos.module';
-import { PrismaService } from './database/prisma.service';
-import { PrismaModule } from './database/prisma.module';
+import { DomainExceptionFilter } from './shared/filters/domain-exception.filter';
+import { ClientesModule } from './modules/clientes/clientes.module';
+import { ServicosModule } from './modules/servicos/servicos.module';
+import { VeiculosModule } from './modules/veiculos/veiculos.module';
+import { PrismaService } from './shared/database/prisma.service';
+import { PrismaModule } from './shared/database/prisma.module';
 import { ConfigModule } from '@nestjs/config';
-import { UsuariosModule } from './usuarios/usuarios.module';
-import { PecasModule } from './pecas/pecas.module';
-import { OrdensServicoModule } from './ordens-servico/ordens-servico.module';
-import { OrcamentosModule } from './orcamentos/orcamentos.module';
-import { MovimentacoesEstoqueModule } from './movimentacoes-estoque/movimentacoes-estoque.module';
-import { AuthModule } from './auth/auth.module';
-import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
-import { RolesGuard } from './auth/guards/roles.guard';
-import { HealthModule } from './health/health.module';
+import { UsuariosModule } from './modules/usuarios/usuarios.module';
+import { PecasModule } from './modules/pecas/pecas.module';
+import { OrdensServicoModule } from './modules/ordens-servico/ordens-servico.module';
+import { OrcamentosModule } from './modules/orcamentos/orcamentos.module';
+import { MovimentacoesEstoqueModule } from './modules/movimentacoes-estoque/movimentacoes-estoque.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from './modules/auth/guards/roles.guard';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [

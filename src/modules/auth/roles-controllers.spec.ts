@@ -1,0 +1,89 @@
+import { Reflector } from '@nestjs/core';
+import { PerfilUsuario } from '@/shared/generated/prisma/enums';
+import { ROLES_KEY } from './decorators/roles.decorator';
+import { ClientesController } from '@/modules/clientes/infra/http/controllers/clientes.controller';
+import { VeiculosController } from '@/modules/veiculos/infra/http/controllers/veiculos.controller';
+import { UsuariosController } from '@/modules/usuarios/infra/http/controllers/usuarios.controller';
+import { OrdensServicoController } from '@/modules/ordens-servico/infra/http/controllers/ordens-servico.controller';
+import { OrcamentosController } from '@/modules/orcamentos/infra/http/controllers/orcamentos.controller';
+import { MovimentacoesEstoqueController } from '@/modules/movimentacoes-estoque/infra/http/controllers/movimentacoes-estoque.controller';
+import { ServicosController } from '@/modules/servicos/infra/http/controllers/servicos.controller';
+import { PecasController } from '@/modules/pecas/infra/http/controllers/pecas.controller';
+
+describe('Controle de acesso por perfil (@Roles)', () => {
+  const reflector = new Reflector();
+
+  it('ClientesController deve exigir ADMINISTRADOR ou ATENDENTE', () => {
+    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, ClientesController);
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
+  });
+
+  it('VeiculosController deve exigir ADMINISTRADOR ou ATENDENTE', () => {
+    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, VeiculosController);
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
+  });
+
+  it('UsuariosController deve exigir ADMINISTRADOR', () => {
+    const roles = reflector.get<PerfilUsuario[]>(ROLES_KEY, UsuariosController);
+    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR]);
+  });
+
+  it('OrdensServicoController deve aceitar ADMIN, ATENDENTE e MECANICO', () => {
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      OrdensServicoController,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+      PerfilUsuario.MECANICO,
+    ]);
+  });
+
+  it('OrcamentosController deve aceitar ADMIN e ATENDENTE', () => {
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      OrcamentosController,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ATENDENTE,
+    ]);
+  });
+
+  it('MovimentacoesEstoqueController deve aceitar ADMIN e ALMOXARIFE', () => {
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      MovimentacoesEstoqueController,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ALMOXARIFE,
+    ]);
+  });
+
+  it('ServicosController.create deve exigir ADMINISTRADOR', () => {
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      ServicosController.prototype.create,
+    );
+    expect(roles).toEqual([PerfilUsuario.ADMINISTRADOR]);
+  });
+
+  it('PecasController.create deve aceitar ADMIN e ALMOXARIFE', () => {
+    const roles = reflector.get<PerfilUsuario[]>(
+      ROLES_KEY,
+      PecasController.prototype.create,
+    );
+    expect(roles).toEqual([
+      PerfilUsuario.ADMINISTRADOR,
+      PerfilUsuario.ALMOXARIFE,
+    ]);
+  });
+});

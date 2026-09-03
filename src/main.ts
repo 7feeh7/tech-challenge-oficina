@@ -7,6 +7,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from '@/app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
+const PORT = Number(process.env.PORT ?? 3000);
+
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -34,6 +36,8 @@ async function bootstrap() {
     customSiteTitle: 'Oficina API Docs',
   });
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(PORT ?? 3000, '0.0.0.0');
+  console.log('HTTP server running on port ', PORT);
 }
+
 bootstrap();
