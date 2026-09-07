@@ -114,15 +114,27 @@ yarn test:e2e
 
 Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.md`](docs/testes-e-qualidade.md).
 
+## Repositórios da solução (Fase 3)
+
+| Repositório | Responsabilidade |
+| --- | --- |
+| **tech-challenge** (este) | API NestJS, Prisma, Dockerfile, manifests `k8s/` |
+| [tech-challenge-serverless](../tech-challenge-serverless) | Functions de auth CPF e notificação |
+| [tech-challenge-infra-kubernetes](../tech-challenge-infra-kubernetes) | VPC, EKS, ECR, Lambda shell, SSM |
+| [tech-challenge-infra-database](../tech-challenge-infra-database) | RDS PostgreSQL, Secrets Manager |
+
 ## Infraestrutura e deploy
 
-A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA** (2 a 10 pods). O provisionamento é feito por Terraform e o deploy pelo GitHub Actions a cada push na `main`.
+A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA**. Existe **um único ambiente provisionado**: `develop` valida automaticamente (sem tocar a AWS) e `main` implanta após merge de PR aprovado.
 
-- Arquitetura AWS, Terraform, Kubernetes e HPA: [`docs/infraestrutura.md`](docs/infraestrutura.md)
-- Pipeline e GitHub Secrets: [`docs/ci-cd.md`](docs/ci-cd.md)
-- Manuais específicos: [`infra/README.md`](infra/README.md) e [`k8s/README.md`](k8s/README.md)
+- ADR ambiente único: [`docs/adr/001-ambiente-unico-provisionado.md`](docs/adr/001-ambiente-unico-provisionado.md)
 
-> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Após a demonstração, rode `terraform destroy` em `infra/`.
+- Arquitetura e ordem de provisionamento: [`docs/infraestrutura.md`](docs/infraestrutura.md)
+- Pipeline e secrets: [`docs/ci-cd.md`](docs/ci-cd.md)
+- Governança de branches: [`docs/governanca-git.md`](docs/governanca-git.md)
+- Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
+
+> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Use `workflow_dispatch` → destroy nos repos de infra após a demonstração.
 
 ## Documentação
 
