@@ -30,7 +30,7 @@ jobs:
       - run: yarn test:cov
 
       - name: Auditoria npm (alta/critica)
-        run: yarn npm audit --all --audit-level=high
+        run: yarn audit --level high
         continue-on-error: false
 
       - name: SonarCloud Scan
