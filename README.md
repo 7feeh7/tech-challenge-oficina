@@ -18,11 +18,16 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Arquitetura
 
-Arquitetura do serviço em execução na AWS — entrada pelo API Gateway, pods no EKS (via NLB interno) e a comunicação com o Amazon RDS e o SendGrid:
+Visão deste repositório (API no EKS):
 
-<img width="1201" height="811" alt="arquitetura" src="assets/ARQUITETURA-CLOUD.png" />
+```mermaid
+flowchart LR
+    GW[API Gateway] --> POD[oficina-api pods]
+    POD --> RDS[(RDS PostgreSQL)]
+    POD --> SNS[SNS notificação]
+```
 
-Estrutura do código, camadas e regra de dependência em [`docs/arquitetura.md`](docs/arquitetura.md).
+Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagramas/componentes-nuvem.md) · Visão geral: [`docs/arquitetura/visao-geral-nuvem.md`](docs/arquitetura/visao-geral-nuvem.md) · Código: [`docs/arquitetura.md`](docs/arquitetura.md)
 
 ## Pré-requisitos
 
@@ -141,9 +146,9 @@ Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.m
 
 A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA**. Existe **um único ambiente provisionado**: `develop` valida automaticamente (sem tocar a AWS) e `main` implanta após merge de PR aprovado.
 
-- ADR ambiente único: [`docs/adr/001-ambiente-unico-provisionado.md`](docs/adr/001-ambiente-unico-provisionado.md)
-
-- Arquitetura e ordem de provisionamento: [`docs/infraestrutura.md`](docs/infraestrutura.md)
+- ADRs: [`docs/adrs/README.md`](docs/adrs/README.md) · RFCs: [`docs/rfcs/README.md`](docs/rfcs/README.md)
+- Arquitetura Fase 3: [`docs/arquitetura/README.md`](docs/arquitetura/README.md)
+- Infraestrutura e provisionamento: [`docs/infraestrutura.md`](docs/infraestrutura.md)
 - Pipeline e secrets: [`docs/ci-cd.md`](docs/ci-cd.md)
 - Governança de branches: [`docs/governanca-git.md`](docs/governanca-git.md)
 - Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
@@ -162,7 +167,10 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 | [api](docs/api.md)                               | Contratos HTTP de todos os endpoints                        |
 | [regras-de-negocio](docs/regras-de-negocio.md)   | Fila de OS, máquina de estados, orçamentos, estoque, e-mail |
 | [testes-e-qualidade](docs/testes-e-qualidade.md) | Testes, cobertura e SonarQube                               |
-| [infraestrutura](docs/infraestrutura.md)         | Fase 2: AWS, Terraform, Kubernetes e HPA                    |
+| [arquitetura](docs/arquitetura/README.md)        | Visão Fase 3, diagramas, RFCs e ADRs                        |
+| [infraestrutura](docs/infraestrutura.md)         | AWS, Terraform, Kubernetes e HPA                            |
+| [banco](docs/banco/README.md)                    | Modelo relacional, ER e performance                         |
+| [runbooks](docs/runbooks/README.md)              | Procedimentos operacionais                                  |
 | [ci-cd](docs/ci-cd.md)                           | Pipeline do GitHub Actions e secrets                        |
 
 **Vídeo demonstrativo:** _adicionar link do YouTube/Vimeo aqui_.

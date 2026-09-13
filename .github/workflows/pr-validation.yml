@@ -56,3 +56,11 @@ jobs:
           base: ${{ github.event.pull_request.base.sha || github.event.before }}
           head: HEAD
           extra_args: --only-verified
+
+  docs-links:
+    name: Verificação de links em docs/
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar links relativos
+        run: bash scripts/check-docs-links.sh

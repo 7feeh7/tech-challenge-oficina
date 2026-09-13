@@ -89,5 +89,5 @@ Substituir access keys por role IAM com trust policy:
 
 ## Referencias
 
-- [ADR-001 — Ambiente unico](adr/001-ambiente-unico-provisionado.md)
+- [ADR-001 — Ambiente unico](adrs/001-ambiente-unico-provisionado.md)
 - [CI/CD](ci-cd.md)

@@ -1,6 +1,6 @@
 # Modelo relacional e integridade
 
-Documento de apoio à [spec 006](../spec/changes/006-banco-gerenciado-e-modelo-relacional/spec.md). Decisão arquitetural em [ADR-003](adr/003-postgresql-banco-gerenciado.md). Diagrama em [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md).
+Documento de apoio à [spec 006](../spec/archive/006-banco-gerenciado-e-modelo-relacional/spec.md). Decisão em [ADR-003](adrs/003-postgresql-banco-gerenciado.md). RFC: [rfcs/002-postgresql-rds.md](rfcs/002-postgresql-rds.md). Diagrama: [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md). Índice: [banco/README.md](banco/README.md).
 
 ## Separação de responsabilidades
 

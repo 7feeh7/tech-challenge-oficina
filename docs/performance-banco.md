@@ -96,7 +96,7 @@ docker compose exec -T postgres psql -U oficina -d oficina -f - < scripts/explai
 
 ## Dimensionamento de conexões
 
-Ver cálculo completo em [ADR-003](adr/003-postgresql-banco-gerenciado.md). Resumo:
+Ver cálculo completo em [ADR-003](adrs/003-postgresql-banco-gerenciado.md). Resumo:
 
 - `max_connections` (`db.t3.micro`): **~87**
 - API: 10 pods × 5 = **50** (`connection_limit=5` na URL)
