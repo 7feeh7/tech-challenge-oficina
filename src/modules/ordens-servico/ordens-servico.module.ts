@@ -15,7 +15,10 @@ import { CriarOrdemServicoUseCase } from './application/use-cases/criar-ordem-se
 import { ListarOrdensServicoUseCase } from './application/use-cases/listar-ordens-servico.use-case';
 import { RemoverOrdemServicoUseCase } from './application/use-cases/remover-ordem-servico.use-case';
 import { OrdensServicoController } from './infra/http/controllers/ordens-servico.controller';
+import { LocalNotificadorStatusGateway } from './infra/notification/local-notificador-status.gateway';
+import { notificadorStatusProvider } from './infra/notification/notificador-status.provider';
 import { SendGridNotificadorStatusGateway } from './infra/notification/sendgrid-notificador-status.gateway';
+import { SnsNotificadorStatusGateway } from './infra/notification/sns-notificador-status.gateway';
 import { PrismaCatalogoGateway } from './infra/persistence/prisma-catalogo.gateway';
 import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-servico.gateway';
 
@@ -30,13 +33,12 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
   providers: [
     PrismaOrdemServicoGateway,
     PrismaCatalogoGateway,
+    SnsNotificadorStatusGateway,
+    LocalNotificadorStatusGateway,
     SendGridNotificadorStatusGateway,
+    notificadorStatusProvider,
     { provide: ORDEM_SERVICO_GATEWAY, useExisting: PrismaOrdemServicoGateway },
     { provide: CATALOGO_GATEWAY, useExisting: PrismaCatalogoGateway },
-    {
-      provide: NOTIFICADOR_STATUS_GATEWAY,
-      useExisting: SendGridNotificadorStatusGateway,
-    },
     {
       provide: CriarOrdemServicoUseCase,
       useFactory: (ordens: OrdemServicoGateway, catalogo: CatalogoGateway) =>

@@ -27,6 +27,7 @@ export const criarTransicaoFake = (
   statusAnterior: StatusOS,
   statusNovo: StatusOS,
 ): TransicaoDaOrdem => ({
+  ordemServicoId: 'uuid-os1',
   numeroOS: 42,
   cliente: clienteFake,
   statusAnterior,

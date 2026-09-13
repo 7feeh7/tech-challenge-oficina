@@ -19,6 +19,7 @@ import { OwnershipGuard } from './modules/auth/guards/ownership.guard';
 import { HealthModule } from './modules/health/health.module';
 import { IdempotencyModule } from './shared/idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interceptor';
+import { CorrelationIdInterceptor } from './shared/http/correlation-id.interceptor';
 
 @Module({
   imports: [
@@ -57,6 +58,10 @@ import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interce
     {
       provide: APP_FILTER,
       useClass: DomainExceptionFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: CorrelationIdInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,

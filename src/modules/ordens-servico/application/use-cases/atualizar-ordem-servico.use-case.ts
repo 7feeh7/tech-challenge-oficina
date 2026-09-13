@@ -68,6 +68,7 @@ export class AtualizarOrdemServicoUseCase {
 
     if (registro) {
       await this.notificador.notificarMudancaDeStatus({
+        ordemServicoId: id,
         destinatario: {
           nome: detalhe.cliente.nome,
           email: detalhe.cliente.email ?? '',

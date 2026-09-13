@@ -51,6 +51,7 @@ describe('CriarOrcamentoUseCase', () => {
     await useCase.execute(input);
 
     expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
+      ordemServicoId: 'uuid-os1',
       destinatario: clienteFake,
       numeroOS: 42,
       statusAnterior: StatusOS.EM_DIAGNOSTICO,

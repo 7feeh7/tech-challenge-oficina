@@ -9,6 +9,7 @@
 | [autenticacao.md](autenticacao.md)               | Login JWT, uso do token, perfis e permissões                                     |
 | [api.md](api.md)                                 | Contratos HTTP de todos os endpoints, envelopes de listagem e de erro            |
 | [regras-de-negocio.md](regras-de-negocio.md)     | Fila de OS, máquina de estados, orçamentos, estoque, notificação e métricas      |
+| [notificacoes.md](notificacoes.md)               | Fluxo assíncrono SNS/SQS/Lambda, contrato de evento, DLQ e observabilidade       |
 | [testes-e-qualidade.md](testes-e-qualidade.md)   | Testes unitários/e2e, cobertura e SonarQube                                      |
 | [infraestrutura.md](infraestrutura.md)           | Fase 2: arquitetura AWS, Terraform, Kubernetes (EKS) e HPA                       |
 | [ci-cd.md](ci-cd.md)                             | Pipeline do GitHub Actions e secrets necessários                                 |

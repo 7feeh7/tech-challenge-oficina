@@ -66,7 +66,7 @@ O aviso só sai quando a OS **realmente muda de status**: reenviar a mesma decis
 
 O envio é _best-effort_: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
 
-A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Trocar SendGrid por SMS ou webhook é escrever outro adaptador em `modules/ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
+A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Em produção o adaptador publica um evento versionado no SNS (`API → SNS → SQS → Lambda → SendGrid`); localmente um adaptador de log evita credenciais AWS. Trocar o canal (SMS, webhook) é escrever outro adaptador em `modules/ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
 
 ## Métricas de tempo
 

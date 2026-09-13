@@ -15,6 +15,7 @@ spec:
       labels:
         app: oficina-api
     spec:
+      serviceAccountName: oficina-api
       containers:
         - name: api
           # A tag é atualizada pelo pipeline (kubectl set image) a cada deploy.

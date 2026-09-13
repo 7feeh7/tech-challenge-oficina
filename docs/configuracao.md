@@ -22,10 +22,15 @@
    | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | Credenciais do container Postgres                                              |
    | `JWT_SECRET`                                                           | Segredo usado para assinar os tokens JWT (**obrigatório alterar em produção**) |
    | `PORT`                                                                 | Porta da API (padrão `3000`)                                                   |
-   | `SENDGRID_API_KEY`                                                     | Chave da API do SendGrid (notificação de status da OS)                         |
-   | `SENDGRID_FROM_EMAIL`                                                  | Remetente dos e-mails — precisa ser um _Verified Sender_ no SendGrid           |
+   | `NOTIFICACAO_TRANSPORT`                                                | `local` (padrão), `sns` ou `sendgrid`                                          |
+   | `SNS_NOTIFICACAO_TOPIC_ARN`                                            | ARN do tópico SNS (obrigatório com `sns`)                                      |
+   | `AWS_REGION`                                                           | Região AWS para publicação SNS                                                 |
+   | `SENDGRID_API_KEY`                                                     | Apenas com `NOTIFICACAO_TRANSPORT=sendgrid` (legado local)                     |
+   | `SENDGRID_FROM_EMAIL`                                                  | Remetente — usado pela Lambda em produção e opcionalmente no modo `sendgrid`   |
 
-   > Sem as variáveis do SendGrid a API sobe normalmente: o envio é apenas registrado como aviso no log. A notificação é _best-effort_ e nunca bloqueia a atualização da OS.
+   > Em produção o e-mail é enviado pela Lambda via SendGrid; a API só publica eventos no SNS. Localmente, `NOTIFICACAO_TRANSPORT=local` registra o evento em log. A notificação é _best-effort_ e nunca bloqueia a atualização da OS.
+
+   Detalhes operacionais em [notificacoes.md](notificacoes.md).
 
    Em nuvem existe ainda a variável `DATABASE_SSL`, ligada pelo ConfigMap do Kubernetes — ver [infraestrutura.md](infraestrutura.md).
 

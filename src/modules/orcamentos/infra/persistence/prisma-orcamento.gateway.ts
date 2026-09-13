@@ -268,6 +268,7 @@ export class PrismaOrcamentoGateway implements OrcamentoGateway {
     });
 
     return {
+      ordemServicoId,
       numeroOS: ordem.numero,
       cliente: raw.cliente,
       statusAnterior,

@@ -18,7 +18,7 @@ src/
 │   │   │   └── mappers/             # Entidade → saída da API
 │   │   ├── infra/                   # Adaptadores — camada mais externa
 │   │   │   ├── http/                # Controllers + DTOs (class-validator + Swagger)
-│   │   │   ├── notification/        # SendGrid: avisa o cliente a cada mudança de status
+│   │   │   ├── notification/        # SNS (prod) / local (dev): evento assíncrono de status
 │   │   │   └── persistence/         # PrismaOrdemServicoGateway (transação: OS + itens + histórico)
 │   │   └── ordens-servico.module.ts # Wiring: liga as portas aos adaptadores
 │   ├── usuarios/                    # CRUD de usuários + seed do administrador inicial

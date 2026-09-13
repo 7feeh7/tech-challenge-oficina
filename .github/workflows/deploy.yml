@@ -53,9 +53,13 @@ jobs:
           ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
           EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
           DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
+          SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
+          IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
           echo "ecr=$ECR" >> $GITHUB_OUTPUT
           echo "eks=$EKS" >> $GITHUB_OUTPUT
           echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
+          echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
+          echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
 
       - name: Montar DATABASE_URL a partir do Secrets Manager
         id: db
@@ -86,10 +90,14 @@ jobs:
             --region "$AWS_REGION" \
             --name "${{ steps.ssm.outputs.eks }}"
 
-      - name: Namespace e ConfigMap
+      - name: Namespace, ServiceAccount e ConfigMap
+        env:
+          SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
+          IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/configmap.yaml
+          sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
+          sed "s|SNS_NOTIFICACAO_TOPIC_ARN|${SNS_ARN}|g" k8s/configmap.yaml | kubectl apply -f -
 
       - name: Secret do Kubernetes
         run: |
@@ -97,7 +105,6 @@ jobs:
             --namespace "$K8S_NAMESPACE" \
             --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
             --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
-            --from-literal=SENDGRID_API_KEY='${{ secrets.SENDGRID_API_KEY }}' \
             --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 

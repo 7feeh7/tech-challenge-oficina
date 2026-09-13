@@ -1,6 +1,7 @@
 import { StatusOS } from '../../domain/status-os';
 
 export interface NotificacaoDeStatus {
+  ordemServicoId: string;
   destinatario: { nome: string; email: string };
   numeroOS?: number;
   statusAnterior: StatusOS | null;
