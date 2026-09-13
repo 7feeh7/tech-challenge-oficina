@@ -10,7 +10,8 @@ import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import { PerfilUsuario } from '../src/shared/generated/prisma/enums';
-import { registerCorrelationIdHook } from '../src/shared/http/correlation-id.hook';
+import { JsonLoggerService } from '../src/shared/observability/json-logger.service';
+import { registerRequestObservabilityHook } from '../src/shared/observability/request-observability.hook';
 
 describe('Gateway contract (e2e)', () => {
   let app: NestFastifyApplication;
@@ -29,7 +30,10 @@ describe('Gateway contract (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    registerCorrelationIdHook(app.getHttpAdapter().getInstance());
+    registerRequestObservabilityHook(
+      app.getHttpAdapter().getInstance(),
+      app.get(JsonLoggerService),
+    );
     app.setGlobalPrefix('v1', {
       exclude: [
         { path: 'health', method: RequestMethod.ALL },

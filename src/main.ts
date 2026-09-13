@@ -1,3 +1,4 @@
+import '@/tracer';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -6,7 +7,8 @@ import {
 import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { AppModule } from '@/app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { registerCorrelationIdHook } from '@/shared/http/correlation-id.hook';
+import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { registerRequestObservabilityHook } from '@/shared/observability/request-observability.hook';
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -14,9 +16,12 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    { bufferLogs: true },
   );
 
-  registerCorrelationIdHook(app.getHttpAdapter().getInstance());
+  const logger = app.get(JsonLoggerService);
+  app.useLogger(logger);
+  registerRequestObservabilityHook(app.getHttpAdapter().getInstance(), logger);
 
   app.setGlobalPrefix('v1', {
     exclude: [
@@ -55,7 +60,7 @@ async function bootstrap() {
   });
 
   await app.listen(PORT ?? 3000, '0.0.0.0');
-  console.log('HTTP server running on port ', PORT);
+  logger.log(`HTTP server running on port ${PORT}`, 'Bootstrap');
 }
 
 bootstrap();

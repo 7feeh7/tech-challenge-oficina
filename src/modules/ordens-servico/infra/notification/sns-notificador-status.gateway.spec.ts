@@ -1,8 +1,9 @@
 import { PublishCommand } from '@aws-sdk/client-sns';
-import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { correlationIdStorage } from '@/shared/http/correlation-id.context';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
+import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { IntegrationMetricsService } from '@/shared/observability/integration-metrics.service';
 import { SnsNotificadorStatusGateway } from './sns-notificador-status.gateway';
 
 jest.mock('@aws-sdk/client-sns', () => {
@@ -24,15 +25,18 @@ const notificacao = {
   statusNovo: StatusOS.EM_EXECUCAO,
 };
 
+const logger = {
+  logWithMeta: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+} as unknown as JsonLoggerService;
+
+const integrationMetrics = {
+  recordSuccess: jest.fn(),
+  recordFailure: jest.fn(),
+} as unknown as IntegrationMetricsService;
+
 describe('SnsNotificadorStatusGateway', () => {
-  beforeAll(() => {
-    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-  });
-
-  afterAll(() => jest.restoreAllMocks());
-
   beforeEach(() => jest.clearAllMocks());
 
   it('publishes a versioned event to SNS with correlation id', async () => {
@@ -44,7 +48,11 @@ describe('SnsNotificadorStatusGateway', () => {
           : 'us-east-1',
       ),
     } as unknown as ConfigService;
-    const gateway = new SnsNotificadorStatusGateway(config);
+    const gateway = new SnsNotificadorStatusGateway(
+      config,
+      logger,
+      integrationMetrics,
+    );
 
     await correlationIdStorage.run({ correlationId: 'corr-abc' }, () =>
       gateway.notificarMudancaDeStatus(notificacao),
@@ -70,7 +78,11 @@ describe('SnsNotificadorStatusGateway', () => {
         key === 'SNS_NOTIFICACAO_TOPIC_ARN' ? 'arn:topic' : 'us-east-1',
       ),
     } as unknown as ConfigService;
-    const gateway = new SnsNotificadorStatusGateway(config);
+    const gateway = new SnsNotificadorStatusGateway(
+      config,
+      logger,
+      integrationMetrics,
+    );
 
     await expect(
       gateway.notificarMudancaDeStatus(notificacao),
@@ -81,7 +93,11 @@ describe('SnsNotificadorStatusGateway', () => {
     const config = {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
-    const gateway = new SnsNotificadorStatusGateway(config);
+    const gateway = new SnsNotificadorStatusGateway(
+      config,
+      logger,
+      integrationMetrics,
+    );
 
     await gateway.notificarMudancaDeStatus(notificacao);
 

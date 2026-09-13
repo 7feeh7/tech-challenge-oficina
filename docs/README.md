@@ -10,6 +10,9 @@
 | [api.md](api.md)                                 | Contratos HTTP de todos os endpoints, envelopes de listagem e de erro            |
 | [regras-de-negocio.md](regras-de-negocio.md)     | Fila de OS, máquina de estados, orçamentos, estoque, notificação e métricas      |
 | [notificacoes.md](notificacoes.md)               | Fluxo assíncrono SNS/SQS/Lambda, contrato de evento, DLQ e observabilidade       |
+| [observabilidade.md](observabilidade.md)         | Logs, métricas, dashboards, alertas Datadog e catálogo de telemetria (spec 007)  |
+| [runbook-correlacao.md](runbook-correlacao.md)   | Runbook para correlacionar Gateway → API → SNS → Lambda → SendGrid               |
+| [diagramas/observabilidade.md](diagramas/observabilidade.md) | Diagrama de fontes, coletores e destinos Datadog                     |
 | [testes-e-qualidade.md](testes-e-qualidade.md)   | Testes unitários/e2e, cobertura e SonarQube                                      |
 | [infraestrutura.md](infraestrutura.md)           | Fase 2: arquitetura AWS, Terraform, Kubernetes (EKS) e HPA                       |
 | [modelo-relacional.md](modelo-relacional.md)   | Entidades, FKs, constraints e decisões de integridade (spec 006)                 |

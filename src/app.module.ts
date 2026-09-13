@@ -20,9 +20,11 @@ import { HealthModule } from './modules/health/health.module';
 import { IdempotencyModule } from './shared/idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interceptor';
 import { CorrelationIdInterceptor } from './shared/http/correlation-id.interceptor';
+import { ObservabilityModule } from './shared/observability/observability.module';
 
 @Module({
   imports: [
+    ObservabilityModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

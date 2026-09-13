@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 import { Prisma } from '@/shared/generated/prisma/client';
 import {
   StatusOrcamento as StatusOrcamentoPrisma,
@@ -21,7 +22,10 @@ import { PrismaOrcamentoMapper } from './prisma-orcamento.mapper';
 
 @Injectable()
 export class PrismaOrcamentoGateway implements OrcamentoGateway {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly osMetrics: OsMetricsService,
+  ) {}
 
   async buscarPorId(id: string): Promise<Orcamento | null> {
     const raw = await this.prisma.orcamento.findUnique({ where: { id } });
@@ -258,14 +262,22 @@ export class PrismaOrcamentoGateway implements OrcamentoGateway {
       },
     });
 
+    const transicaoEm = new Date();
     await tx.historicoStatusOS.create({
       data: {
         ordemServicoId,
         statusAnterior: paraStatusPrisma(statusAnterior),
         statusNovo: paraStatusPrisma(ordem.status),
         observacao: opcoes.observacao,
+        criadoEm: transicaoEm,
       },
     });
+
+    await this.osMetrics.recordTransicao(
+      ordemServicoId,
+      statusAnterior,
+      transicaoEm,
+    );
 
     return {
       ordemServicoId,

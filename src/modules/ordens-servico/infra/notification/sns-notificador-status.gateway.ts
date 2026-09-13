@@ -1,6 +1,8 @@
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { IntegrationMetricsService } from '@/shared/observability/integration-metrics.service';
 import { buildStatusChangedEvent } from '../../application/events/build-status-changed-event';
 import {
   NotificacaoDeStatus,
@@ -9,11 +11,14 @@ import {
 
 @Injectable()
 export class SnsNotificadorStatusGateway implements NotificadorDeStatusGateway {
-  private readonly logger = new Logger(SnsNotificadorStatusGateway.name);
   private readonly snsClient: SNSClient;
   private readonly topicArn?: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly logger: JsonLoggerService,
+    private readonly integrationMetrics: IntegrationMetricsService,
+  ) {
     this.topicArn = this.configService.get<string>('SNS_NOTIFICACAO_TOPIC_ARN');
     this.snsClient = new SNSClient({
       region: this.configService.get<string>('AWS_REGION', 'us-east-1'),
@@ -38,6 +43,7 @@ export class SnsNotificadorStatusGateway implements NotificadorDeStatusGateway {
     }
 
     const event = buildStatusChangedEvent(notificacao);
+    const startedAt = Date.now();
 
     try {
       await this.snsClient.send(
@@ -57,25 +63,27 @@ export class SnsNotificadorStatusGateway implements NotificadorDeStatusGateway {
         }),
       );
 
-      this.logger.log(
-        JSON.stringify({
-          evento: 'notificacao_status_publicada',
+      this.integrationMetrics.recordSuccess('sns', Date.now() - startedAt);
+      this.logger.logWithMeta(
+        'info',
+        'notificacao_status_publicada',
+        {
           eventId: event.eventId,
-          correlationId: event.correlationId,
-          ordemServicoId: event.ordemServicoId,
           statusNovo: event.statusNovo,
-        }),
+        },
+        SnsNotificadorStatusGateway.name,
       );
     } catch (error) {
-      this.logger.error(
-        JSON.stringify({
-          evento: 'notificacao_status_falha_publicacao',
+      this.integrationMetrics.recordFailure('sns', Date.now() - startedAt);
+      this.logger.logWithMeta(
+        'error',
+        'notificacao_status_falha_publicacao',
+        {
           eventId: event.eventId,
-          correlationId: event.correlationId,
-          ordemServicoId: event.ordemServicoId,
           statusNovo: event.statusNovo,
           erro: error instanceof Error ? error.message : String(error),
-        }),
+        },
+        SnsNotificadorStatusGateway.name,
       );
     }
   }
