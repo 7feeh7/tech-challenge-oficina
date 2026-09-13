@@ -12,6 +12,11 @@
 | [notificacoes.md](notificacoes.md)               | Fluxo assíncrono SNS/SQS/Lambda, contrato de evento, DLQ e observabilidade       |
 | [testes-e-qualidade.md](testes-e-qualidade.md)   | Testes unitários/e2e, cobertura e SonarQube                                      |
 | [infraestrutura.md](infraestrutura.md)           | Fase 2: arquitetura AWS, Terraform, Kubernetes (EKS) e HPA                       |
+| [modelo-relacional.md](modelo-relacional.md)   | Entidades, FKs, constraints e decisões de integridade (spec 006)                 |
+| [performance-banco.md](performance-banco.md)   | Consultas críticas, índices e metas EXPLAIN (spec 006)                           |
+| [migrations-compatibilidade.md](migrations-compatibilidade.md) | RollingUpdate, backfill e rollback de migrations              |
+| [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md) | Diagrama ER versionável (Mermaid)                                    |
+| [adr/003-postgresql-banco-gerenciado.md](adr/003-postgresql-banco-gerenciado.md) | ADR: PostgreSQL, Multi-AZ, RDS Proxy, RPO/RTO              |
 | [ci-cd.md](ci-cd.md)                             | Pipeline do GitHub Actions e secrets necessários                                 |
 | [openapi.json](openapi.json)                     | Especificação OpenAPI exportada do Swagger                                       |
 

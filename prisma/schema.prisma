@@ -150,16 +150,19 @@ model OrdemServico {
   servicos          OrdemServicoServico[]
   pecas             OrdemServicoPeca[]
   orcamentos        Orcamento[]
-  historicoStatus   HistoricoStatusOS[]
-  iniciadaEm        DateTime?            @map("iniciada_em")
-  finalizadaEm      DateTime?            @map("finalizada_em")
-  entregueEm        DateTime?            @map("entregue_em")
-  criadoEm          DateTime             @default(now()) @map("criado_em")
-  atualizadoEm      DateTime             @updatedAt @map("atualizado_em")
+  historicoStatus    HistoricoStatusOS[]
+  movimentacoesEstoque MovimentacaoEstoque[]
+  iniciadaEm         DateTime?            @map("iniciada_em")
+  finalizadaEm       DateTime?            @map("finalizada_em")
+  entregueEm         DateTime?            @map("entregue_em")
+  criadoEm           DateTime             @default(now()) @map("criado_em")
+  atualizadoEm       DateTime             @updatedAt @map("atualizado_em")
 
   @@index([clienteId])
   @@index([veiculoId])
   @@index([status])
+  @@index([status, criadoEm])
+  @@index([criadoEm])
   @@map("ordens_servico")
 }
 
@@ -173,6 +176,7 @@ model OrdemServicoServico {
   precoUnitario  Decimal      @map("preco_unitario") @db.Decimal(10, 2)
   criadoEm       DateTime     @default(now()) @map("criado_em")
 
+  @@unique([ordemServicoId, servicoId])
   @@index([ordemServicoId])
   @@map("ordens_servico_servicos")
 }
@@ -187,6 +191,7 @@ model OrdemServicoPeca {
   precoUnitario  Decimal      @map("preco_unitario") @db.Decimal(10, 2)
   criadoEm       DateTime     @default(now()) @map("criado_em")
 
+  @@unique([ordemServicoId, pecaId])
   @@index([ordemServicoId])
   @@map("ordens_servico_pecas")
 }
@@ -208,6 +213,7 @@ model Orcamento {
 
   @@index([ordemServicoId])
   @@index([status])
+  @@index([ordemServicoId, status])
   @@map("orcamentos")
 }
 
@@ -225,6 +231,7 @@ model HistoricoStatusOS {
 
   @@index([ordemServicoId])
   @@index([statusNovo])
+  @@index([ordemServicoId, criadoEm])
   @@map("historico_status_os")
 }
 
@@ -237,11 +244,13 @@ model MovimentacaoEstoque {
   tipo           TipoMovimentacaoEstoque
   quantidade     Int
   ordemServicoId String?                 @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico?           @relation(fields: [ordemServicoId], references: [id], onDelete: SetNull)
   observacao     String?
   criadoEm       DateTime                @default(now()) @map("criado_em")
 
   @@index([pecaId])
   @@index([ordemServicoId])
+  @@index([pecaId, criadoEm])
   @@map("movimentacoes_estoque")
 }
 

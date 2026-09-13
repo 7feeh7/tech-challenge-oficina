@@ -64,15 +64,22 @@ API em `http://localhost:3000` e Swagger em `http://localhost:3000/docs`. Detalh
 
 ### 2. Provisionamento da infraestrutura (Terraform)
 
+Infraestrutura segregada em repositórios dedicados:
+
+| Repositório | Recursos |
+| --- | --- |
+| `tech-challenge-infra-kubernetes` | VPC, EKS, ECR, API Gateway |
+| `tech-challenge-infra-database` | RDS PostgreSQL, Secrets Manager |
+
 ```bash
-cd infra
-cp terraform.tfvars.example terraform.tfvars   # defina db_password
-terraform init
-terraform apply
-$(terraform output -raw kubeconfig_command)     # configura o kubectl
+# Kubernetes (primeiro)
+cd tech-challenge-infra-kubernetes/terraform && terraform apply
+
+# Banco (consome SSM do k8s)
+cd tech-challenge-infra-database/terraform && terraform apply
 ```
 
-Detalhes e lista de recursos em [infra/README.md](../infra/README.md).
+Detalhes: [infra/README.md](../infra/README.md), [ADR-003](adr/003-postgresql-banco-gerenciado.md), README de cada repo de infra.
 
 ### 3. Deploy no Kubernetes (EKS)
 

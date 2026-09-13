@@ -74,7 +74,7 @@ jobs:
           HOST=$(echo "$SECRET" | jq -r .host)
           PORT=$(echo "$SECRET" | jq -r .port)
           DB=$(echo "$SECRET" | jq -r .dbname)
-          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public"
+          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public&connection_limit=5&pool_timeout=10"
           echo "database_url=$URL" >> $GITHUB_OUTPUT
 
       - uses: aws-actions/amazon-ecr-login@v2
