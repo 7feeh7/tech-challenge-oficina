@@ -59,6 +59,19 @@
 | [runbooks/correlacao-observabilidade.md](runbooks/correlacao-observabilidade.md) | Correlação Gateway → SendGrid |
 | [ci-cd.md](ci-cd.md) | Pipelines GitHub Actions |
 | [testes-e-qualidade.md](testes-e-qualidade.md) | Testes e SonarQube |
+| [governanca-git.md](governanca-git.md) | Branch protection, OIDC, secrets |
+
+## Segurança e privacidade (spec 010)
+
+| Documento | Conteúdo |
+| --- | --- |
+| [seguranca/modelo-ameacas.md](seguranca/modelo-ameacas.md) | Ativos, ameaças, controles |
+| [seguranca/ciclo-vida-dados-pessoais.md](seguranca/ciclo-vida-dados-pessoais.md) | Inventário PII, retenção, LGPD |
+| [seguranca/matriz-seguranca-evidencias.md](seguranca/matriz-seguranca-evidencias.md) | Ameaça → evidência |
+| [seguranca/rotacao-segredos.md](seguranca/rotacao-segredos.md) | Rotação JWT, RDS, SendGrid |
+| [seguranca/checklist-publicacao.md](seguranca/checklist-publicacao.md) | Vídeo/PDF sem PII |
+
+Scripts: `scripts/security/` · Evidências: `evidence/`
 
 ## Documentação de apoio
 

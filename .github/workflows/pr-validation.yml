@@ -29,6 +29,10 @@ jobs:
       - run: yarn build
       - run: yarn test:cov
 
+      - name: Auditoria npm (alta/critica)
+        run: yarn npm audit --all --audit-level=high
+        continue-on-error: false
+
       - name: SonarCloud Scan
         if: github.event_name == 'pull_request'
         uses: SonarSource/sonarqube-scan-action@v5

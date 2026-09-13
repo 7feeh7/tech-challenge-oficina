@@ -91,6 +91,18 @@ Variável Terraform `api_cors_origins`. Produção: origens explícitas (não `*
 
 Header `X-Correlation-Id`: propagado se enviado; gerado na borda se ausente; devolvido em toda resposta. Access logs JSON no CloudWatch (`/aws/apigateway/tech-challenge-{env}-api`).
 
+## Throttling e rate limit
+
+| Camada | Escopo | Burst | Rate | Resposta |
+| --- | --- | --- | --- | --- |
+| Stage default | Todas as rotas | 100 | 50 req/s | 429 `Too Many Requests` |
+| Route `POST /auth/cpf` | Por IP de origem | 10 | 5 req/s | 429 uniforme |
+| Lambda DynamoDB | Por CPF (hash SHA-256) | 5 tentativas / 300 s | — | 429 `RATE_LIMIT` |
+
+Variáveis Terraform: `api_throttling_*`, `auth_route_throttling_*`, `auth_cpf_max_attempts`.
+
+Teste de carga controlada: `scripts/security/test-auth-rate-limit.sh` (janela combinada).
+
 ## WAF
 
 **Decisão:** não adotado nesta fase. Throttling no stage + validação JWT na aplicação cobrem o risco inicial; WAF gerenciado será reavaliado na spec de hardening se houver tráfego externo ampliado.

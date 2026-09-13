@@ -41,13 +41,15 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     environment: producao
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Resolver parametros via SSM
@@ -57,11 +59,13 @@ jobs:
           ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
           EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
           DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
+          JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
           SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
           IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
           echo "ecr=$ECR" >> $GITHUB_OUTPUT
           echo "eks=$EKS" >> $GITHUB_OUTPUT
           echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
+          echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
           echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
           echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
 
@@ -76,6 +80,13 @@ jobs:
           DB=$(echo "$SECRET" | jq -r .dbname)
           URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public&connection_limit=5&pool_timeout=10"
           echo "database_url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Obter JWT do Secrets Manager
+        id: jwt
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.jwt_arn }}" --query SecretString --output text)
+          JWT=$(echo "$SECRET" | jq -r .secret)
+          echo "jwt_secret=$JWT" >> $GITHUB_OUTPUT
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -108,7 +119,7 @@ jobs:
           kubectl create secret generic oficina-secret \
             --namespace "$K8S_NAMESPACE" \
             --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
-            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
+            --from-literal=JWT_SECRET='${{ steps.jwt.outputs.jwt_secret }}' \
             --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 

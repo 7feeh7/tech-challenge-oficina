@@ -47,9 +47,13 @@ Clientes da oficina devem consultar OS e orçamentos sem credencial de funcioná
 
 | Risco | Mitigação |
 | --- | --- |
-| Enumeração de CPF | 401 uniforme; rate limit no Gateway |
+| Enumeração de CPF | 401 uniforme; rate limit Gateway + DynamoDB por CPF; timing pad |
 | Vazamento de JWT | TTL 1 h; sem PII no payload; logs sanitizados |
 | Secret comprometido | Rotação via Secrets Manager + redeploy API/Lambda |
+
+## Modelo de ameaças
+
+Matriz completa em [modelo-ameacas.md](../seguranca/modelo-ameacas.md).
 
 ## Discussão e conclusão
 
@@ -59,4 +63,5 @@ Gateway authorizer foi rejeitado na ADR-002 — regras de ownership permanecem n
 
 - [sequencia-auth-cpf.md](../diagramas/sequencia-auth-cpf.md)
 - [autenticacao.md](../autenticacao.md)
-- `tech-challenge-serverless/src/functions/auth-cpf/`
+- [modelo-ameacas.md](../seguranca/modelo-ameacas.md)
+- `tech-challenge-serverless/docs/contrato-auth-cpf.md`

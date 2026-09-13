@@ -77,15 +77,22 @@ O GitHub deve recusar a execucao com erro de deployment branch policy.
 
 ## OIDC (spec 010)
 
-Substituir access keys por role IAM com trust policy:
+Implementado em `tech-challenge-infra-kubernetes/terraform/github-oidc.tf`. Cada repositório possui role IAM própria; trust policy exige `ref:refs/heads/main`.
 
-```json
-"Condition": {
-  "StringEquals": {
-    "token.actions.githubusercontent.com:sub": "repo:<org>/<repo>:ref:refs/heads/main"
-  }
-}
+Workflows usam:
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
 ```
+
+ARNs publicados no SSM (`github_role_*_arn`). Configurar `AWS_DEPLOY_ROLE_ARN` no Environment `producao` de cada repo. Revogar access keys após bootstrap.
+
+Procedimento de rotação: [rotacao-segredos.md](seguranca/rotacao-segredos.md).
 
 ## Referencias
 
