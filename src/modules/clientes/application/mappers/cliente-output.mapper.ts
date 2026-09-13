@@ -7,6 +7,7 @@ export interface ClienteOutput {
   cpfCnpj: string;
   email: string;
   telefone: string;
+  ativo: boolean;
 }
 
 export interface ClienteDetalheOutput extends ClienteOutput {
@@ -21,6 +22,7 @@ export class ClienteOutputMapper {
       cpfCnpj: cliente.cpfCnpj,
       email: cliente.email,
       telefone: cliente.telefone,
+      ativo: cliente.ativo,
     };
   }
 

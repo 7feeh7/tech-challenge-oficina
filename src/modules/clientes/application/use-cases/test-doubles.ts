@@ -23,5 +23,6 @@ export const criarGatewayMock = (): jest.Mocked<ClienteGateway> => ({
   listar: jest.fn(),
   criar: jest.fn(),
   atualizar: jest.fn(),
+  alterarStatusComAuditoria: jest.fn(),
   remover: jest.fn(),
 });

@@ -17,6 +17,7 @@ export class AuthService {
 
     const payload = {
       sub: usuario.id,
+      tipo: 'INTERNO' as const,
       email: usuario.email,
       perfil: usuario.perfil,
     };

@@ -25,7 +25,11 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Sistema de Oficina Mecânica')
-    .setDescription('API para gestão de oficina mecânica.')
+    .setDescription(
+      'API para gestão de oficina mecânica. Autenticação interna via POST /auth/login; ' +
+        'clientes autenticam por POST /auth/cpf (Function serverless) e usam o accessToken como Bearer. ' +
+        'Tokens de cliente acessam apenas a própria OS e orçamento.',
+    )
     .setVersion('1.0.0')
     .addBearerAuth()
     .build();

@@ -12,6 +12,7 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
+  Req,
 } from '@nestjs/common';
 import {
   ApiOperation,
@@ -28,8 +29,11 @@ import { BuscarClienteUseCase } from '@/modules/clientes/application/use-cases/b
 import { CriarClienteUseCase } from '@/modules/clientes/application/use-cases/criar-cliente.use-case';
 import { ListarClientesUseCase } from '@/modules/clientes/application/use-cases/listar-clientes.use-case';
 import { RemoverClienteUseCase } from '@/modules/clientes/application/use-cases/remover-cliente.use-case';
+import { AlterarStatusClienteUseCase } from '@/modules/clientes/application/use-cases/alterar-status-cliente.use-case';
 import { CreateClienteDto } from '@/modules/clientes/infra/http/dtos/create-cliente.dto';
 import { UpdateClienteDto } from '@/modules/clientes/infra/http/dtos/update-cliente.dto';
+import { AlterarStatusClienteDto } from '@/modules/clientes/infra/http/dtos/alterar-status-cliente.dto';
+import { RequisicaoAutenticada } from '@/modules/auth/jwt-payload';
 
 @ApiTags('Clientes')
 @ApiBearerAuth()
@@ -42,6 +46,7 @@ export class ClientesController {
     private readonly buscarCliente: BuscarClienteUseCase,
     private readonly atualizarCliente: AtualizarClienteUseCase,
     private readonly removerCliente: RemoverClienteUseCase,
+    private readonly alterarStatusCliente: AlterarStatusClienteUseCase,
   ) {}
 
   @Post()
@@ -95,6 +100,26 @@ export class ClientesController {
   @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return await this.buscarCliente.execute(id);
+  }
+
+  @Patch(':id/status')
+  @ApiOperation({
+    summary: 'Ativa ou inativa um cliente',
+    description:
+      'Cliente inativo não autentica por CPF. OS em andamento pode ser concluída pela oficina; reativação é feita por administrador ou atendente.',
+  })
+  @ApiParam({ name: 'id', description: 'UUID do cliente', type: String })
+  @ApiResponse({ status: 200, description: 'Status atualizado com sucesso' })
+  @ApiResponse({ status: 404, description: 'Cliente não encontrado' })
+  async alterarStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AlterarStatusClienteDto,
+    @Req() req: RequisicaoAutenticada,
+  ) {
+    return await this.alterarStatusCliente.execute(id, {
+      ativo: dto.ativo,
+      alteradoPorId: req.user!.sub,
+    });
   }
 
   @Patch(':id')

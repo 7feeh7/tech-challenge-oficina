@@ -12,6 +12,8 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
+  Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiOperation,
@@ -22,6 +24,15 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import {
+  RequireOwnership,
+  OwnershipResource,
+} from '@/modules/auth/decorators/ownership.decorator';
+import {
+  isTokenCliente,
+  RequisicaoAutenticada,
+} from '@/modules/auth/jwt-payload';
+import { PerfilCliente } from '@/modules/auth/perfil-autorizacao';
 import { PerfilUsuario } from '@/modules/usuarios/domain/perfil-usuario';
 import { AtualizarOrcamentoUseCase } from '@/modules/orcamentos/application/use-cases/atualizar-orcamento.use-case';
 import { BuscarOrcamentoUseCase } from '@/modules/orcamentos/application/use-cases/buscar-orcamento.use-case';
@@ -75,15 +86,23 @@ export class OrcamentosController {
   }
 
   @Get(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE, PerfilCliente)
+  @RequireOwnership(OwnershipResource.ORCAMENTO)
   @ApiOperation({ summary: 'Consultar um orçamento pelo ID' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Orçamento encontrado.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Cliente tentando acessar orçamento de outro cliente.',
+  })
   @ApiResponse({ status: 404, description: 'Orçamento não encontrado.' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return await this.buscarOrcamento.execute(id);
   }
 
   @Patch(':id')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE, PerfilCliente)
+  @RequireOwnership(OwnershipResource.ORCAMENTO)
   @ApiOperation({
     summary:
       'Aprovar ou recusar o orçamento (aprovar move a OS para EM_EXECUCAO e baixa o estoque)',
@@ -94,11 +113,34 @@ export class OrcamentosController {
     status: 400,
     description: 'Motivo de rejeição ausente ou estoque insuficiente.',
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Cliente tentando decidir orçamento de outro cliente.',
+  })
   @ApiResponse({ status: 404, description: 'Orçamento não encontrado.' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrcamentoDto: UpdateOrcamentoDto,
+    @Req() req: RequisicaoAutenticada,
   ) {
+    if (req.user && isTokenCliente(req.user)) {
+      const permitido = {
+        status: updateOrcamentoDto.status,
+        motivoRejeicao: updateOrcamentoDto.motivoRejeicao,
+      };
+
+      if (
+        updateOrcamentoDto.valorTotal !== undefined ||
+        updateOrcamentoDto.observacoes !== undefined
+      ) {
+        throw new ForbiddenException(
+          'Cliente autenticado só pode aprovar ou rejeitar o orçamento.',
+        );
+      }
+
+      return await this.atualizarOrcamento.execute(id, permitido);
+    }
+
     return await this.atualizarOrcamento.execute(id, updateOrcamentoDto);
   }
 

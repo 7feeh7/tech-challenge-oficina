@@ -76,3 +76,17 @@ A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGate
 - **Tempo médio de ciclo total**: `criadoEm` → `entregueEm`.
 
 Ambas consideram apenas OS que passaram pela execução, e aceitam recorte por `dataInicio` / `dataFim`.
+
+## Autenticação de cliente por CPF
+
+- Somente CPF válido de pessoa física (11 dígitos) autentica; CNPJ não entra neste fluxo.
+- Cliente **inexistente** e **inativo** recebem a mesma resposta `401` na Function (anti-enumeração).
+- Token de cliente não contém PII; expira em 1h; **sem refresh token**.
+- Perfil `CLIENTE` consulta apenas a própria OS (`GET /ordens-servico/:id`) e decide sobre o próprio orçamento (`GET` e `PATCH /orcamentos/:id` com restrição de campos).
+
+## Inativação de cliente
+
+- Campo `ativo` controla autenticação por CPF.
+- Inativar não cancela OS em andamento: a oficina conclui o atendimento em curso.
+- Reativação por `ADMINISTRADOR` ou `ATENDENTE` via `PATCH /clientes/:id/status`.
+- Toda mudança de status gera registro em `auditoria_cliente_status` com `alteradoPorId`.

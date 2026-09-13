@@ -91,6 +91,7 @@ describe('AuthService', () => {
       expect(jwtServiceMock.signAsync).toHaveBeenCalledWith(
         {
           sub: 'uuid-u1',
+          tipo: 'INTERNO',
           email: 'admin@oficina.com',
           perfil: PerfilUsuario.ADMINISTRADOR,
         },

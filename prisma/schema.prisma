@@ -58,17 +58,32 @@ model Usuario {
 // ===================== CLIENTE / VEÍCULO =====================
 
 model Cliente {
-  id           String         @id @default(uuid()) @db.Uuid
-  nome         String
-  cpfCnpj      String         @unique @map("cpf_cnpj")
-  email        String         @unique
-  telefone     String
-  veiculos     Veiculo[]
-  ordens       OrdemServico[]
-  criadoEm     DateTime       @default(now()) @map("criado_em")
-  atualizadoEm DateTime       @updatedAt @map("atualizado_em")
+  id              String                    @id @default(uuid()) @db.Uuid
+  nome            String
+  cpfCnpj         String                    @unique @map("cpf_cnpj")
+  email           String                    @unique
+  telefone        String
+  ativo           Boolean                   @default(true)
+  veiculos        Veiculo[]
+  ordens          OrdemServico[]
+  auditoriasStatus AuditoriaClienteStatus[]
+  criadoEm        DateTime                  @default(now()) @map("criado_em")
+  atualizadoEm    DateTime                  @updatedAt @map("atualizado_em")
 
   @@map("clientes")
+}
+
+model AuditoriaClienteStatus {
+  id             String   @id @default(uuid()) @db.Uuid
+  clienteId      String   @map("cliente_id") @db.Uuid
+  cliente        Cliente  @relation(fields: [clienteId], references: [id])
+  ativoAnterior  Boolean  @map("ativo_anterior")
+  ativoNovo      Boolean  @map("ativo_novo")
+  alteradoPorId  String?  @map("alterado_por_id") @db.Uuid
+  criadoEm       DateTime @default(now()) @map("criado_em")
+
+  @@index([clienteId])
+  @@map("auditoria_cliente_status")
 }
 
 model Veiculo {

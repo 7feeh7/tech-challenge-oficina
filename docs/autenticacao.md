@@ -2,6 +2,8 @@
 
 A API é protegida globalmente por JWT. Rotas marcadas com `@Public()` (ex.: `POST /auth/login` e as de health) não exigem token.
 
+## Funcionários internos
+
 1. Faça login:
 
    ```http
@@ -12,19 +14,55 @@ A API é protegida globalmente por JWT. Rotas marcadas com `@Public()` (ex.: `PO
    }
    ```
 
-2. Use o `token` retornado no header das demais requisições:
+2. Use o `token` retornado:
 
    ```
    Authorization: Bearer <token>
    ```
 
-A senha do usuário é persistida como hash **bcryptjs** e nunca volta em nenhuma resposta. O payload do JWT carrega `sub` (id do usuário), `email` e `perfil`.
+O payload carrega `sub` (id do usuário), `tipo: INTERNO`, `email` e `perfil`.
 
-O administrador inicial é criado pelo seed do módulo `usuarios` — a senha vem da variável `ADMIN_SENHA` (ver [configuracao.md](configuracao.md) e [ci-cd.md](ci-cd.md)).
+## Clientes (CPF via Function serverless)
 
-## Perfis e permissões
+1. Autentique-se pelo API Gateway:
 
-O acesso aos endpoints é controlado por `@Roles` + `RolesGuard`:
+   ```http
+   POST /auth/cpf
+   {
+     "cpf": "529.982.247-25"
+   }
+   ```
+
+2. Use o `accessToken` retornado nas rotas permitidas ao perfil `CLIENTE`:
+
+   ```
+   Authorization: Bearer <accessToken>
+   ```
+
+Claims do token de cliente: `sub` (= `clienteId`), `tipo: CLIENTE`, `perfil: CLIENTE`, `iss`, `aud`, `iat`, `exp`, `jti`. Sem CPF, nome ou e-mail no token.
+
+Contrato completo da Function: repositório `tech-challenge-serverless` em `docs/contrato-auth-cpf.md`.
+
+## Convivência de tokens
+
+| Origem | `tipo` | `perfil` | Uso |
+| --- | --- | --- | --- |
+| `POST /auth/login` | `INTERNO` | `ADMINISTRADOR`, `ATENDENTE`, etc. | Rotas administrativas |
+| `POST /auth/cpf` | `CLIENTE` | `CLIENTE` | Consulta da própria OS e decisão sobre o próprio orçamento |
+
+A API valida `iss` e `aud` nos tokens de cliente (`JWT_ISSUER`, `JWT_AUDIENCE`).
+
+## Ownership
+
+Token de cliente só acessa recursos cujo `clienteId` coincide com `sub`:
+
+- `GET /ordens-servico/:id`
+- `GET /orcamentos/:id`
+- `PATCH /orcamentos/:id` (apenas aprovar/rejeitar)
+
+Tentativa de acesso cruzado retorna `403`.
+
+## Perfis internos e permissões
 
 | Perfil          | Acesso                                            |
 | --------------- | ------------------------------------------------- |
@@ -33,4 +71,16 @@ O acesso aos endpoints é controlado por `@Roles` + `RolesGuard`:
 | `MECANICO`      | Ordens de serviço                                 |
 | `ALMOXARIFE`    | Peças e movimentações de estoque                  |
 
-Os catálogos de **serviços** e **peças** são de leitura livre para qualquer perfil autenticado; a escrita é restrita (serviços: `ADMINISTRADOR`; peças: `ADMINISTRADOR` e `ALMOXARIFE`). O detalhamento rota a rota está em [api.md](api.md).
+`CLIENTE` **não** existe como perfil de usuário interno — não é possível criar funcionário com esse perfil.
+
+## Status do cliente e autenticação
+
+Clientes possuem campo `ativo`. Inativos recebem `401` na Function (mesma resposta de CPF inexistente). Inativação é auditada em `auditoria_cliente_status`. OS em andamento pode ser concluída pela oficina; reativação por `ADMINISTRADOR` ou `ATENDENTE` via `PATCH /clientes/:id/status`.
+
+## Renovação e revogação
+
+Sem refresh token: expirado o JWT, o cliente autentica novamente por CPF. Inativar o cliente impede novas emissões; tokens já emitidos continuam válidos até expirar (TTL curto de 1h).
+
+## Configuração
+
+Ver [configuracao.md](configuracao.md) — `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`.

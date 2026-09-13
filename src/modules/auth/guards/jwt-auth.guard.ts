@@ -8,7 +8,12 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
-import { JwtPayload, RequisicaoAutenticada } from '../jwt-payload';
+import {
+  JwtPayload,
+  JwtPayloadCliente,
+  RequisicaoAutenticada,
+  isTokenCliente,
+} from '../jwt-payload';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -34,15 +39,52 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
-      });
+      const payload = await this.verifyToken(token);
+      this.validarClaims(payload);
       request.user = payload;
     } catch {
       throw new UnauthorizedException('Token inválido ou expirado.');
     }
 
     return true;
+  }
+
+  private async verifyToken(token: string): Promise<JwtPayload> {
+    const secret = this.configService.get<string>('JWT_SECRET');
+
+    return this.jwtService.verifyAsync<JwtPayload>(token, { secret });
+  }
+
+  private validarClaims(payload: JwtPayload): void {
+    if (isTokenCliente(payload)) {
+      this.validarTokenCliente(payload);
+      return;
+    }
+
+    if (!payload.email || !payload.perfil) {
+      throw new UnauthorizedException('Token interno inválido.');
+    }
+  }
+
+  private validarTokenCliente(payload: JwtPayloadCliente): void {
+    const issuer = this.configService.get<string>('JWT_ISSUER');
+    const audience = this.configService.get<string>('JWT_AUDIENCE');
+
+    if (issuer && payload.iss !== issuer) {
+      throw new UnauthorizedException('Issuer inválido.');
+    }
+
+    if (audience) {
+      const aud = payload.aud;
+      const audiences = Array.isArray(aud) ? aud : aud ? [aud] : [];
+      if (!audiences.includes(audience)) {
+        throw new UnauthorizedException('Audience inválida.');
+      }
+    }
+
+    if (payload.tipo !== 'CLIENTE' || payload.perfil !== 'CLIENTE') {
+      throw new UnauthorizedException('Token de cliente inválido.');
+    }
   }
 
   private extractTokenFromHeader(request: {

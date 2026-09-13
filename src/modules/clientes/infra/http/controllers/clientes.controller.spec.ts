@@ -4,6 +4,7 @@ import { BuscarClienteUseCase } from '@/modules/clientes/application/use-cases/b
 import { CriarClienteUseCase } from '@/modules/clientes/application/use-cases/criar-cliente.use-case';
 import { ListarClientesUseCase } from '@/modules/clientes/application/use-cases/listar-clientes.use-case';
 import { RemoverClienteUseCase } from '@/modules/clientes/application/use-cases/remover-cliente.use-case';
+import { AlterarStatusClienteUseCase } from '@/modules/clientes/application/use-cases/alterar-status-cliente.use-case';
 import {
   ClienteJaExisteError,
   ClienteNaoEncontradoError,
@@ -23,6 +24,7 @@ const listarClientesMock = { execute: jest.fn() };
 const buscarClienteMock = { execute: jest.fn() };
 const atualizarClienteMock = { execute: jest.fn() };
 const removerClienteMock = { execute: jest.fn() };
+const alterarStatusClienteMock = { execute: jest.fn() };
 
 describe('ClientesController', () => {
   let controller: ClientesController;
@@ -36,6 +38,10 @@ describe('ClientesController', () => {
         { provide: BuscarClienteUseCase, useValue: buscarClienteMock },
         { provide: AtualizarClienteUseCase, useValue: atualizarClienteMock },
         { provide: RemoverClienteUseCase, useValue: removerClienteMock },
+        {
+          provide: AlterarStatusClienteUseCase,
+          useValue: alterarStatusClienteMock,
+        },
       ],
     }).compile();
 

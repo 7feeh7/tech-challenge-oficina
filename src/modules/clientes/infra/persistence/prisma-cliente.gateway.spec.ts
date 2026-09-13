@@ -22,6 +22,7 @@ const raw = {
   cpfCnpj: '52998224725',
   email: 'joao@email.com',
   telefone: '11988887777',
+  ativo: true,
   criadoEm: new Date('2026-01-01'),
   atualizadoEm: new Date('2026-01-01'),
 };
@@ -198,6 +199,7 @@ describe('PrismaClienteGateway', () => {
         cpfCnpj: '52998224725',
         email: 'joao@email.com',
         telefone: '11988887777',
+        ativo: true,
       },
     });
   });

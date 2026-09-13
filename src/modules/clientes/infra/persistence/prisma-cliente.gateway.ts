@@ -104,6 +104,34 @@ export class PrismaClienteGateway implements ClienteGateway {
     return PrismaClienteMapper.toDomain(raw);
   }
 
+  async alterarStatusComAuditoria(
+    id: string,
+    ativo: boolean,
+    alteradoPorId: string,
+  ): Promise<Cliente> {
+    const raw = await this.prisma.$transaction(async (tx) => {
+      const atual = await tx.cliente.findUniqueOrThrow({ where: { id } });
+
+      const atualizado = await tx.cliente.update({
+        where: { id },
+        data: { ativo },
+      });
+
+      await tx.auditoriaClienteStatus.create({
+        data: {
+          clienteId: id,
+          ativoAnterior: atual.ativo,
+          ativoNovo: ativo,
+          alteradoPorId,
+        },
+      });
+
+      return atualizado;
+    });
+
+    return PrismaClienteMapper.toDomain(raw);
+  }
+
   async remover(id: string): Promise<void> {
     await this.prisma.cliente.delete({ where: { id } });
   }

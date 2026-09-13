@@ -15,6 +15,7 @@ import { MovimentacoesEstoqueModule } from './modules/movimentacoes-estoque/movi
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
+import { OwnershipGuard } from './modules/auth/guards/ownership.guard';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -45,6 +46,10 @@ import { HealthModule } from './modules/health/health.module';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: OwnershipGuard,
     },
     {
       provide: APP_FILTER,

@@ -7,8 +7,9 @@ import {
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 
+import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/database/prisma.service';
+import { PrismaService } from '../src/shared/database/prisma.service';
 import {
   PerfilUsuario,
   StatusOS,
@@ -41,6 +42,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   } = {};
 
   let token: string;
+  let jwtService: JwtService;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -63,6 +65,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     httpServer = app.getHttpServer();
 
     prisma = app.get(PrismaService);
+    jwtService = app.get(JwtService);
 
     const senhaHash = await bcrypt.hash(senhaPlain, 10);
     const usuario = await prisma.usuario.create({
@@ -253,7 +256,58 @@ describe('Fluxo completo da oficina (e2e)', () => {
     expect(os?.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
   });
 
-  it('7. PATCH /orcamentos/:id → APROVADO deve dar baixa no estoque e mover OS para EM_EXECUCAO', async () => {
+  it('7. token de cliente → consulta OS própria e bloqueia acesso cruzado', async () => {
+    const clientToken = await jwtService.signAsync(
+      {
+        sub: created.clienteId,
+        tipo: 'CLIENTE',
+        perfil: 'CLIENTE',
+      },
+      {
+        secret: process.env.JWT_SECRET,
+        issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
+        audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
+      },
+    );
+
+    await request(httpServer)
+      .get(`/ordens-servico/${created.ordemServicoId}`)
+      .set('Authorization', `Bearer ${clientToken}`)
+      .expect(200);
+
+    const outroCliente = await request(httpServer)
+      .post('/clientes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nome: 'Outro Cliente E2E',
+        cpfCnpj: '15396887700',
+        email: `outro.e2e+${Date.now()}@oficina.test`,
+        telefone: '11988887777',
+      })
+      .expect(201);
+
+    const tokenOutro = await jwtService.signAsync(
+      {
+        sub: outroCliente.body.id,
+        tipo: 'CLIENTE',
+        perfil: 'CLIENTE',
+      },
+      {
+        secret: process.env.JWT_SECRET,
+        issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
+        audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
+      },
+    );
+
+    await request(httpServer)
+      .get(`/ordens-servico/${created.ordemServicoId}`)
+      .set('Authorization', `Bearer ${tokenOutro}`)
+      .expect(403);
+
+    await prisma.cliente.deleteMany({ where: { id: outroCliente.body.id } });
+  });
+
+  it('8. PATCH /orcamentos/:id → APROVADO deve dar baixa no estoque e mover OS para EM_EXECUCAO', async () => {
     // Arrange
     const pecaAntes = await prisma.peca.findUnique({
       where: { id: created.pecaId! },
@@ -281,7 +335,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     expect(os?.iniciadaEm).toBeTruthy();
   });
 
-  it('8. GET /ordens-servico/:id → deve refletir o estado final', async () => {
+  it('9. GET /ordens-servico/:id → deve refletir o estado final', async () => {
     // Act
     const res = await request(httpServer)
       .get(`/ordens-servico/${created.ordemServicoId}`)
@@ -293,7 +347,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     expect(res.body.status).toBe(StatusOS.EM_EXECUCAO);
   });
 
-  it('9. GET /ordens-servico/metricas/tempo-medio → deve retornar métricas', async () => {
+  it('10. GET /ordens-servico/metricas/tempo-medio → deve retornar métricas', async () => {
     // Act
     const res = await request(httpServer)
       .get('/ordens-servico/metricas/tempo-medio')
@@ -306,7 +360,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     expect(res.body).toHaveProperty('tempoMedioCicloTotalMs');
   });
 
-  it('10. GET sem token → deve retornar 401', async () => {
+  it('11. GET sem token → deve retornar 401', async () => {
     await request(httpServer).get('/clientes').expect(401);
   });
 });

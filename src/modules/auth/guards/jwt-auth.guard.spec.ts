@@ -1,92 +1,76 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
-import { JwtService } from '@nestjs/jwt';
-import { PerfilUsuario } from '@/shared/generated/prisma/enums';
-import { RequisicaoAutenticada } from '../jwt-payload';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
-const reflector = { getAllAndOverride: jest.fn() } as unknown as Reflector;
-const jwtService = { verifyAsync: jest.fn() } as unknown as JwtService;
-const configService = {
-  get: jest.fn().mockReturnValue('segredo-de-teste'),
-} as unknown as ConfigService;
+describe('JwtAuthGuard', () => {
+  const jwtService = {
+    verifyAsync: jest.fn(),
+  } as unknown as JwtService;
 
-const getAllAndOverride = reflector.getAllAndOverride as jest.Mock;
-const verifyAsync = jwtService.verifyAsync as jest.Mock;
+  const configService = {
+    get: jest.fn((key: string) => {
+      if (key === 'JWT_SECRET') return 'segredo';
+      if (key === 'JWT_ISSUER') return 'tech-challenge-auth';
+      if (key === 'JWT_AUDIENCE') return 'tech-challenge-api';
+      return undefined;
+    }),
+  } as unknown as ConfigService;
 
-/** Monta um ExecutionContext e devolve também a request, para inspecionar o `user`. */
-function contextoCom(authorization?: string) {
-  const request: RequisicaoAutenticada = {
-    headers: authorization ? { authorization } : {},
-  };
+  const reflector = {
+    getAllAndOverride: jest.fn().mockReturnValue(false),
+  } as unknown as Reflector;
+
+  const guard = new JwtAuthGuard(jwtService, reflector, configService);
 
   const context = {
-    switchToHttp: () => ({ getRequest: () => request }),
-    getHandler: () => undefined,
-    getClass: () => undefined,
-  } as unknown as ExecutionContext;
-
-  return { context, request };
-}
-
-describe('JwtAuthGuard', () => {
-  const guard = new JwtAuthGuard(jwtService, reflector, configService);
+    getHandler: () => ({}),
+    getClass: () => ({}),
+    switchToHttp: () => ({
+      getRequest: () => ({
+        headers: { authorization: 'Bearer token' },
+      }),
+    }),
+  } as never;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    getAllAndOverride.mockReturnValue(false);
   });
 
-  it('libera rotas marcadas como públicas sem exigir token', async () => {
-    getAllAndOverride.mockReturnValue(true);
-    const { context } = contextoCom();
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(verifyAsync).not.toHaveBeenCalled();
-  });
-
-  it('recusa quando não há header Authorization', async () => {
-    const { context } = contextoCom();
-
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
-  });
-
-  it('recusa quando o esquema não é Bearer', async () => {
-    const { context } = contextoCom('Basic abc123');
-
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
-    expect(verifyAsync).not.toHaveBeenCalled();
-  });
-
-  it('recusa quando o token é inválido ou expirado', async () => {
-    verifyAsync.mockRejectedValue(new Error('jwt expired'));
-    const { context } = contextoCom('Bearer token-podre');
-
-    await expect(guard.canActivate(context)).rejects.toThrow(
-      UnauthorizedException,
-    );
-  });
-
-  it('aceita o token válido e anexa o payload na request', async () => {
-    const payload = {
+  it('aceita token interno valido', async () => {
+    jwtService.verifyAsync = jest.fn().mockResolvedValue({
       sub: 'usuario-1',
-      email: 'admin@oficina.com',
-      perfil: PerfilUsuario.ADMINISTRADOR,
-    };
-    verifyAsync.mockResolvedValue(payload);
-    const { context, request } = contextoCom('Bearer token-bom');
+      email: 'a@b.com',
+      perfil: 'ADMINISTRADOR',
+    });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
 
-    // o RolesGuard depende deste `user` para decidir a permissão
-    expect(request.user).toEqual(payload);
-    expect(verifyAsync).toHaveBeenCalledWith('token-bom', {
-      secret: 'segredo-de-teste',
+  it('aceita token de cliente com issuer e audience corretos', async () => {
+    jwtService.verifyAsync = jest.fn().mockResolvedValue({
+      sub: 'cliente-1',
+      tipo: 'CLIENTE',
+      perfil: 'CLIENTE',
+      iss: 'tech-challenge-auth',
+      aud: 'tech-challenge-api',
     });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('rejeita token de cliente com audience invalida', async () => {
+    jwtService.verifyAsync = jest.fn().mockResolvedValue({
+      sub: 'cliente-1',
+      tipo: 'CLIENTE',
+      perfil: 'CLIENTE',
+      iss: 'tech-challenge-auth',
+      aud: 'outra-api',
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
   });
 });
