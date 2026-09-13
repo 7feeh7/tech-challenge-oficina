@@ -52,6 +52,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
+    app.setGlobalPrefix('v1');
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -126,7 +127,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('1. POST /auth/login → deve autenticar e retornar token', async () => {
     // Act
     const res = await request(httpServer)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: adminEmail, senha: senhaPlain })
       .expect(200);
 
@@ -146,7 +147,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
 
     // Act
     const res = await request(httpServer)
-      .post('/clientes')
+      .post('/v1/clientes')
       .set('Authorization', `Bearer ${token}`)
       .send(payload)
       .expect(201);
@@ -160,7 +161,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('3. POST /veiculos → deve criar veículo para o cliente', async () => {
     // Act
     const res = await request(httpServer)
-      .post('/veiculos')
+      .post('/v1/veiculos')
       .set('Authorization', `Bearer ${token}`)
       .send({
         placa: 'ABC1D23',
@@ -179,7 +180,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('4. POST /servicos e POST /pecas → catálogos para a OS', async () => {
     // Act — serviço
     const servico = await request(httpServer)
-      .post('/servicos')
+      .post('/v1/servicos')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nome: `Troca de Óleo E2E ${Date.now()}`,
@@ -191,7 +192,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
 
     // Act — peça
     const peca = await request(httpServer)
-      .post('/pecas')
+      .post('/v1/pecas')
       .set('Authorization', `Bearer ${token}`)
       .send({
         codigo: `FLT-E2E-${Date.now()}`,
@@ -210,7 +211,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('5. POST /ordens-servico → deve criar OS em RECEBIDA e registrar histórico', async () => {
     // Act
     const res = await request(httpServer)
-      .post('/ordens-servico')
+      .post('/v1/ordens-servico')
       .set('Authorization', `Bearer ${token}`)
       .send({
         clienteId: created.clienteId,
@@ -236,7 +237,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('6. POST /orcamentos → deve criar orçamento e mover OS para AGUARDANDO_APROVACAO', async () => {
     // Act
     const res = await request(httpServer)
-      .post('/orcamentos')
+      .post('/v1/orcamentos')
       .set('Authorization', `Bearer ${token}`)
       .send({
         ordemServicoId: created.ordemServicoId,
@@ -271,12 +272,12 @@ describe('Fluxo completo da oficina (e2e)', () => {
     );
 
     await request(httpServer)
-      .get(`/ordens-servico/${created.ordemServicoId}`)
+      .get(`/v1/ordens-servico/${created.ordemServicoId}`)
       .set('Authorization', `Bearer ${clientToken}`)
       .expect(200);
 
     const outroCliente = await request(httpServer)
-      .post('/clientes')
+      .post('/v1/clientes')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nome: 'Outro Cliente E2E',
@@ -300,7 +301,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     );
 
     await request(httpServer)
-      .get(`/ordens-servico/${created.ordemServicoId}`)
+      .get(`/v1/ordens-servico/${created.ordemServicoId}`)
       .set('Authorization', `Bearer ${tokenOutro}`)
       .expect(403);
 
@@ -315,7 +316,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
 
     // Act
     await request(httpServer)
-      .patch(`/orcamentos/${created.orcamentoId}`)
+      .patch(`/v1/orcamentos/${created.orcamentoId}`)
       .set('Authorization', `Bearer ${token}`)
       .send({ status: StatusOrcamento.APROVADO })
       .expect(200);
@@ -338,7 +339,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('9. GET /ordens-servico/:id → deve refletir o estado final', async () => {
     // Act
     const res = await request(httpServer)
-      .get(`/ordens-servico/${created.ordemServicoId}`)
+      .get(`/v1/ordens-servico/${created.ordemServicoId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
@@ -350,7 +351,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
   it('10. GET /ordens-servico/metricas/tempo-medio → deve retornar métricas', async () => {
     // Act
     const res = await request(httpServer)
-      .get('/ordens-servico/metricas/tempo-medio')
+      .get('/v1/ordens-servico/metricas/tempo-medio')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
@@ -361,6 +362,6 @@ describe('Fluxo completo da oficina (e2e)', () => {
   });
 
   it('11. GET sem token → deve retornar 401', async () => {
-    await request(httpServer).get('/clientes').expect(401);
+    await request(httpServer).get('/v1/clientes').expect(401);
   });
 });

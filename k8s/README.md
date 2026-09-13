@@ -11,7 +11,7 @@ Deploy da API NestJS no cluster Kubernetes.
 | `secret.example.yaml` | Secret | Modelo dos dados sensíveis (`DATABASE_URL`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA`). O Secret real é criado pelo CI/CD. |
 | `migration-job.yaml` | Job | Aplica as migrations do Prisma **uma vez por deploy**, antes do rollout da API. |
 | `deployment.yaml` | Deployment | 2 réplicas da API, com `resources`, probes de liveness (`/health`) e readiness (`/health/ready`). |
-| `service.yaml` | Service | Tipo `LoadBalancer` (AWS ELB), expõe a porta 80 → 3000. |
+| `service.yaml` | Service | Tipo `NodePort` (30080), tráfego público só via API Gateway + NLB interno. |
 | `hpa.yaml` | HorizontalPodAutoscaler | Escala de 2 a 10 pods por CPU (70%) e memória (80%). |
 
 ## Deploy manual (o CI/CD faz isso automaticamente)
@@ -50,11 +50,11 @@ kubectl apply -f hpa.yaml
 
 ```bash
 kubectl get pods -n oficina
-kubectl get svc -n oficina           # EXTERNAL-IP do LoadBalancer
+kubectl get svc -n oficina           # NodePort 30080 (sem IP público)
 kubectl get hpa -n oficina           # métricas (requer metrics-server)
 ```
 
-Acesse `http://<EXTERNAL-IP>/health` e a documentação em `http://<EXTERNAL-IP>/docs`.
+Acesse a API pela URL do API Gateway (SSM `api_gateway_url`): `GET /health`, `GET /docs` e rotas `/v1/*`. O Service não provisiona ELB público.
 
 ## Cluster local (Docker Desktop)
 

@@ -27,6 +27,6 @@ export class HealthController {
       throw new ServiceUnavailableException('Banco de dados indisponível.');
     }
 
-    return { status: 'ok', database: 'up' };
+    return { status: 'ok' };
   }
 }

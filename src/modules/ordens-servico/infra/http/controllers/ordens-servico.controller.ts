@@ -37,6 +37,7 @@ import { RemoverOrdemServicoUseCase } from '@/modules/ordens-servico/application
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { CreateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/create-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/update-ordem-servico.dto';
+import { Idempotent } from '@/shared/idempotency/idempotent.decorator';
 
 @ApiTags('Ordens de Serviço')
 @ApiBearerAuth()
@@ -57,6 +58,7 @@ export class OrdensServicoController {
   ) {}
 
   @Post()
+  @Idempotent('ordens-servico.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Abrir uma nova ordem de serviço' })
   @ApiResponse({ status: 201, description: 'OS criada com sucesso.' })

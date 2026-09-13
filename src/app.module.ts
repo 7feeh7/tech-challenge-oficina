@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { DomainExceptionFilter } from './shared/filters/domain-exception.filter';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ServicosModule } from './modules/servicos/servicos.module';
@@ -17,6 +17,8 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { OwnershipGuard } from './modules/auth/guards/ownership.guard';
 import { HealthModule } from './modules/health/health.module';
+import { IdempotencyModule } from './shared/idempotency/idempotency.module';
+import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interceptor';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { HealthModule } from './modules/health/health.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    IdempotencyModule,
     AuthModule,
     HealthModule,
     ClientesModule,
@@ -54,6 +57,10 @@ import { HealthModule } from './modules/health/health.module';
     {
       provide: APP_FILTER,
       useClass: DomainExceptionFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: IdempotencyInterceptor,
     },
   ],
 })

@@ -18,7 +18,7 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Arquitetura
 
-Arquitetura do serviço em execução na AWS — entrada pelo Load Balancer, pods no EKS e a comunicação com o Amazon RDS e o SendGrid:
+Arquitetura do serviço em execução na AWS — entrada pelo API Gateway, pods no EKS (via NLB interno) e a comunicação com o Amazon RDS e o SendGrid:
 
 <img width="1201" height="811" alt="arquitetura" src="assets/ARQUITETURA-CLOUD.png" />
 
@@ -72,13 +72,27 @@ docker compose down
 
 Contratos HTTP em [`docs/api.md`](docs/api.md) e especificação em [`docs/openapi.json`](docs/openapi.json).
 
-Todas as rotas são protegidas por JWT, exceto `POST /auth/login` e as de health. Faça login e envie o token nas demais requisições:
+Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
+
+Todas as rotas `/v1/*` são protegidas por JWT, exceto `POST /v1/auth/login` e `/health`. Faça login e envie o token:
 
 ```bash
-curl --location 'http://localhost:3000/clientes' \
+# Login interno
+curl --location 'https://{api_gateway_url}/v1/auth/login' \
   --header 'Content-Type: application/json' \
+  --data '{"email":"usuario@oficina.com","senha":"senha123"}'
+
+# Cliente por CPF (sem /v1)
+curl --location 'https://{api_gateway_url}/auth/cpf' \
+  --header 'Content-Type: application/json' \
+  --data '{"cpf":"529.982.247-25"}'
+
+# Rotas protegidas
+curl --location 'https://{api_gateway_url}/v1/clientes' \
   --header 'Authorization: Bearer SEU_TOKEN'
 ```
+
+Detalhes em [`docs/gateway-rotas.md`](docs/gateway-rotas.md).
 
 Perfis, permissões e fluxo de login em [`docs/autenticacao.md`](docs/autenticacao.md).
 

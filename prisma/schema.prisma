@@ -245,3 +245,20 @@ model MovimentacaoEstoque {
   @@map("movimentacoes_estoque")
 }
 
+// ===================== IDEMPOTÊNCIA (escritas críticas) =====================
+
+model IdempotencyRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  idempotencyKey String   @map("idempotency_key")
+  scope          String
+  requestHash    String   @map("request_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  criadoEm       DateTime @default(now()) @map("criado_em")
+  expiraEm       DateTime @map("expira_em")
+
+  @@unique([idempotencyKey, scope])
+  @@index([expiraEm])
+  @@map("idempotency_records")
+}
+

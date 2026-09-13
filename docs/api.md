@@ -2,11 +2,13 @@
 
 Documentação dos contratos HTTP expostos pelo serviço.
 
-Base local: `http://localhost:3000`. Swagger interativo em `http://localhost:3000/docs` (botão **Authorize** para o Bearer Token).
+Base local: `http://localhost:3000`. Em produção, use a URL do API Gateway (SSM `api_gateway_url`).
+
+Rotas de negócio usam prefixo **`/v1`**. Swagger: `/docs`. Health: `/health` (sem prefixo). Autenticação por CPF: `POST /auth/cpf` (Gateway → Lambda, sem `/v1`).
 
 ## Convenções gerais
 
-Todas as rotas são **privadas** (JWT global), exceto as marcadas como públicas: `POST /auth/login`, `GET /health` e `GET /health/ready`.
+Todas as rotas `/v1/*` são **privadas** (JWT global), exceto `POST /v1/auth/login`. Públicas na borda: `POST /auth/cpf`, `GET /health`, `GET /docs`.
 
 Envie o token nas rotas privadas:
 
@@ -17,7 +19,7 @@ Authorization: Bearer <token>
 Exemplo:
 
 ```bash
-curl --location 'http://localhost:3000/clientes' \
+curl --location 'http://localhost:3000/v1/clientes' \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer SEU_TOKEN'
 ```

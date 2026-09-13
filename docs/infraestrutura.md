@@ -11,7 +11,7 @@ Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resi
 
 ## Arquitetura proposta
 
-Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
+Arquitetura do serviço em execução — entrada pelo **API Gateway**, tráfego privado ao EKS via NLB + VPC Link, e comunicação com o **Amazon RDS** e o **SendGrid**:
 
 <img width="1201" height="811" alt="arquitetura" src="../assets/ARQUITETURA-CLOUD.png" />
 
@@ -47,7 +47,8 @@ O diretório `infra/` legado foi esvaziado; veja [`infra/README.md`](../infra/RE
 | **Amazon EKS**                 | Cluster Kubernetes gerenciado que executa a API NestJS. |
 | **Amazon RDS (PostgreSQL 16)** | Banco de dados gerenciado, privado.                     |
 | **Amazon ECR**                 | Registro das imagens Docker da aplicação.               |
-| **Elastic Load Balancer**      | Exposição pública da API (Service `LoadBalancer`).      |
+| **API Gateway (HTTP API)**     | Entrada pública única (auth CPF + rotas `/v1`).          |
+| **NLB interno + VPC Link**     | Conectividade privada Gateway → EKS (NodePort 30080).   |
 | **VPC / NAT Gateway**          | Rede isolada com subnets públicas e privadas.           |
 
 ## Como executar
@@ -79,7 +80,7 @@ O deploy é feito automaticamente pelo CI/CD a cada push na `main`. Para aplicar
 
 ```bash
 kubectl get pods -n oficina
-kubectl get svc  -n oficina    # EXTERNAL-IP do LoadBalancer
+kubectl get svc  -n oficina    # NodePort 30080 (sem ELB público)
 kubectl get hpa  -n oficina    # autoescalonamento
 ```
 
@@ -100,7 +101,8 @@ Detalhes e o equivalente no EKS em [k8s/README.md](../k8s/README.md).
 
 ## Documentação e demonstração
 
-- **Swagger / OpenAPI:** `http://<EXTERNAL-IP>/docs` (ou `http://localhost:3000/docs` local).
+- **Swagger / OpenAPI:** `{api_gateway_url}/docs` (ou `http://localhost:3000/docs` local).
+- **Contrato de rotas:** [gateway-rotas.md](gateway-rotas.md).
 - **Vídeo demonstrativo:** _adicionar link do YouTube/Vimeo aqui_.
 
 > **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Após a demonstração, rode `terraform destroy` em `infra/`.

@@ -19,7 +19,6 @@ describe('HealthController', () => {
 
     await expect(controller.readiness()).resolves.toEqual({
       status: 'ok',
-      database: 'up',
     });
   });
 

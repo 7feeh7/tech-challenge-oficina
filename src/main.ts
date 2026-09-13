@@ -3,9 +3,10 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { AppModule } from '@/app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { registerCorrelationIdHook } from '@/shared/http/correlation-id.hook';
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -14,6 +15,15 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+
+  registerCorrelationIdHook(app.getHttpAdapter().getInstance());
+
+  app.setGlobalPrefix('v1', {
+    exclude: [
+      { path: 'health', method: RequestMethod.ALL },
+      { path: 'health/ready', method: RequestMethod.ALL },
+    ],
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -26,12 +36,16 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Sistema de Oficina Mecânica')
     .setDescription(
-      'API para gestão de oficina mecânica. Autenticação interna via POST /auth/login; ' +
-        'clientes autenticam por POST /auth/cpf (Function serverless) e usam o accessToken como Bearer. ' +
-        'Tokens de cliente acessam apenas a própria OS e orçamento.',
+      'API para gestão de oficina mecânica. Entrada pública via API Gateway. ' +
+        'Autenticação interna via POST /v1/auth/login; clientes autenticam por POST /auth/cpf ' +
+        '(Function serverless, sem prefixo de versão) e usam o accessToken como Bearer.',
     )
     .setVersion('1.0.0')
     .addBearerAuth()
+    .addServer(
+      process.env.API_GATEWAY_URL ?? 'http://localhost:3000',
+      'Gateway',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);

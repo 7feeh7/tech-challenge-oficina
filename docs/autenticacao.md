@@ -1,13 +1,13 @@
 # Autenticação e Autorização
 
-A API é protegida globalmente por JWT. Rotas marcadas com `@Public()` (ex.: `POST /auth/login` e as de health) não exigem token.
+A API é protegida globalmente por JWT. Entrada pública via **API Gateway** (ver [gateway-rotas.md](gateway-rotas.md) e [ADR 002](adr/002-api-gateway-borda-unica.md)). Rotas marcadas com `@Public()` (ex.: `POST /v1/auth/login` e `/health`) não exigem token.
 
 ## Funcionários internos
 
 1. Faça login:
 
    ```http
-   POST /auth/login
+   POST /v1/auth/login
    {
      "email": "usuario@oficina.com",
      "senha": "senha123"
@@ -47,7 +47,7 @@ Contrato completo da Function: repositório `tech-challenge-serverless` em `docs
 
 | Origem | `tipo` | `perfil` | Uso |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `INTERNO` | `ADMINISTRADOR`, `ATENDENTE`, etc. | Rotas administrativas |
+| `POST /v1/auth/login` | `INTERNO` | `ADMINISTRADOR`, `ATENDENTE`, etc. | Rotas administrativas |
 | `POST /auth/cpf` | `CLIENTE` | `CLIENTE` | Consulta da própria OS e decisão sobre o próprio orçamento |
 
 A API valida `iss` e `aud` nos tokens de cliente (`JWT_ISSUER`, `JWT_AUDIENCE`).
@@ -56,9 +56,9 @@ A API valida `iss` e `aud` nos tokens de cliente (`JWT_ISSUER`, `JWT_AUDIENCE`).
 
 Token de cliente só acessa recursos cujo `clienteId` coincide com `sub`:
 
-- `GET /ordens-servico/:id`
-- `GET /orcamentos/:id`
-- `PATCH /orcamentos/:id` (apenas aprovar/rejeitar)
+- `GET /v1/ordens-servico/:id`
+- `GET /v1/orcamentos/:id`
+- `PATCH /v1/orcamentos/:id` (apenas aprovar/rejeitar)
 
 Tentativa de acesso cruzado retorna `403`.
 

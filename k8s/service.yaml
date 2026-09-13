@@ -6,12 +6,13 @@ metadata:
   labels:
     app: oficina-api
 spec:
-  # LoadBalancer provisiona um AWS ELB apontando para os pods da API.
-  type: LoadBalancer
+  # NodePort interno: trafego publico entra somente pelo API Gateway + NLB in-VPC.
+  type: NodePort
   selector:
     app: oficina-api
   ports:
     - name: http
       port: 80
       targetPort: http
+      nodePort: 30080
       protocol: TCP

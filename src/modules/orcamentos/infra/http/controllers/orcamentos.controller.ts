@@ -41,6 +41,7 @@ import { ListarOrcamentosUseCase } from '@/modules/orcamentos/application/use-ca
 import { RemoverOrcamentoUseCase } from '@/modules/orcamentos/application/use-cases/remover-orcamento.use-case';
 import { CreateOrcamentoDto } from '@/modules/orcamentos/infra/http/dtos/create-orcamento.dto';
 import { UpdateOrcamentoDto } from '@/modules/orcamentos/infra/http/dtos/update-orcamento.dto';
+import { Idempotent } from '@/shared/idempotency/idempotent.decorator';
 
 @ApiTags('Orçamentos')
 @ApiBearerAuth()
@@ -56,6 +57,7 @@ export class OrcamentosController {
   ) {}
 
   @Post()
+  @Idempotent('orcamentos.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Gerar orçamento (move a OS para AGUARDANDO_APROVACAO)',
@@ -101,6 +103,7 @@ export class OrcamentosController {
   }
 
   @Patch(':id')
+  @Idempotent('orcamentos.decide')
   @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE, PerfilCliente)
   @RequireOwnership(OwnershipResource.ORCAMENTO)
   @ApiOperation({
