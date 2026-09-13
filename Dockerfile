@@ -36,6 +36,11 @@ COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
 COPY package.json yarn.lock ./
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup -u 1000 \
+  && chown -R appuser:appgroup /app
+
+USER appuser
+
 EXPOSE 3000
 
 # Sobe apenas a API. As migrations NÃO rodam aqui: com o HPA, cada pod novo as

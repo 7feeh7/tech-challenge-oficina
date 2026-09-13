@@ -10,6 +10,10 @@ env:
   K8S_NAMESPACE: oficina
   TF_ENVIRONMENT: producao
 
+concurrency:
+  group: deploy-${{ env.TF_ENVIRONMENT }}
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Build e Testes
@@ -109,6 +113,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Migrations (Job)
+        id: migrate
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
@@ -120,7 +125,8 @@ jobs:
           kubectl wait --for=condition=complete job/oficina-migrate \
             --namespace "$K8S_NAMESPACE" --timeout=300s
 
-      - name: Deployment, Service e HPA
+      - name: Deployment, Service, PDB e HPA
+        id: rollout
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
@@ -128,6 +134,7 @@ jobs:
           sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
             k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/pdb.yaml
           kubectl apply -f k8s/hpa.yaml
 
       - name: Aguardar rollout
@@ -136,6 +143,7 @@ jobs:
             --namespace "$K8S_NAMESPACE" --timeout=180s
 
       - name: Smoke test — health readiness
+        id: smoke
         run: |
           kubectl run smoke-test-${{ github.run_id }} \
             --namespace "$K8S_NAMESPACE" \
@@ -144,7 +152,15 @@ jobs:
             --command -- sleep 300
           kubectl wait --for=condition=Ready pod/smoke-test-${{ github.run_id }} \
             --namespace "$K8S_NAMESPACE" --timeout=60s
-          SVC=$(kubectl get svc oficina-api -n "$K8S_NAMESPACE" -o jsonpath='{.spec.clusterIP}')
           kubectl exec smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE" -- \
-            curl -sf "http://${SVC}:3000/health/ready"
+            curl -sf "http://oficina-api/health/ready"
           kubectl delete pod smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE"
+
+      - name: Rollback automatico em falha pos-migration
+        if: failure() && steps.migrate.outcome == 'success'
+        run: |
+          echo "Falha detectada apos migration — revertendo Deployment para revisao anterior."
+          kubectl rollout undo deployment/oficina-api \
+            --namespace "$K8S_NAMESPACE" || true
+          kubectl rollout status deployment/oficina-api \
+            --namespace "$K8S_NAMESPACE" --timeout=180s || true

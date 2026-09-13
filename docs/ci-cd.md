@@ -47,7 +47,12 @@ Secrets de nuvem **nao** ficam no nivel de repositorio — apenas no Environment
 
 ## Rollback
 
-Reverta o commit e abra PR para `main`. O pipeline publica imagem com o SHA revertido.
+- **Automatico:** se migration, rollout ou smoke test falhar apos a migration concluir, o workflow executa `kubectl rollout undo`.
+- **Manual:** reverta o commit e abra PR para `main`. O pipeline publica imagem com o SHA revertido.
+
+## Concorrencia
+
+O deploy usa `concurrency.group: deploy-producao` para evitar applies/deploys concorrentes no mesmo ambiente.
 
 ## Imagens
 
