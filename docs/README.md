@@ -62,7 +62,11 @@
 
 ## Documentação de apoio
 
-Material de estudo em [local/](local/) (Event Storming, demo, roteiro de apresentação).
+| [demo-fase3.md](demo-fase3.md) | Roteiro de demonstração Fase 3 (vídeo ≤ 15 min) |
+| [entrega/entrega-fase3.md](entrega/entrega-fase3.md) | Documento base para PDF do Portal |
+| [postman/](postman/) | Coleção Postman da demo |
+
+Material de apoio em [local/](local/) (Event Storming, demo legado Fase 2).
 
 Manuais de infra junto do código:
 

@@ -4,17 +4,17 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Tecnologias
 
-- [Node.js](https://nodejs.org/)
-- [NestJS 11](https://nestjs.com/)
-- [Fastify](https://fastify.dev/)
-- [Prisma 7](https://www.prisma.io/)
-- [PostgreSQL 16](https://www.postgresql.org/)
-- [Swagger](https://swagger.io/)
-- [Jest](https://jestjs.io/)
-- [Docker](https://www.docker.com/)
-- [SonarQube](https://www.sonarsource.com/products/sonarqube/)
-- [AWS](https://aws.amazon.com/)
-- [Terraform](https://www.terraform.io/)
+| Tecnologia | Versão |
+| --- | --- |
+| Node.js | 24+ |
+| NestJS | 11 |
+| Fastify | 11 |
+| Prisma | 7 |
+| PostgreSQL | 16 |
+| Jest | 30 |
+| Docker | multi-stage (`Dockerfile` na raiz) |
+| dd-trace (Datadog) | 6 |
+| SonarCloud | via CI |
 
 ## Arquitetura
 
@@ -75,7 +75,7 @@ docker compose down
 
 ## Endpoints
 
-Contratos HTTP em [`docs/api.md`](docs/api.md) e especificação em [`docs/openapi.json`](docs/openapi.json).
+Contratos HTTP em [`docs/api.md`](docs/api.md), especificação em [`docs/openapi.json`](docs/openapi.json) e coleção Postman em [`docs/postman/tech-challenge-fase3.postman_collection.json`](docs/postman/tech-challenge-fase3.postman_collection.json).
 
 Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
 
@@ -135,16 +135,53 @@ Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.m
 
 ## Repositórios da solução (Fase 3)
 
-| Repositório | Responsabilidade |
-| --- | --- |
-| **tech-challenge** (este) | API NestJS, Prisma, Dockerfile, manifests `k8s/` |
-| [tech-challenge-serverless](../tech-challenge-serverless) | Functions de auth CPF e notificação |
-| [tech-challenge-infra-kubernetes](../tech-challenge-infra-kubernetes) | VPC, EKS, ECR, Lambda shell, SSM |
-| [tech-challenge-infra-database](../tech-challenge-infra-database) | RDS PostgreSQL, Secrets Manager |
+| Repositório | Responsabilidade | URL |
+| --- | --- | --- |
+| **tech-challenge-oficina** (este) | API NestJS, Prisma, `Dockerfile`, manifests `k8s/`, docs | https://github.com/7feeh7/tech-challenge-oficina |
+| tech-challenge-serverless | Functions auth CPF e notificação | https://github.com/7feeh7/tech-challenge-serverless |
+| tech-challenge-infra-kubernetes | VPC, EKS, ECR, API Gateway, mensageria, Datadog | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
+| tech-challenge-infra-database | RDS PostgreSQL, Secrets Manager | https://github.com/7feeh7/tech-challenge-infra-database |
+
+**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º).
 
 ## Infraestrutura e deploy
 
 A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA**. Existe **um único ambiente provisionado**: `develop` valida automaticamente (sem tocar a AWS) e `main` implanta após merge de PR aprovado.
+
+### Deploy ativo (produção)
+
+| Recurso | Como obter |
+| --- | --- |
+| API Gateway (URL base) | SSM `/tech-challenge/producao/infra/api_gateway_url` |
+| Swagger UI | `{api_gateway_url}/docs` |
+| Health | `{api_gateway_url}/health` |
+| Imagem ECR | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
+
+> Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) para data de validação.
+
+### Dockerfile
+
+`Dockerfile` multi-stage na raiz: build NestJS + Prisma generate, runtime Alpine com usuário não-root. Migrations rodam no Job `k8s/migration-job.yaml`, não no CMD da imagem.
+
+### Variáveis e secrets (sem valores)
+
+| Escopo | Nomes |
+| --- | --- |
+| `.env` local | Ver [`.env.example`](.env.example) |
+| GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA` |
+| Runtime K8s | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
+
+Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/ci-cd.md`](docs/ci-cd.md).
+
+### Seed de demonstração
+
+Dados fictícios para gravação do vídeo — **somente manual**:
+
+```bash
+./scripts/seed-demo.sh
+```
+
+Roteiro completo: [`docs/demo-fase3.md`](docs/demo-fase3.md).
 
 - ADRs: [`docs/adrs/README.md`](docs/adrs/README.md) · RFCs: [`docs/rfcs/README.md`](docs/rfcs/README.md)
 - Arquitetura Fase 3: [`docs/arquitetura/README.md`](docs/arquitetura/README.md)
@@ -173,4 +210,6 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 | [runbooks](docs/runbooks/README.md)              | Procedimentos operacionais                                  |
 | [ci-cd](docs/ci-cd.md)                           | Pipeline do GitHub Actions e secrets                        |
 
-**Vídeo demonstrativo:** _adicionar link do YouTube/Vimeo aqui_.
+**Vídeo demonstrativo:** _preencher URL após publicação (YouTube/Vimeo, ≤ 15 min)_ — também registrado em [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md).
+
+**Entrega Fase 3 (PDF):** [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) · Matriz de conformidade: [`spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md`](spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md)
