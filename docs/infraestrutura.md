@@ -21,15 +21,24 @@ Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EK
 
 **Deploy do banco:** as migrations rodam **uma vez por deploy**, num Job do Kubernetes ([k8s/migration-job.yaml](../k8s/migration-job.yaml)) que usa a mesma imagem da API, e não no boot de cada pod. Duas razões: com o HPA, cada pod novo criado durante um pico repetiria o `migrate deploy` justamente no pior momento; e uma migration com defeito derrubaria todos os pods, em vez de falhar no Job e preservar a versão em execução. O Job roda **dentro do cluster** porque o RDS é privado — o runner do GitHub Actions não alcança o banco. Se o Job falhar, o `rollout` não acontece.
 
-## Estrutura da infraestrutura
+## Estrutura da solução (Fase 3 — repositórios segregados)
 
 ```
-infra/            # Terraform (VPC, EKS, RDS, ECR, metrics-server)
-k8s/              # Manifestos Kubernetes (namespace, configmap, secret, deployment, service, hpa)
-.github/workflows/deploy.yml   # Pipeline CI/CD (build, testes, imagem, deploy)
-Dockerfile        # Imagem de produção (multi-stage)
-docker-compose.yml# Execução local (API + PostgreSQL)
+tech-challenge/                    # Este repo — API, Prisma, k8s/
+tech-challenge-serverless/         # Functions Lambda
+tech-challenge-infra-kubernetes/   # Terraform VPC, EKS, ECR
+tech-challenge-infra-database/     # Terraform RDS, Secrets Manager
 ```
+
+Dentro deste repositório:
+
+```
+k8s/              # Manifestos Kubernetes
+.github/workflows/ # pr-validation.yml + deploy.yml
+Dockerfile        # Imagem de produção (multi-stage)
+```
+
+O diretório `infra/` legado foi esvaziado; veja [`infra/README.md`](../infra/README.md).
 
 ## Serviços AWS utilizados
 

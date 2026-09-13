@@ -1,24 +1,54 @@
 # Pipeline CI/CD
 
-<img width="1201" height="811" alt="deploy" src="../assets/deploy.png" />
+A entrega Fase 3 usa **quatro repositorios** com pipelines independentes. Este documento descreve o repositorio da **aplicacao**.
 
-Definido em [.github/workflows/deploy.yml](../.github/workflows/deploy.yml), executa **apenas na branch `main`**:
+## Estrategia de ambientes (001-R1)
 
-1. **Build & testes** — `yarn install`, `yarn lint`, `yarn build`, `yarn test:cov`.
-2. **Imagem Docker** — build e push para o **ECR** (tags `sha` e `latest`).
-3. **Deploy** — `aws eks update-kubeconfig`, cria/atualiza o Secret a partir dos GitHub Secrets, aplica os manifestos e aguarda o `rollout`.
+Existe **um unico ambiente provisionado** na AWS. Apenas `main` cria ou altera recursos; `develop` executa validacao automatica sem credencial de escrita.
 
-As migrations rodam num Job do Kubernetes antes do `rollout` — o porquê está em [infraestrutura.md](infraestrutura.md).
+| Evento | Workflow | Toca nuvem |
+| --- | --- | --- |
+| PR → `develop` ou `main` | `pr-validation.yml` | nao |
+| Push → `develop` | `pr-validation.yml` | nao |
+| Push → `main` | `deploy.yml` | **sim** |
 
-## GitHub Secrets necessários
+ADR: [`adr/001-ambiente-unico-provisionado.md`](adr/001-ambiente-unico-provisionado.md)
 
-| Secret                                        | Descrição                                                        |
-| --------------------------------------------- | ---------------------------------------------------------------- |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credenciais AWS para o deploy.                                   |
-| `AWS_REGION`                                  | Região (ex.: `us-east-1`).                                       |
-| `ECR_REPOSITORY`                              | URL do repositório ECR (`terraform output ecr_repository_url`).  |
-| `EKS_CLUSTER_NAME`                            | Nome do cluster (`terraform output cluster_name`).               |
-| `DATABASE_URL`                                | Connection string do RDS (`terraform output -raw database_url`). |
-| `JWT_SECRET`                                  | Segredo de assinatura do JWT.                                    |
-| `SENDGRID_API_KEY`                            | Chave do SendGrid (pode ficar vazio).                            |
-| `ADMIN_SENHA`                                 | Senha do administrador inicial.                                  |
+## Workflows
+
+| Arquivo | Gatilho | Acao |
+| --- | --- | --- |
+| `pr-validation.yml` | PR + push `develop` | lint, build, testes, SonarCloud (PR), TruffleHog |
+| `deploy.yml` | push `main` | build imagem, deploy EKS, smoke test |
+
+## Integracao cross-repo
+
+O deploy le parametros via SSM do ambiente unico (`producao`):
+
+- `/tech-challenge/producao/infra/ecr_repository_url`
+- `/tech-challenge/producao/infra/eks_cluster_name`
+- `/tech-challenge/producao/database/db_secret_arn` → Secrets Manager → `DATABASE_URL`
+
+## Secrets por escopo
+
+| Escopo | Secrets |
+| --- | --- |
+| **Repositorio** | `SONAR_TOKEN`, `GITHUB_TOKEN` (automatico) |
+| **Environment `producao`** | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA` |
+
+Secrets de nuvem **nao** ficam no nivel de repositorio — apenas no Environment `producao`, com deployment branch policy restrita a `main`.
+
+## Ordem de deploy da solucao
+
+1. `tech-challenge-infra-kubernetes`
+2. `tech-challenge-infra-database`
+3. `tech-challenge-serverless`
+4. `tech-challenge` (este repo)
+
+## Rollback
+
+Reverta o commit e abra PR para `main`. O pipeline publica imagem com o SHA revertido.
+
+## Imagens
+
+Tag primaria: `{ecr_url}:{git_sha}`. Tag `latest` e alias secundario.
