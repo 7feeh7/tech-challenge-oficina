@@ -30,7 +30,7 @@ export type JwtPayload = JwtPayloadInterno | JwtPayloadCliente;
 export function isTokenCliente(
   payload: JwtPayload,
 ): payload is JwtPayloadCliente {
-  return payload.tipo === PerfilCliente || payload.perfil === PerfilCliente;
+  return payload.tipo === PerfilCliente;
 }
 
 /**

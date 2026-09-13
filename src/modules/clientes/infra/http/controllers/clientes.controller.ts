@@ -33,7 +33,7 @@ import { AlterarStatusClienteUseCase } from '@/modules/clientes/application/use-
 import { CreateClienteDto } from '@/modules/clientes/infra/http/dtos/create-cliente.dto';
 import { UpdateClienteDto } from '@/modules/clientes/infra/http/dtos/update-cliente.dto';
 import { AlterarStatusClienteDto } from '@/modules/clientes/infra/http/dtos/alterar-status-cliente.dto';
-import { RequisicaoAutenticada } from '@/modules/auth/jwt-payload';
+import { type RequisicaoAutenticada } from '@/modules/auth/jwt-payload';
 
 @ApiTags('Clientes')
 @ApiBearerAuth()

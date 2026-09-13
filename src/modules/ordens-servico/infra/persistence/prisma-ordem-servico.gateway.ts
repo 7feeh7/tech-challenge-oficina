@@ -185,7 +185,7 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
       return { atualizada, registro };
     });
 
-    if (raw.registro) {
+    if (raw.registro?.statusAnterior) {
       await this.osMetrics.recordTransicao(id, raw.registro.statusAnterior);
     }
 

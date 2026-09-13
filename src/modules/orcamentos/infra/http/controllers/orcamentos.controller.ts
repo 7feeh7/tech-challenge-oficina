@@ -30,7 +30,7 @@ import {
 } from '@/modules/auth/decorators/ownership.decorator';
 import {
   isTokenCliente,
-  RequisicaoAutenticada,
+  type RequisicaoAutenticada,
 } from '@/modules/auth/jwt-payload';
 import { PerfilCliente } from '@/modules/auth/perfil-autorizacao';
 import { PerfilUsuario } from '@/modules/usuarios/domain/perfil-usuario';
