@@ -19,5 +19,6 @@ data:
   ADMIN_EMAIL: "admin@oficina.com"
   SENDGRID_FROM_EMAIL: "oficina@seu-dominio.com"
   SNS_NOTIFICACAO_TOPIC_ARN: "__SNS_NOTIFICACAO_TOPIC_ARN__"
+  API_GATEWAY_URL: "__API_GATEWAY_URL__"
   DD_SITE: "datadoghq.com"
   DD_DOGSTATSD_PORT: "8125"

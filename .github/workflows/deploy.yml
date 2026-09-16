@@ -62,12 +62,14 @@ jobs:
           JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
           SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
           IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
+          API_GATEWAY_URL=$(aws ssm get-parameter --name "${PREFIX}/infra/api_gateway_url" --query Parameter.Value --output text)
           echo "ecr=$ECR" >> $GITHUB_OUTPUT
           echo "eks=$EKS" >> $GITHUB_OUTPUT
           echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
           echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
           echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
           echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
+          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
 
       - name: Montar DATABASE_URL a partir do Secrets Manager
         id: db
@@ -109,10 +111,13 @@ jobs:
         env:
           SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
           IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
+          API_GATEWAY_URL: ${{ steps.ssm.outputs.api_gateway_url }}
         run: |
           kubectl apply -f k8s/namespace.yaml
           sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
-          sed "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" k8s/configmap.yaml | kubectl apply -f -
+          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" \
+              -e "s|__API_GATEWAY_URL__|${API_GATEWAY_URL}|g" \
+              k8s/configmap.yaml | kubectl apply -f -
 
       - name: Secret do Kubernetes
         run: |
