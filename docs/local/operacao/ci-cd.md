@@ -12,7 +12,7 @@ Existe **um unico ambiente provisionado** na AWS. Apenas `main` cria ou altera r
 | Push → `develop` | `pr-validation.yml` | nao |
 | Push → `main` | `deploy.yml` | **sim** |
 
-ADR: [`adrs/001-ambiente-unico-provisionado.md`](adrs/001-ambiente-unico-provisionado.md)
+ADR: [`adrs/001-ambiente-unico-provisionado.md`](../../adrs/001-ambiente-unico-provisionado.md)
 
 ## Workflows
 

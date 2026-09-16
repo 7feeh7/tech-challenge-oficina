@@ -43,5 +43,5 @@ O enunciado exige cluster Kubernetes com escalabilidade (R-16). A API NestJS é 
 ## Referências
 
 - [k8s/hpa.yaml](../../k8s/hpa.yaml)
-- [infraestrutura.md](../infraestrutura.md)
+- [infraestrutura.md](../local/arquitetura/infraestrutura.md)
 - [diagramas/diagrama-aplicacao.md](../diagramas/diagrama-aplicacao.md)

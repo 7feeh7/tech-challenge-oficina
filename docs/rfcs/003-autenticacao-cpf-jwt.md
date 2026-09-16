@@ -53,7 +53,7 @@ Clientes da oficina devem consultar OS e orçamentos sem credencial de funcioná
 
 ## Modelo de ameaças
 
-Matriz completa em [modelo-ameacas.md](../seguranca/modelo-ameacas.md).
+Matriz completa em [modelo-ameacas.md](../local/seguranca/modelo-ameacas.md).
 
 ## Discussão e conclusão
 
@@ -62,6 +62,6 @@ Gateway authorizer foi rejeitado na ADR-002 — regras de ownership permanecem n
 ## Referências
 
 - [sequencia-auth-cpf.md](../diagramas/sequencia-auth-cpf.md)
-- [autenticacao.md](../autenticacao.md)
-- [modelo-ameacas.md](../seguranca/modelo-ameacas.md)
+- [autenticacao.md](../local/api/autenticacao.md)
+- [modelo-ameacas.md](../local/seguranca/modelo-ameacas.md)
 - `tech-challenge-serverless/docs/contrato-auth-cpf.md`

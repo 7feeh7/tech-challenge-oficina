@@ -9,4 +9,4 @@ O Terraform que vivia em `infra/` foi segregado na Fase 3:
 
 Manifests Kubernetes permanecem em [`k8s/`](../k8s/).
 
-Consulte [`docs/infraestrutura.md`](../docs/infraestrutura.md) e [`docs/ci-cd.md`](../docs/ci-cd.md) para a ordem de deploy e contratos SSM.
+Consulte [`docs/local/arquitetura/infraestrutura.md`](../docs/local/arquitetura/infraestrutura.md) e [`docs/local/operacao/ci-cd.md`](../docs/local/operacao/ci-cd.md) para a ordem de deploy e contratos SSM.

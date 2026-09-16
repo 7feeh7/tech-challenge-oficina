@@ -46,7 +46,7 @@ Detalhamento comparativo: [ADR-003](../adrs/003-postgresql-banco-gerenciado.md).
 | Risco                                    | Mitigação                                                         |
 | ---------------------------------------- | ----------------------------------------------------------------- |
 | Esgotamento de conexões                  | HPA max 10 × limit 5 + Lambda ~10 < 87 max                        |
-| Migration incompatível com RollingUpdate | [migrations-compatibilidade.md](../migrations-compatibilidade.md) |
+| Migration incompatível com RollingUpdate | [migrations-compatibilidade.md](../local/banco/migrations-compatibilidade.md) |
 
 ## Discussão e conclusão
 
@@ -54,7 +54,7 @@ Alternativas NoSQL ou Aurora foram descartadas por custo ou retrabalho. Decisão
 
 ## Referências
 
-- [modelo-relacional.md](../modelo-relacional.md)
+- [modelo-relacional.md](../local/banco/modelo-relacional.md)
 - [diagramas/modelo-relacional-er.md](../diagramas/modelo-relacional-er.md)
-- [banco/README.md](../banco/README.md)
+- [banco/README.md](../local/banco/README.md)
 - `tech-challenge/prisma/schema.prisma`

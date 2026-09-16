@@ -42,5 +42,5 @@ A solução expõe autenticação serverless (`POST /auth/cpf`) e APIs de negóc
 
 ## Referências
 
-- [gateway-rotas.md](../gateway-rotas.md)
+- [gateway-rotas.md](../local/api/gateway-rotas.md)
 - [diagramas/componentes-nuvem.md](../diagramas/componentes-nuvem.md)

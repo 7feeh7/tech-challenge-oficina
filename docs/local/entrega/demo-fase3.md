@@ -72,7 +72,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 # Sem ownership — login interno e tentar OS de outro cliente → 403
 ```
 
-Swagger público (produção): `{api_gateway_url}/docs` · OpenAPI: [`openapi.json`](openapi.json)
+Swagger público (produção): `{api_gateway_url}/docs` · OpenAPI: [`openapi.json`](../api/openapi.json)
 
 ## 3. Pipeline CI/CD
 
@@ -109,7 +109,7 @@ Verificar: métrica `oficina.ordem_servico.criada`, fila SQS, logs da Lambda `no
 | Trace ponta a ponta                | APM Datadog — mesmo `correlationId`                           |
 | Alerta                             | Monitor provisionado ou evento recente + recuperação          |
 
-Runbook: [`runbooks/correlacao-observabilidade.md`](runbooks/correlacao-observabilidade.md)
+Runbook: [`runbooks/correlacao-observabilidade.md`](../operacao/runbooks/correlacao-observabilidade.md)
 
 ## Checklist pré-gravação
 
@@ -121,5 +121,5 @@ Runbook: [`runbooks/correlacao-observabilidade.md`](runbooks/correlacao-observab
 
 ## Referências
 
-- Demo legado Fase 2 (local): [`local/demo-end-to-end.md`](local/demo-end-to-end.md)
-- PDF de entrega: [`entrega/entrega-fase3.md`](entrega/entrega-fase3.md)
+- Demo legado Fase 2 (local): [`legado/demo-end-to-end.md`](../legado/demo-end-to-end.md)
+- PDF de entrega: [`entrega-fase3.md`](entrega-fase3.md)

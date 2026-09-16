@@ -32,7 +32,7 @@
 
    Detalhes operacionais em [notificacoes.md](notificacoes.md).
 
-   Em nuvem existe ainda a variável `DATABASE_SSL`, ligada pelo ConfigMap do Kubernetes — ver [infraestrutura.md](infraestrutura.md).
+   Em nuvem existe ainda a variável `DATABASE_SSL`, ligada pelo ConfigMap do Kubernetes — ver [infraestrutura.md](../arquitetura/infraestrutura.md).
 
 ## Como rodar
 

@@ -27,7 +27,7 @@
 | **tech-challenge-infra-kubernetes** | VPC, EKS, ECR, API Gateway, mensageria, Datadog (Terraform)         | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
 | **tech-challenge-infra-database**   | RDS PostgreSQL, Secrets Manager (Terraform)                         | https://github.com/7feeh7/tech-challenge-infra-database   |
 
-**Ordem de deploy:** infra-kubernetes → infra-database → serverless → aplicação. Runbook: [`docs/runbook-subir-producao.md`](../runbook-subir-producao.md).
+**Ordem de deploy:** infra-kubernetes → infra-database → serverless → aplicação. Runbook: [`docs/local/operacao/runbook-subir-producao.md`](../operacao/runbook-subir-producao.md).
 
 ---
 
@@ -38,7 +38,7 @@
 | **URL**          | _https://youtube.com/... ou vimeo.com/... — preencher após publicação_                                |
 | **Visibilidade** | Público ou não listado                                                                                |
 | **Duração**      | _mm:ss (máx. 15:00)_                                                                                  |
-| **Roteiro**      | [`docs/demo-fase3.md`](https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/demo-fase3.md) |
+| **Roteiro**      | [`docs/local/entrega/demo-fase3.md`](https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/entrega/demo-fase3.md) |
 
 Conteúdo obrigatório: auth CPF, API protegida, pipeline CI/CD, deploy K8s, dashboards, logs/traces e alerta.
 
@@ -62,15 +62,15 @@ Conteúdo obrigatório: auth CPF, API protegida, pipeline CI/CD, deploy K8s, das
 | Documento                  | Link                                                                                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Índice geral               | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/README.md                                                                   |
-| OpenAPI / Swagger          | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/openapi.json · runtime: `/docs`                                             |
+| OpenAPI / Swagger          | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/api/openapi.json · runtime: `/docs`                                    |
 | Diagrama componentes nuvem | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/componentes-nuvem.md                                              |
 | Sequência auth CPF         | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-auth-cpf.md                                             |
 | Sequência abertura OS      | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-abertura-os.md                                          |
 | Diagrama ER                | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/modelo-relacional-er.md                                           |
 | RFCs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/rfcs                                                                        |
 | ADRs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/adrs                                                                        |
-| Observabilidade            | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/observabilidade.md                                                          |
-| Runbooks                   | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/runbooks                                                                    |
+| Observabilidade            | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/operacao/observabilidade.md                                            |
+| Runbooks                   | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/local/operacao/runbooks                                                      |
 | Matriz de conformidade     | https://github.com/7feeh7/tech-challenge-oficina/blob/main/spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md     |
 | Desvio R-12                | https://github.com/7feeh7/tech-challenge-oficina/blob/main/spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade-r12.md |
 

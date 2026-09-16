@@ -2,7 +2,7 @@
 
 **Versão:** 1.0  
 **Data:** 2026-09-13  
-**Spec:** [010-seguranca-e-privacidade-de-dados](../../spec/changes/010-seguranca-e-privacidade-de-dados/spec.md)
+**Spec:** [010-seguranca-e-privacidade-de-dados](../../../spec/changes/010-seguranca-e-privacidade-de-dados/spec.md)
 
 ## Ativos protegidos
 
@@ -35,7 +35,7 @@
 | A2 | Timing attack auth | M | M | Padding ~300 ms + jitter | 010 | `timing-pad.service.ts` |
 | A3 | Força bruta por IP | A | M | Throttling Gateway (429 uniforme) | 003 borda | `api-gateway.tf` route_settings |
 | A4 | Força bruta por CPF | A | M | DynamoDB rate limit (429) | 010 | `cpf-rate-limit.service.ts` |
-| A5 | Varredura distribuída | M | L | Throttling + rate CPF; WAF não adotado | 003/010 | [gateway-rotas.md](../gateway-rotas.md#waf) |
+| A5 | Varredura distribuída | M | L | Throttling + rate CPF; WAF não adotado | 003/010 | [gateway-rotas.md](../api/gateway-rotas.md#waf) |
 | A6 | PII em logs/traces | A | M | Sanitização app + Datadog Agent | 007 | `log-sanitizer.ts`, `datadog.tf` |
 | A7 | JWT em log | A | M | Regex JWT/Bearer redacted | 007 | `log-sanitizer.spec.ts` |
 | A8 | Ownership bypass | A | M | Guard `sub` = recurso | 002 | `ownership.guard.spec.ts`, e2e |
@@ -53,6 +53,6 @@
 
 ## Referências
 
-- [RFC-003 — Autenticação CPF/JWT](../rfcs/003-autenticacao-cpf-jwt.md)
+- [RFC-003 — Autenticação CPF/JWT](../../rfcs/003-autenticacao-cpf-jwt.md)
 - [Matriz de evidências](matriz-seguranca-evidencias.md)
 - [Ciclo de vida de dados pessoais](ciclo-vida-dados-pessoais.md)

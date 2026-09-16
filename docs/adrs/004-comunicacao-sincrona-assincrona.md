@@ -38,5 +38,5 @@ A API expõe comandos e consultas que exigem resposta imediata ao cliente, mas e
 
 ## Referências
 
-- [notificacoes.md](../notificacoes.md)
+- [notificacoes.md](../local/api/notificacoes.md)
 - [diagramas/componentes-nuvem.md](../diagramas/componentes-nuvem.md)

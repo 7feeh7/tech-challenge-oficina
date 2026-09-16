@@ -51,10 +51,10 @@ Mudanças de status da OS devem notificar o cliente por e-mail sem bloquear a re
 
 ## Discussão e conclusão
 
-Padrão fan-out SNS/SQS é padrão AWS para workloads event-driven de baixo volume. Aceito e documentado em [notificacoes.md](../notificacoes.md) e contrato serverless.
+Padrão fan-out SNS/SQS é padrão AWS para workloads event-driven de baixo volume. Aceito e documentado em [notificacoes.md](../local/api/notificacoes.md) e contrato serverless.
 
 ## Referências
 
-- [notificacoes.md](../notificacoes.md)
+- [notificacoes.md](../local/api/notificacoes.md)
 - [contrato-evento-notificacao.md](../../../tech-challenge-serverless/docs/contrato-evento-notificacao.md)
 - `tech-challenge-infra-kubernetes/terraform/sns.tf`, `sqs.tf`

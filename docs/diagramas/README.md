@@ -2,7 +2,7 @@
 
 Fontes textuais versionadas em **Mermaid**. O GitHub renderiza nativamente; SVGs exportados em [`rendered/`](rendered/) via [scripts/render-diagramas.sh](../../scripts/render-diagramas.sh) (aptos para PDF/README offline).
 
-**Repositório fonte:** `tech-challenge/docs/diagramas/`.
+Índice de arquitetura: [../README.md](../README.md).
 
 | Diagrama                                                     | Tipo        | Descrição                                                         |
 | ------------------------------------------------------------ | ----------- | ----------------------------------------------------------------- |

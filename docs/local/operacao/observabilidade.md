@@ -57,7 +57,9 @@ URLs publicadas nos outputs Terraform (`datadog_dashboard_*_url`).
 
 Provisionados em `datadog-monitors.tf`: taxa de erro HTTP, latência p95, uptime `/health`, ausência de APM, CPU/memória, pods, falha de OS, Lambda, SQS/DLQ e integrações.
 
-Runbook de correlação: [runbooks/correlacao-observabilidade.md](runbooks/correlacao-observabilidade.md). ADR: [adrs/007-observabilidade-datadog.md](adrs/007-observabilidade-datadog.md).
+O monitor de CPU converte `kubernetes.cpu.usage.total` (nanocores) para cores (`/ 1e9`) antes de dividir por `kubernetes.cpu.limits`. Sem essa conversão o percentual fica na casa dos milhões e o alerta dispara em idle.
+
+Runbook de correlação: [runbooks/correlacao-observabilidade.md](runbooks/correlacao-observabilidade.md). ADR: [adrs/007-observabilidade-datadog.md](../../adrs/007-observabilidade-datadog.md).
 
 ## Retenção e custo estimado
 
@@ -76,4 +78,4 @@ Ver `.env.example` e `k8s/configmap.yaml` / `k8s/deployment.yaml` (`DD_*`).
 
 ## Diagrama
 
-Ver [diagramas/observabilidade.md](diagramas/observabilidade.md).
+Ver [diagramas/observabilidade.md](../../diagramas/observabilidade.md).

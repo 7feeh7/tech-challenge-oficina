@@ -92,9 +92,9 @@ permissions:
 
 ARNs publicados no SSM (`github_role_*_arn`). Configurar `AWS_DEPLOY_ROLE_ARN` no Environment `producao` de cada repo. Revogar access keys após bootstrap.
 
-Procedimento de rotação: [rotacao-segredos.md](seguranca/rotacao-segredos.md).
+Procedimento de rotação: [rotacao-segredos.md](../seguranca/rotacao-segredos.md).
 
 ## Referencias
 
-- [ADR-001 — Ambiente unico](adrs/001-ambiente-unico-provisionado.md)
+- [ADR-001 — Ambiente unico](../../adrs/001-ambiente-unico-provisionado.md)
 - [CI/CD](ci-cd.md)

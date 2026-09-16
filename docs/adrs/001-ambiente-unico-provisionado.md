@@ -47,5 +47,5 @@ Operar **um único ambiente provisionado**, correspondente a `main` (`var.enviro
 
 ## Referências
 
-- [Governança Git](../governanca-git.md)
-- [CI/CD](../ci-cd.md)
+- [Governança Git](../local/operacao/governanca-git.md)
+- [CI/CD](../local/operacao/ci-cd.md)

@@ -1,6 +1,6 @@
 # Modelo relacional e integridade
 
-Decisão em [ADR-003](adrs/003-postgresql-banco-gerenciado.md). RFC: [rfcs/002-postgresql-rds.md](rfcs/002-postgresql-rds.md). Diagrama: [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md). Índice: [banco/README.md](banco/README.md).
+Decisão em [ADR-003](../../adrs/003-postgresql-banco-gerenciado.md). RFC: [rfcs/002-postgresql-rds.md](../../rfcs/002-postgresql-rds.md). Diagrama: [diagramas/modelo-relacional-er.md](../../diagramas/modelo-relacional-er.md). Índice: [README.md](README.md).
 
 ## Separação de responsabilidades
 

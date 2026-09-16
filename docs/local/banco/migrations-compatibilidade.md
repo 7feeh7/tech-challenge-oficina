@@ -2,7 +2,7 @@
 
 ## Executor único
 
-`prisma migrate deploy` roda **uma vez por release** no Job Kubernetes [`k8s/migration-job.yaml`](../k8s/migration-job.yaml), antes do rollout da API. Pods da API **não** executam migrations no boot.
+`prisma migrate deploy` roda **uma vez por release** no Job Kubernetes [`k8s/migration-job.yaml`](../../../k8s/migration-job.yaml), antes do rollout da API. Pods da API **não** executam migrations no boot.
 
 ## RollingUpdate
 

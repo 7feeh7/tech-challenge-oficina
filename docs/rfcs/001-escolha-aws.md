@@ -60,6 +60,6 @@ GCP e Azure atenderiam requisitos funcionais, mas implicariam reescrever Gateway
 
 ## Referências
 
-- [visao-geral-nuvem.md](../arquitetura/visao-geral-nuvem.md)
-- [infraestrutura.md](../infraestrutura.md)
+- [visao-geral-nuvem.md](../local/arquitetura/visao-geral-nuvem.md)
+- [infraestrutura.md](../local/arquitetura/infraestrutura.md)
 - Repositórios `tech-challenge-infra-kubernetes`, `tech-challenge-infra-database`
