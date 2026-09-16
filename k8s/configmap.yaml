@@ -18,6 +18,6 @@ data:
   ADMIN_NOME: "Administrador"
   ADMIN_EMAIL: "admin@oficina.com"
   SENDGRID_FROM_EMAIL: "oficina@seu-dominio.com"
-  SNS_NOTIFICACAO_TOPIC_ARN: "SNS_NOTIFICACAO_TOPIC_ARN"
+  SNS_NOTIFICACAO_TOPIC_ARN: "__SNS_NOTIFICACAO_TOPIC_ARN__"
   DD_SITE: "datadoghq.com"
   DD_DOGSTATSD_PORT: "8125"
