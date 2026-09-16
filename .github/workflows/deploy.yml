@@ -112,7 +112,7 @@ jobs:
         run: |
           kubectl apply -f k8s/namespace.yaml
           sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
-          sed "s|SNS_NOTIFICACAO_TOPIC_ARN|${SNS_ARN}|g" k8s/configmap.yaml | kubectl apply -f -
+          sed "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" k8s/configmap.yaml | kubectl apply -f -
 
       - name: Secret do Kubernetes
         run: |
