@@ -13,6 +13,7 @@ export interface ClienteProps {
   cpfCnpj: string;
   email: string;
   telefone: string;
+  ativo?: boolean;
   criadoEm?: Date;
   atualizadoEm?: Date;
 }
@@ -23,6 +24,7 @@ export class Cliente {
   private _cpfCnpj: string;
   private _email: string;
   private _telefone: string;
+  private _ativo: boolean;
   readonly criadoEm: Date;
   private _atualizadoEm: Date;
 
@@ -32,6 +34,7 @@ export class Cliente {
     this._cpfCnpj = Cliente.normalizarCpfCnpj(props.cpfCnpj);
     this._email = Cliente.normalizarEmail(props.email);
     this._telefone = Cliente.normalizarTelefone(props.telefone);
+    this._ativo = props.ativo ?? true;
     this.criadoEm = props.criadoEm ?? new Date();
     this._atualizadoEm = props.atualizadoEm ?? new Date();
   }
@@ -47,6 +50,9 @@ export class Cliente {
   }
   get telefone() {
     return this._telefone;
+  }
+  get ativo() {
+    return this._ativo;
   }
   get atualizadoEm() {
     return this._atualizadoEm;
@@ -69,6 +75,11 @@ export class Cliente {
 
   alterarTelefone(telefone: string): void {
     this._telefone = Cliente.normalizarTelefone(telefone);
+    this.marcarComoAtualizado();
+  }
+
+  alterarStatus(ativo: boolean): void {
+    this._ativo = ativo;
     this.marcarComoAtualizado();
   }
 

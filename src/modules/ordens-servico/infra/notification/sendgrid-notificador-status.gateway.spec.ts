@@ -23,6 +23,7 @@ const configSemSendGrid = {
 } as unknown as ConfigService;
 
 const notificacao = {
+  ordemServicoId: 'uuid-os1',
   destinatario: { nome: 'João Silva', email: 'joao@email.com' },
   numeroOS: 42,
   statusAnterior: StatusOS.RECEBIDA,

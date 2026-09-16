@@ -10,17 +10,56 @@ spec:
   selector:
     matchLabels:
       app: oficina-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
         app: oficina-api
+        tags.datadoghq.com/env: "producao"
+        tags.datadoghq.com/service: "oficina-api"
+        tags.datadoghq.com/version: "latest"
+      annotations:
+        ad.datadoghq.com/api.logs: '[{"source":"nodejs","service":"oficina-api"}]'
+        ad.datadoghq.com/api.check_names: '["http_check"]'
+        ad.datadoghq.com/api.init_configs: '[{}]'
+        ad.datadoghq.com/api.instances: '[{"name":"oficina-api-health","url":"http://%%host%%:3000/health","timeout":5}]'
     spec:
+      serviceAccountName: oficina-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: oficina-api
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: oficina-api
       containers:
         - name: api
           # A tag é atualizada pelo pipeline (kubectl set image) a cada deploy.
           # Substitua ECR_REPOSITORY_URL pela URL do output do Terraform.
           image: ECR_REPOSITORY_URL:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 3000
@@ -29,9 +68,32 @@ spec:
                 name: oficina-config
             - secretRef:
                 name: oficina-secret
-          # requests/limits são obrigatórios para o HPA calcular o uso relativo.
-          # O request de memória precisa acomodar o baseline do NestJS + Prisma
-          # (~150-200Mi); abaixo disso o HPA já nasce acima do alvo de 80%.
+          env:
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: DD_ENV
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/env']
+            - name: DD_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/service']
+            - name: DD_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['tags.datadoghq.com/version']
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_RUNTIME_METRICS_ENABLED
+              value: "true"
+            - name: DD_TRACE_ENABLED
+              value: "true"
+          # requests/limits calibrados em carga controlada (autocannon 100 conexoes,
+          # 120s, cluster local com metrics-server): baseline ~150-180Mi e ~60-80m CPU;
+          # request de memoria acomoda NestJS + Prisma sem HPA acima do alvo de 80%.
           resources:
             requests:
               cpu: "100m"
@@ -39,6 +101,9 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health
@@ -55,3 +120,6 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+      volumes:
+        - name: tmp
+          emptyDir: {}

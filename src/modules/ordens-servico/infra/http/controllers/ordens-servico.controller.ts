@@ -22,6 +22,11 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { Roles } from '@/modules/auth/decorators/roles.decorator';
+import {
+  RequireOwnership,
+  OwnershipResource,
+} from '@/modules/auth/decorators/ownership.decorator';
+import { PerfilCliente } from '@/modules/auth/perfil-autorizacao';
 import { PerfilUsuario } from '@/modules/usuarios/domain/perfil-usuario';
 import { AtualizarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/atualizar-ordem-servico.use-case';
 import { BuscarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/buscar-ordem-servico.use-case';
@@ -32,6 +37,7 @@ import { RemoverOrdemServicoUseCase } from '@/modules/ordens-servico/application
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { CreateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/create-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/update-ordem-servico.dto';
+import { Idempotent } from '@/shared/idempotency/idempotent.decorator';
 
 @ApiTags('Ordens de Serviço')
 @ApiBearerAuth()
@@ -52,6 +58,7 @@ export class OrdensServicoController {
   ) {}
 
   @Post()
+  @Idempotent('ordens-servico.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Abrir uma nova ordem de serviço' })
   @ApiResponse({ status: 201, description: 'OS criada com sucesso.' })
@@ -120,9 +127,20 @@ export class OrdensServicoController {
   }
 
   @Get(':id')
+  @Roles(
+    PerfilUsuario.ADMINISTRADOR,
+    PerfilUsuario.ATENDENTE,
+    PerfilUsuario.MECANICO,
+    PerfilCliente,
+  )
+  @RequireOwnership(OwnershipResource.ORDEM_SERVICO)
   @ApiOperation({ summary: 'Consultar uma ordem de serviço pelo ID' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'OS encontrada.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Cliente tentando acessar OS de outro cliente.',
+  })
   @ApiResponse({ status: 404, description: 'OS não encontrada.' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return await this.buscarOrdemServico.execute(id);

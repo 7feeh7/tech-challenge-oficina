@@ -6,12 +6,18 @@ metadata:
   labels:
     app: oficina-api
 # Variáveis NÃO sensíveis da aplicação.
-# Dados sensíveis (DATABASE_URL, JWT_SECRET, SENDGRID_API_KEY, ADMIN_SENHA)
+# Dados sensíveis (DATABASE_URL, JWT_SECRET, ADMIN_SENHA)
 # ficam no Secret (secret.example.yaml), criado pelo pipeline de CI/CD.
+# A API publica eventos de notificação no SNS via IRSA (sem credencial estática).
 data:
   PORT: "3000"
   NODE_ENV: "production"
   DATABASE_SSL: "true"
+  AWS_REGION: "us-east-1"
+  NOTIFICACAO_TRANSPORT: "sns"
   ADMIN_NOME: "Administrador"
   ADMIN_EMAIL: "admin@oficina.com"
   SENDGRID_FROM_EMAIL: "oficina@seu-dominio.com"
+  SNS_NOTIFICACAO_TOPIC_ARN: "SNS_NOTIFICACAO_TOPIC_ARN"
+  DD_SITE: "datadoghq.com"
+  DD_DOGSTATSD_PORT: "8125"

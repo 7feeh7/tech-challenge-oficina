@@ -6,6 +6,7 @@ export interface ClientePrisma {
   cpfCnpj: string;
   email: string;
   telefone: string;
+  ativo: boolean;
   criadoEm: Date;
   atualizadoEm: Date;
 }
@@ -21,6 +22,7 @@ export class PrismaClienteMapper {
       cpfCnpj: cliente.cpfCnpj,
       email: cliente.email,
       telefone: cliente.telefone,
+      ativo: cliente.ativo,
     };
   }
 }

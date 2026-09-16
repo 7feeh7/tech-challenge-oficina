@@ -1,157 +1,177 @@
-name: CI/CD - Build, Test e Deploy (EKS)
+name: Deploy Application
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+  AWS_REGION: us-east-1
   K8S_NAMESPACE: oficina
+  TF_ENVIRONMENT: producao
+
+concurrency:
+  group: deploy-${{ env.TF_ENVIRONMENT }}
+  cancel-in-progress: false
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1) Build da aplicação + execução dos testes automatizados
-  # ---------------------------------------------------------------------------
   test:
     name: Build e Testes
     runs-on: ubuntu-latest
     env:
-      # O prisma.config.ts resolve DATABASE_URL ao ser carregado, e o runner não
-      # tem .env. Nada aqui conecta no banco (generate/lint/build/testes unitários
-      # são offline), então um valor fictício basta. O real vem do Secret do k8s.
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: yarn
 
-      - name: Instalar dependências
-        run: yarn install --frozen-lockfile
+      - run: yarn install --frozen-lockfile
+      - run: yarn prisma generate
+      - run: yarn lint
+      - run: yarn build
+      - run: yarn test:cov
 
-      # src/shared/generated/prisma não é versionado (está no .gitignore). Sem este passo
-      # o TypeScript não resolve nenhum tipo do Prisma e lint/build/testes quebram.
-      - name: Gerar o Prisma Client
-        run: yarn prisma generate
-
-      - name: Lint
-        run: yarn lint
-
-      - name: Build
-        run: yarn build
-
-      - name: Testes com cobertura
-        run: yarn test:cov
-
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - name: SonarCloud Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  # ---------------------------------------------------------------------------
-  # 2) Build/push da imagem Docker (ECR) + deploy no cluster EKS
-  # ---------------------------------------------------------------------------
   deploy:
     name: Deploy no EKS
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configurar credenciais AWS
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login no Amazon ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Resolver parametros via SSM
+        id: ssm
+        run: |
+          PREFIX="/tech-challenge/${{ env.TF_ENVIRONMENT }}"
+          ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
+          EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
+          DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
+          JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
+          SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
+          IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
+          echo "ecr=$ECR" >> $GITHUB_OUTPUT
+          echo "eks=$EKS" >> $GITHUB_OUTPUT
+          echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
+          echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
+          echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
+          echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
 
-      - name: Build e push da imagem Docker
+      - name: Montar DATABASE_URL a partir do Secrets Manager
+        id: db
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.db_arn }}" --query SecretString --output text)
+          USER=$(echo "$SECRET" | jq -r .username)
+          PASS=$(echo "$SECRET" | jq -r .password)
+          HOST=$(echo "$SECRET" | jq -r .host)
+          PORT=$(echo "$SECRET" | jq -r .port)
+          DB=$(echo "$SECRET" | jq -r .dbname)
+          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public&connection_limit=5&pool_timeout=10"
+          echo "database_url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Obter JWT do Secrets Manager
+        id: jwt
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.jwt_arn }}" --query SecretString --output text)
+          JWT=$(echo "$SECRET" | jq -r .secret)
+          echo "jwt_secret=$JWT" >> $GITHUB_OUTPUT
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push imagem (SHA imutavel)
         env:
           IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
           docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
           docker push "$ECR_REPOSITORY:latest"
 
-      - name: Configurar kubectl para o cluster EKS
+      - name: Configurar kubectl
         run: |
           aws eks update-kubeconfig \
             --region "$AWS_REGION" \
-            --name "$EKS_CLUSTER_NAME"
+            --name "${{ steps.ssm.outputs.eks }}"
 
-      - name: Namespace e ConfigMap
+      - name: Namespace, ServiceAccount e ConfigMap
+        env:
+          SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
+          IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
         run: |
           kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/configmap.yaml
+          sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
+          sed "s|SNS_NOTIFICACAO_TOPIC_ARN|${SNS_ARN}|g" k8s/configmap.yaml | kubectl apply -f -
 
-      - name: Criar/atualizar Secret a partir dos GitHub Secrets
+      - name: Secret do Kubernetes
         run: |
           kubectl create secret generic oficina-secret \
             --namespace "$K8S_NAMESPACE" \
-            --from-literal=DATABASE_URL='${{ secrets.DATABASE_URL }}' \
-            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
-            --from-literal=SENDGRID_API_KEY='${{ secrets.SENDGRID_API_KEY }}' \
+            --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
+            --from-literal=JWT_SECRET='${{ steps.jwt.outputs.jwt_secret }}' \
             --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      # As migrations rodam UMA vez, num Job dentro do cluster (o RDS é privado e
-      # não é alcançável a partir deste runner). Se o Job falhar, o deploy para
-      # aqui e os pods antigos seguem servindo.
-      - name: Migrations do banco (Job)
+      - name: Migrations (Job)
+        id: migrate
         env:
           IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          # O spec de um Job é imutável: remove a execução anterior antes de recriar.
           kubectl delete job oficina-migrate \
             --namespace "$K8S_NAMESPACE" --ignore-not-found
-
           sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
             k8s/migration-job.yaml | kubectl apply -f -
-
           kubectl wait --for=condition=complete job/oficina-migrate \
             --namespace "$K8S_NAMESPACE" --timeout=300s
 
-      - name: Logs das migrations em caso de falha
-        if: failure()
-        run: |
-          kubectl logs job/oficina-migrate --namespace "$K8S_NAMESPACE" --tail=100 || true
-
-      - name: Aplicar Deployment, Service e HPA
+      - name: Deployment, Service, PDB e HPA
+        id: rollout
         env:
           IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          # Injeta a URL do ECR no manifesto antes de aplicar.
           sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
             k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/pdb.yaml
           kubectl apply -f k8s/hpa.yaml
 
       - name: Aguardar rollout
         run: |
           kubectl rollout status deployment/oficina-api \
             --namespace "$K8S_NAMESPACE" --timeout=180s
+
+      - name: Smoke test — health readiness
+        id: smoke
+        run: |
+          kubectl run smoke-test-${{ github.run_id }} \
+            --namespace "$K8S_NAMESPACE" \
+            --image=curlimages/curl:8.5.0 \
+            --restart=Never \
+            --command -- sleep 300
+          kubectl wait --for=condition=Ready pod/smoke-test-${{ github.run_id }} \
+            --namespace "$K8S_NAMESPACE" --timeout=60s
+          kubectl exec smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE" -- \
+            curl -sf "http://oficina-api/health/ready"
+          kubectl delete pod smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE"
+
+      - name: Rollback automatico em falha pos-migration
+        if: failure() && steps.migrate.outcome == 'success'
+        run: |
+          echo "Falha detectada apos migration — revertendo Deployment para revisao anterior."
+          kubectl rollout undo deployment/oficina-api \
+            --namespace "$K8S_NAMESPACE" || true
+          kubectl rollout status deployment/oficina-api \
+            --namespace "$K8S_NAMESPACE" --timeout=180s || true

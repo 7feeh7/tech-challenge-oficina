@@ -1,11 +1,16 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { IntegrationMetricsService } from '@/shared/observability/integration-metrics.service';
 import { HealthController } from './health.controller';
 
 const prisma = { $queryRaw: jest.fn() } as unknown as PrismaService;
+const integrationMetrics = {
+  recordSuccess: jest.fn(),
+  recordFailure: jest.fn(),
+} as unknown as IntegrationMetricsService;
 
 describe('HealthController', () => {
-  const controller = new HealthController(prisma);
+  const controller = new HealthController(prisma, integrationMetrics);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -19,7 +24,6 @@ describe('HealthController', () => {
 
     await expect(controller.readiness()).resolves.toEqual({
       status: 'ok',
-      database: 'up',
     });
   });
 

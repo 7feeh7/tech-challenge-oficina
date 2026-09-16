@@ -93,6 +93,7 @@ describe('AtualizarOrdemServicoUseCase', () => {
       await useCase.execute('uuid-os1', { status: StatusOS.EM_DIAGNOSTICO });
 
       expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
+        ordemServicoId: 'uuid-os1',
         destinatario: { nome: clienteFake.nome, email: clienteFake.email },
         numeroOS: 1,
         statusAnterior: StatusOS.RECEBIDA,

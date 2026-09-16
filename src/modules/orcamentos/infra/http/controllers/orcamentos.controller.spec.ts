@@ -138,9 +138,11 @@ describe('OrcamentosController', () => {
       atualizarOrcamentoMock.execute.mockResolvedValue(aprovado);
 
       // Act
-      const result = await controller.update('uuid-orc1', {
-        status: StatusOrcamento.APROVADO,
-      });
+      const result = await controller.update(
+        'uuid-orc1',
+        { status: StatusOrcamento.APROVADO },
+        {},
+      );
 
       // Assert
       expect(atualizarOrcamentoMock.execute).toHaveBeenCalledWith('uuid-orc1', {
@@ -157,7 +159,11 @@ describe('OrcamentosController', () => {
 
       // Act & Assert
       await expect(
-        controller.update('uuid-orc1', { status: StatusOrcamento.APROVADO }),
+        controller.update(
+          'uuid-orc1',
+          { status: StatusOrcamento.APROVADO },
+          {},
+        ),
       ).rejects.toThrow(EstoqueInsuficienteParaAprovacaoError);
     });
 
@@ -169,7 +175,11 @@ describe('OrcamentosController', () => {
 
       // Act & Assert
       await expect(
-        controller.update('uuid-orc1', { status: StatusOrcamento.REJEITADO }),
+        controller.update(
+          'uuid-orc1',
+          { status: StatusOrcamento.REJEITADO },
+          {},
+        ),
       ).rejects.toThrow(MotivoRejeicaoObrigatorioError);
     });
   });

@@ -27,6 +27,7 @@ export interface BaixaDeEstoque {
 
 /** O que a decisão sobre o orçamento provocou na OS — o que o cliente precisa saber. */
 export interface TransicaoDaOrdem {
+  ordemServicoId: string;
   numeroOS?: number;
   cliente: { nome: string; email: string };
   statusAnterior: StatusOS;

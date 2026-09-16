@@ -1,6 +1,7 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { ObservabilityModule } from '@/shared/observability/observability.module';
 import { AtualizarOrcamentoUseCase } from './application/use-cases/atualizar-orcamento.use-case';
 import { CriarOrcamentoUseCase } from './application/use-cases/criar-orcamento.use-case';
 import { OrcamentosModule } from './orcamentos.module';
@@ -16,6 +17,7 @@ describe('OrcamentosModule (injeção)', () => {
       imports: [
         // o AppModule registra o ConfigModule como global; aqui reproduzimos isso
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
+        ObservabilityModule,
         OrcamentosModule,
       ],
     })

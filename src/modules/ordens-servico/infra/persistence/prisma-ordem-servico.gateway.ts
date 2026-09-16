@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 import {
   ClienteDaOrdem,
   MarcosDeTempo,
@@ -44,7 +45,10 @@ const INCLUDE_DETALHE = {
 
 @Injectable()
 export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly osMetrics: OsMetricsService,
+  ) {}
 
   async buscarPorId(id: string): Promise<OrdemServico | null> {
     const raw = await this.prisma.ordemServico.findUnique({
@@ -146,6 +150,7 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
       return criada;
     });
 
+    this.osMetrics.recordOsCriada();
     return this.montarDetalhe(raw);
   }
 
@@ -177,10 +182,14 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
         });
       }
 
-      return atualizada;
+      return { atualizada, registro };
     });
 
-    return this.montarDetalhe(raw);
+    if (raw.registro?.statusAnterior) {
+      await this.osMetrics.recordTransicao(id, raw.registro.statusAnterior);
+    }
+
+    return this.montarDetalhe(raw.atualizada);
   }
 
   async remover(id: string): Promise<void> {

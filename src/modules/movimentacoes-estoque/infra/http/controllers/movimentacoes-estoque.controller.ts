@@ -25,6 +25,7 @@ import { BuscarMovimentacaoUseCase } from '@/modules/movimentacoes-estoque/appli
 import { ListarMovimentacoesUseCase } from '@/modules/movimentacoes-estoque/application/use-cases/listar-movimentacoes.use-case';
 import { RegistrarMovimentacaoUseCase } from '@/modules/movimentacoes-estoque/application/use-cases/registrar-movimentacao.use-case';
 import { CreateMovimentacaoEstoqueDto } from '@/modules/movimentacoes-estoque/infra/http/dtos/create-movimentacao-estoque.dto';
+import { Idempotent } from '@/shared/idempotency/idempotent.decorator';
 
 @ApiTags('Movimentações de Estoque')
 @ApiBearerAuth()
@@ -38,6 +39,7 @@ export class MovimentacoesEstoqueController {
   ) {}
 
   @Post()
+  @Idempotent('movimentacoes-estoque.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar entrada ou baixa de peça no estoque' })
   @ApiResponse({

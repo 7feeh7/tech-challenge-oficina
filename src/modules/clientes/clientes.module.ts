@@ -7,6 +7,7 @@ import { BuscarClienteUseCase } from './application/use-cases/buscar-cliente.use
 import { CriarClienteUseCase } from './application/use-cases/criar-cliente.use-case';
 import { ListarClientesUseCase } from './application/use-cases/listar-clientes.use-case';
 import { RemoverClienteUseCase } from './application/use-cases/remover-cliente.use-case';
+import { AlterarStatusClienteUseCase } from './application/use-cases/alterar-status-cliente.use-case';
 import { ClientesController } from './infra/http/controllers/clientes.controller';
 import { PrismaClienteGateway } from './infra/persistence/prisma-cliente.gateway';
 
@@ -48,6 +49,12 @@ import { PrismaClienteGateway } from './infra/persistence/prisma-cliente.gateway
       provide: RemoverClienteUseCase,
       useFactory: (gateway: ClienteGateway) =>
         new RemoverClienteUseCase(gateway),
+      inject: [CLIENTE_GATEWAY],
+    },
+    {
+      provide: AlterarStatusClienteUseCase,
+      useFactory: (gateway: ClienteGateway) =>
+        new AlterarStatusClienteUseCase(gateway),
       inject: [CLIENTE_GATEWAY],
     },
   ],

@@ -35,5 +35,10 @@ export interface ClienteGateway {
   listar(page: number, limit: number, search?: string): Promise<PaginaClientes>;
   criar(cliente: Cliente): Promise<Cliente>;
   atualizar(id: string, cliente: Cliente): Promise<Cliente>;
+  alterarStatusComAuditoria(
+    id: string,
+    ativo: boolean,
+    alteradoPorId: string,
+  ): Promise<Cliente>;
   remover(id: string): Promise<void>;
 }

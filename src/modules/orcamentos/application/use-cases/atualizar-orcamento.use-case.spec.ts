@@ -125,6 +125,7 @@ describe('AtualizarOrcamentoUseCase', () => {
       });
 
       expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
+        ordemServicoId: 'uuid-os1',
         destinatario: clienteFake,
         numeroOS: 42,
         statusAnterior: StatusOS.AGUARDANDO_APROVACAO,
@@ -228,6 +229,7 @@ describe('AtualizarOrcamentoUseCase', () => {
       await useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO });
 
       expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
+        ordemServicoId: 'uuid-os1',
         destinatario: clienteFake,
         numeroOS: 42,
         statusAnterior: StatusOS.AGUARDANDO_APROVACAO,

@@ -12,6 +12,7 @@ export async function notificarTransicao(
   if (!transicao) return;
 
   await notificador.notificarMudancaDeStatus({
+    ordemServicoId: transicao.ordemServicoId,
     destinatario: transicao.cliente,
     numeroOS: transicao.numeroOS,
     statusAnterior: transicao.statusAnterior,

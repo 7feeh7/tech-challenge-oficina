@@ -43,7 +43,6 @@ export class CriarOrcamentoUseCase {
 
     const resultado =
       await this.orcamentos.criarEEnviarParaAprovacao(orcamento);
-    console.log('chegou aqui');
 
     await notificarTransicao(this.notificador, resultado.transicao);
 

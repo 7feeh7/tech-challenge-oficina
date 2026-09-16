@@ -1,0 +1,62 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+env:
+  DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+
+jobs:
+  validate:
+    name: Lint, Build e Testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+      - run: yarn prisma generate
+      - run: yarn lint
+      - run: yarn build
+      - run: yarn test:cov
+
+      # - name: Auditoria npm (alta/critica)
+      #   run: yarn audit --level high
+      #   continue-on-error: false
+
+      - name: SonarCloud Scan
+        if: github.event_name == 'pull_request'
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: SonarCloud Quality Gate
+        if: github.event_name == 'pull_request'
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  security-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@v3.82.13
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: HEAD
+          extra_args: --only-verified

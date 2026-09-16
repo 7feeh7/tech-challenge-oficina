@@ -4,68 +4,30 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Tecnologias
 
-- **Node.js 24** + **TypeScript 5**
-- **NestJS 11** com adapter **Fastify**
-- **Prisma 7** ORM
-- **PostgreSQL 16**
-- **JWT** (autenticação) + **bcryptjs** (hash de senha)
-- **class-validator** / **class-transformer** (validação de DTOs)
-- **Swagger / OpenAPI** (documentação interativa)
-- **Jest** (testes unitários e e2e)
-- **Docker** / **Docker Compose**
-- **SonarQube** (análise de qualidade)
+| Tecnologia         | Versão                             |
+| ------------------ | ---------------------------------- |
+| Node.js            | 24+                                |
+| NestJS             | 11                                 |
+| Fastify            | 11                                 |
+| Prisma             | 7                                  |
+| PostgreSQL         | 16                                 |
+| Jest               | 30                                 |
+| Docker             | multi-stage (`Dockerfile` na raiz) |
+| dd-trace (Datadog) | 6                                  |
+| SonarCloud         | via CI                             |
 
-## Estrutura do Projeto
+## Arquitetura
 
-**Todos os módulos de negócio seguem a Clean Architecture**: as dependências apontam sempre de fora para dentro (`infra` → `application` → `domain`), e a camada de domínio não conhece NestJS, Prisma nem HTTP. Cada módulo tem a mesma anatomia — `domain/` (entidades, enums e erros), `application/` (casos de uso, portas e mappers) e `infra/` (controllers, DTOs e adaptadores de persistência).
+Visão deste repositório (API no EKS):
 
-Um módulo está aberto abaixo para mostrar a anatomia; os demais seguem exatamente a mesma estrutura. A pasta `modules/` concentra os bounded contexts da API; `shared/` concentra infraestrutura e utilitários transversais.
-
-```
-src/
-├── modules/                         # Módulos NestJS (bounded contexts)
-│   ├── ordens-servico/              # CRUD de OS (exemplo expandido)
-│   │   ├── domain/                  # Camada mais interna — zero dependências externas
-│   │   │   ├── entities/            # OrdemServico (máquina de estados) e itens com preço congelado
-│   │   │   ├── errors/              # Erros de domínio da OS (herdam de DomainError)
-│   │   │   └── status-os.ts         # Enum de domínio + transições válidas
-│   │   ├── application/             # Regras da aplicação — não conhece Nest nem Prisma
-│   │   │   ├── ports/               # Interfaces implementadas pela infra (inversão de dependência)
-│   │   │   ├── use-cases/           # Um caso de uso por arquivo, classes puras (sem decorators)
-│   │   │   └── mappers/             # Entidade → saída da API
-│   │   ├── infra/                   # Adaptadores — camada mais externa
-│   │   │   ├── http/                # Controllers + DTOs (class-validator + Swagger)
-│   │   │   ├── notification/        # SendGrid: avisa o cliente a cada mudança de status
-│   │   │   └── persistence/         # PrismaOrdemServicoGateway (transação: OS + itens + histórico)
-│   │   └── ordens-servico.module.ts # Wiring: liga as portas aos adaptadores
-│   ├── usuarios/                    # CRUD de usuários + seed do administrador inicial
-│   ├── auth/                        # Autenticação JWT + autorização por perfil (@Public, @Roles, guards)
-│   ├── clientes/                    # CRUD de clientes (CPF/CNPJ validado)
-│   ├── veiculos/                    # CRUD de veículos (placa Mercosul/antiga validada)
-│   ├── servicos/                    # Catálogo de serviços
-│   ├── pecas/                       # Catálogo de peças/insumos
-│   ├── movimentacoes-estoque/       # Controle de estoque (entrada/baixa atômica)
-│   ├── orcamentos/                  # Orçamentos: aprovar/rejeitar (aprovar dá baixa no estoque)
-│   └── health/                      # Endpoints de liveness/readiness (probes do Kubernetes)
-│
-├── shared/                          # Código compartilhado entre módulos
-│   ├── exceptions/                  # DomainError
-│   ├── filters/                     # Filtro HTTP de exceções de domínio
-│   ├── validators/                  # Validador CPF/CNPJ
-│   ├── database/                    # PrismaService e PrismaModule
-│   └── generated/prisma/            # Client gerado pelo Prisma (não versionar manualmente)
-│
-├── app.module.ts                    # Composição raiz: módulos, guards e filtros globais
-└── main.ts                          # Bootstrap (Fastify, ValidationPipe, Swagger)
+```mermaid
+flowchart LR
+    GW[API Gateway] --> POD[oficina-api pods]
+    POD --> RDS[(RDS PostgreSQL)]
+    POD --> SNS[SNS notificação]
 ```
 
-### Camadas e regra de dependência
-
-| Camada        | O que vive aqui                                       | Pode depender de                |
-| ------------- | ----------------------------------------------------- | ------------------------------- |
-| `domain`      | Entidades, enums e erros de negócio                   | Nada (nem framework, nem banco) |
-| `application` | Casos de uso, portas e mappers de saída               | `domain`                        |
-| `infra`       | Controllers, DTOs HTTP, gateway Prisma, hasher bcrypt | `application` e `domain`        |
+Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagramas/componentes-nuvem.md) · Visão geral: [`docs/arquitetura/visao-geral-nuvem.md`](docs/arquitetura/visao-geral-nuvem.md) · Código: [`docs/arquitetura.md`](docs/arquitetura.md)
 
 ## Pré-requisitos
 
@@ -73,130 +35,78 @@ src/
 - Yarn 1.x
 - Docker e Docker Compose (recomendado para subir o banco)
 
-## Configuração
+## Instalação e Execução
 
-1. Copie o arquivo de variáveis de ambiente:
+> OBS: É NECESSÁRIO CONFIGURAR O ARQUIVO .ENV
+
+1. Clonar o repositório:
+
+   ```bash
+   git clone https://github.com/7feeh7/tech-challenge-oficina.git
+   ```
+
+2. Copiar as variáveis de ambiente:
 
    ```bash
    cp .env.example .env
    ```
 
-2. Edite o `.env` conforme necessário. As variáveis principais:
+3. Subir API + Postgres com Docker:
 
-   | Variável                                                                | Descrição                                                                      |
-   | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-   | `DATABASE_URL`                                                          | Connection string do PostgreSQL (Prisma)                                       |
-   | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | Credenciais do container Postgres                                              |
-   | `JWT_SECRET`                                                            | Segredo usado para assinar os tokens JWT (**obrigatório alterar em produção**) |
-   | `PORT`                                                                  | Porta da API (padrão `3000`)                                                   |
-   | `SENDGRID_API_KEY`                                                      | Chave da API do SendGrid (notificação de status da OS)                         |
-   | `SENDGRID_FROM_EMAIL`                                                   | Remetente dos e-mails — precisa ser um _Verified Sender_ no SendGrid           |
-
-   > Sem as variáveis do SendGrid a API sobe normalmente: o envio é apenas registrado como aviso no log. A notificação é _best-effort_ e nunca bloqueia a atualização da OS.
-
-## Como rodar
-
-### Docker Compose
-
-Sobe API + Postgres em containers:
-
-```bash
-docker compose up --build
-```
-
-A API ficará disponível em `http://localhost:3000` e o Postgres em `localhost:5432`.
-
-## Documentação da API (Swagger)
-
-Após subir a API, acesse:
-
-```
-http://localhost:3000/docs
-```
-
-A documentação inclui todos os endpoints, schemas e o botão **Authorize** para autenticar com Bearer Token.
-
-## Autenticação
-
-A API é protegida globalmente por JWT. Rotas marcadas com `@Public()` (ex.: `POST /auth/login`) não exigem token.
-
-1. Faça login:
-
-   ```http
-   POST /auth/login
-   {
-     "email": "usuario@oficina.com",
-     "senha": "senha123"
-   }
+   ```bash
+   docker compose up --build
    ```
 
-2. Use o `access_token` retornado no header das demais requisições:
+4. Agora deve estar em execução:
 
-   ```
-   Authorization: Bearer <token>
-   ```
+- API: http://localhost:3000
+- Swagger: http://localhost:3000/docs
+- Postgres: localhost:5432
 
-### Perfis e permissões
+Variáveis de ambiente, scripts do `package.json` e execução sem Docker em [`docs/configuracao.md`](docs/configuracao.md).
 
-O acesso aos endpoints é controlado por `@Roles` + `RolesGuard`:
+## Comandos úteis
 
-| Perfil          | Acesso                                            |
-| --------------- | ------------------------------------------------- |
-| `ADMINISTRADOR` | Acesso total                                      |
-| `ATENDENTE`     | Clientes, veículos, ordens de serviço, orçamentos |
-| `MECANICO`      | Ordens de serviço                                 |
-| `ALMOXARIFE`    | Peças e movimentações de estoque                  |
-
-## Scripts disponíveis
-
-| Script                       | Descrição                                    |
-| ---------------------------- | -------------------------------------------- |
-| `yarn start:dev`             | Inicia a API em modo watch                   |
-| `yarn start:prod`            | Executa o build de produção (`dist/main.js`) |
-| `yarn build`                 | Compila o projeto                            |
-| `yarn test`                  | Executa os testes unitários                  |
-| `yarn test:watch`            | Testes em modo watch                         |
-| `yarn test:cov`              | Testes com relatório de cobertura            |
-| `yarn test:e2e`              | Testes end-to-end                            |
-| `yarn lint`                  | ESLint com autofix                           |
-| `yarn format`                | Prettier                                     |
-| `yarn prisma migrate dev`    | Cria e aplica nova migration (dev)           |
-| `yarn prisma migrate deploy` | Aplica migrations existentes (prod/CI)       |
-| `yarn prisma studio`         | Abre o Prisma Studio                         |
-
-## Qualidade de código (SonarQube)
+**Parar o serviço**:
 
 ```bash
-yarn sonar:up      # sobe o SonarQube local
-yarn sonar         # roda testes com cobertura + scanner
-yarn sonar:down    # encerra o SonarQube
+docker compose down
 ```
 
-SonarQube fica em `http://localhost:9000`.
+## Endpoints
 
-## Testes
+Contratos HTTP em [`docs/api.md`](docs/api.md), especificação em [`docs/openapi.json`](docs/openapi.json)
+
+Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
+
+Todas as rotas `/v1/*` são protegidas por JWT, exceto `POST /v1/auth/login` e `/health`. Faça login e envie o token:
 
 ```bash
-yarn test               # unitários
-yarn test:cov           # cobertura
-yarn test:e2e           # end-to-end
+# Login interno
+curl --location 'https://{api_gateway_url}/v1/auth/login' \
+  --header 'Content-Type: application/json' \
+  --data '{"email":"usuario@oficina.com","senha":"senha123"}'
+
+# Cliente por CPF (sem /v1)
+curl --location 'https://{api_gateway_url}/auth/cpf' \
+  --header 'Content-Type: application/json' \
+  --data '{"cpf":"529.982.247-25"}'
+
+# Rotas protegidas
+curl --location 'https://{api_gateway_url}/v1/clientes' \
+  --header 'Authorization: Bearer SEU_TOKEN'
 ```
 
-Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orcamentos`) seguem o padrão **Arrange / Act / Assert** com mínimo de 80% de cobertura.
+Detalhes em [`docs/gateway-rotas.md`](docs/gateway-rotas.md).
 
-### Cobertura de testes
+Perfis, permissões e fluxo de login em [`docs/autenticacao.md`](docs/autenticacao.md).
 
-<img width="1452" height="943" alt="cobertura" src="https://github.com/user-attachments/assets/934a6b2f-c832-4d32-8c0d-e998f00d0e05" />
-
-## Principais endpoints
+Principais rotas:
 
 - `POST /auth/login` — autenticação
-- `GET|POST|PATCH|DELETE /clientes`
-- `GET|POST|PATCH|DELETE /veiculos`
-- `GET|POST|PATCH|DELETE /servicos`
-- `GET|POST|PATCH|DELETE /pecas`
+- `GET|POST|PATCH|DELETE /clientes`, `/veiculos`, `/servicos`, `/pecas`
 - `POST /ordens-servico` — abre a OS com cliente, veículo, serviços e peças
-- `GET /ordens-servico` — fila de trabalho (ver abaixo)
+- `GET /ordens-servico` — fila de trabalho
 - `GET /ordens-servico/:id` — status atual e detalhes da OS
 - `PATCH /ordens-servico/:id` — muda o status da OS (notifica o cliente por e-mail)
 - `GET /ordens-servico/metricas/tempo-medio` — tempo médio de execução / ciclo total
@@ -204,167 +114,102 @@ Domínios críticos (`clientes`, `veiculos`, `servicos`, `ordens-servico`, `orca
 - `GET|POST /movimentacoes-estoque`
 - `GET|POST|PATCH|DELETE /usuarios` (somente ADMINISTRADOR)
 
-### Fila de ordens de serviço (`GET /ordens-servico`)
+Fila de OS, máquina de estados, renegociação, desistência e notificação por e-mail em [`docs/regras-de-negocio.md`](docs/regras-de-negocio.md).
 
-Sem filtro, a listagem devolve a **fila de trabalho**:
+## Como rodar os testes
 
-- **Exclusão lógica** das OS `FINALIZADA` e `ENTREGUE` — elas continuam no banco, apenas somem da fila;
-- Ordenação por prioridade de status: **Em Execução > Aguardando Aprovação > Diagnóstico > Recebida**;
-- Dentro de cada status, as **mais antigas primeiro**.
-
-Informar `?status=` consulta um status específico, inclusive os encerrados (útil para auditoria e para o histórico do cliente).
-
-### Máquina de estados da OS
-
-As transições válidas vivem em [status-os.ts](src/modules/ordens-servico/domain/status-os.ts) e são aplicadas pela entidade `OrdemServico.alterarStatus()`, que também carimba os marcos de tempo (`iniciadaEm`, `finalizadaEm`, `entregueEm`).
-
-**Todos** os caminhos que movem a OS passam por ela — inclusive os disparados pelo módulo de orçamentos, que carrega a entidade dentro da própria transação. Uma transição inválida devolve `400` e desfaz a transação inteira: não fica orçamento gravado com a OS parada.
-
-### Recusa do orçamento, renegociação e desistência
-
-A decisão do cliente sobre o preço **não é um status da OS** — os seis status descrevem onde o carro está no processo, e a decisão comercial vive no orçamento (`APROVADO` / `REJEITADO`, com `motivoRejeicao` e `rejeitadoEm`).
-
-- **Recusa** (`PATCH /orcamentos/:id` com `status: REJEITADO`): é uma rodada de negociação. O orçamento é rejeitado e a OS **volta para `EM_DIAGNOSTICO`**, para ser reavaliada.
-- **Nova proposta**: basta um novo `POST /orcamentos` com o mesmo `ordemServicoId` — uma OS aceita vários orçamentos, e a negociação inteira fica auditável em `GET /ordens-servico/:id`. Só pode existir **uma proposta viva por vez**: criar um segundo orçamento enquanto o atual aguarda aprovação devolve `409`.
-- **Desistência**: se o cliente não quer mais o serviço, a OS é encerrada **sem execução** — `EM_DIAGNOSTICO` ou `AGUARDANDO_APROVACAO` → `FINALIZADA` → `ENTREGUE`. Depois que a execução começou isso não vale mais, porque o estoque já foi consumido.
-
-Uma OS encerrada sem execução nunca tem `iniciadaEm`, e por isso **fica fora das métricas de tempo** — uma desistência não distorce o tempo médio de atendimento da oficina.
-
-### Notificação de status por e-mail
-
-**Toda** mudança de status da OS avisa o cliente por e-mail, pelo **SendGrid** — inclusive as disparadas pelo módulo de orçamentos:
-
-| Ação                              | Transição                 | Aviso |
-| --------------------------------- | ------------------------- | ----- |
-| `PATCH /ordens-servico/:id`       | qualquer transição válida | ✉️    |
-| `POST /orcamentos`                | → `AGUARDANDO_APROVACAO`  | ✉️    |
-| `PATCH /orcamentos/:id` (aprovar) | → `EM_EXECUCAO`           | ✉️    |
-| `PATCH /orcamentos/:id` (recusar) | → `EM_DIAGNOSTICO`        | ✉️    |
-
-O aviso só sai quando a OS **realmente muda de status**: reenviar a mesma decisão é idempotente e não gera novo e-mail.
-
-O envio é _best-effort_: se o provedor falhar ou não estiver configurado, o erro vai para o log e a OS **não** deixa de ser atualizada — a operação já foi persistida, e um 500 por causa de e-mail seria mentir para o usuário.
-
-A regra vive nos casos de uso, que só conhecem a porta `NotificadorDeStatusGateway`. Trocar SendGrid por SMS ou webhook é escrever outro adaptador em `modules/ordens-servico/infra/notification/`, sem tocar em domínio nenhum. O módulo de orçamentos importa `OrdensServicoModule` e reusa a mesma porta — a dependência é de mão única (o módulo de OS não conhece orçamentos).
-
----
-
-# Fase 2 — Infraestrutura, Escalabilidade e CI/CD
-
-Esta fase evolui a aplicação para rodar em nuvem (**AWS**) com qualidade, resiliência e escalabilidade, adicionando conteinerização, orquestração com Kubernetes, infraestrutura como código (Terraform) e um pipeline de CI/CD.
-
-## Objetivos da fase
-
-- **Infraestrutura escalável e resiliente** com Kubernetes gerenciado (EKS) e autoescalonamento (HPA).
-- **Provisionamento automatizado** de toda a infraestrutura via Terraform.
-- **Deploy automatizado** por pipeline de CI/CD na branch `main`.
-- **Banco gerenciado** no Amazon RDS (PostgreSQL).
-
-## Arquitetura proposta
-
-Arquitetura do serviço em execução — entrada pelo Load Balancer, pods no EKS e a comunicação com o **Amazon RDS** e o **SendGrid**:
-
-<img width="1201" height="811" alt="arquitetura" src="assets/ARQUITETURA-CLOUD.png" />
-**Fluxo de deploy:** `push` na `main` → GitHub Actions builda e testa → gera a imagem Docker e publica no ECR → roda as migrations do banco → aplica os manifestos no EKS e atualiza a imagem → o HPA escala os pods conforme CPU/memória.
-
-**Conexão com o banco:** o RDS recusa conexão sem TLS (`rds.force_ssl`), e seu certificado é emitido por uma CA da Amazon que não está no trust store do Node. Por isso a aplicação conecta com TLS sem validar a cadeia, ligado pela variável `DATABASE_SSL` do ConfigMap. Localmente ela fica `false`, já que o Postgres em container não fala TLS.
-
-**Deploy do banco:** as migrations rodam **uma vez por deploy**, num Job do Kubernetes ([k8s/migration-job.yaml](k8s/migration-job.yaml)) que usa a mesma imagem da API, e não no boot de cada pod. Duas razões: com o HPA, cada pod novo criado durante um pico repetiria o `migrate deploy` justamente no pior momento; e uma migration com defeito derrubaria todos os pods, em vez de falhar no Job e preservar a versão em execução. O Job roda **dentro do cluster** porque o RDS é privado — o runner do GitHub Actions não alcança o banco. Se o Job falhar, o `rollout` não acontece.
-
-## Estrutura da infraestrutura
-
-```
-infra/            # Terraform (VPC, EKS, RDS, ECR, metrics-server)
-k8s/              # Manifestos Kubernetes (namespace, configmap, secret, deployment, service, hpa)
-.github/workflows/deploy.yml   # Pipeline CI/CD (build, testes, imagem, deploy)
-Dockerfile        # Imagem de produção (multi-stage)
-docker-compose.yml# Execução local (API + PostgreSQL)
-```
-
-## Serviços AWS utilizados
-
-| Serviço                        | Função                                                  |
-| ------------------------------ | ------------------------------------------------------- |
-| **Amazon EKS**                 | Cluster Kubernetes gerenciado que executa a API NestJS. |
-| **Amazon RDS (PostgreSQL 16)** | Banco de dados gerenciado, privado.                     |
-| **Amazon ECR**                 | Registro das imagens Docker da aplicação.               |
-| **Elastic Load Balancer**      | Exposição pública da API (Service `LoadBalancer`).      |
-| **VPC / NAT Gateway**          | Rede isolada com subnets públicas e privadas.           |
-
-## Como executar
-
-### 1. Execução local (Docker Compose)
+Executar toda a suite:
 
 ```bash
-cp .env.example .env
-docker compose up --build
+yarn test
 ```
 
-API em `http://localhost:3000` e Swagger em `http://localhost:3000/docs`.
-
-### 2. Provisionamento da infraestrutura (Terraform)
+Cobertura e end-to-end:
 
 ```bash
-cd infra
-cp terraform.tfvars.example terraform.tfvars   # defina db_password
-terraform init
-terraform apply
-$(terraform output -raw kubeconfig_command)     # configura o kubectl
+yarn test:cov
+yarn test:e2e
 ```
 
-Detalhes e lista de recursos em [infra/README.md](infra/README.md).
+Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.md`](docs/testes-e-qualidade.md).
 
-### 3. Deploy no Kubernetes (EKS)
+## Repositórios da solução (Fase 3)
 
-O deploy é feito automaticamente pelo CI/CD a cada push na `main`. Para aplicar manualmente, veja [k8s/README.md](k8s/README.md).
+| Repositório                       | Responsabilidade                                         | URL                                                       |
+| --------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| **tech-challenge-oficina** (este) | API NestJS, Prisma, `Dockerfile`, manifests `k8s/`, docs | https://github.com/7feeh7/tech-challenge-oficina          |
+| tech-challenge-serverless         | Functions auth CPF e notificação                         | https://github.com/7feeh7/tech-challenge-serverless       |
+| tech-challenge-infra-kubernetes   | VPC, EKS, ECR, API Gateway, mensageria, Datadog          | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
+| tech-challenge-infra-database     | RDS PostgreSQL, Secrets Manager                          | https://github.com/7feeh7/tech-challenge-infra-database   |
+
+**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º). Passo a passo: [`docs/runbook-subir-producao.md`](docs/runbook-subir-producao.md).
+
+## Infraestrutura e deploy
+
+A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA**. Existe **um único ambiente provisionado**: `develop` valida automaticamente (sem tocar a AWS) e `main` implanta após merge de PR aprovado.
+
+### Deploy ativo (produção)
+
+| Recurso                | Como obter                                               |
+| ---------------------- | -------------------------------------------------------- |
+| API Gateway (URL base) | SSM `/tech-challenge/producao/infra/api_gateway_url`     |
+| Swagger UI             | `{api_gateway_url}/docs`                                 |
+| Health                 | `{api_gateway_url}/health`                               |
+| Imagem ECR             | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
+
+> Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) para data de validação.
+
+### Dockerfile
+
+`Dockerfile` multi-stage na raiz: build NestJS + Prisma generate, runtime Alpine com usuário não-root. Migrations rodam no Job `k8s/migration-job.yaml`, não no CMD da imagem.
+
+### Variáveis e secrets (sem valores)
+
+| Escopo                        | Nomes                                                                 |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `.env` local                  | Ver [`.env.example`](.env.example)                                    |
+| GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA`              |
+| Runtime K8s                   | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
+
+Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/ci-cd.md`](docs/ci-cd.md).
+
+### Seed de demonstração
+
+Dados fictícios para gravação do vídeo — **somente manual**:
 
 ```bash
-kubectl get pods -n oficina
-kubectl get svc  -n oficina    # EXTERNAL-IP do LoadBalancer
-kubectl get hpa  -n oficina    # autoescalonamento
+./scripts/seed-demo.sh
 ```
 
-## Pipeline CI/CD
+Roteiro completo: [`docs/demo-fase3.md`](docs/demo-fase3.md).
 
-<img width="1201" height="811" alt="deploy" src="assets/deploy.png" />
+- ADRs: [`docs/adrs/README.md`](docs/adrs/README.md) · RFCs: [`docs/rfcs/README.md`](docs/rfcs/README.md)
+- Arquitetura Fase 3: [`docs/arquitetura/README.md`](docs/arquitetura/README.md)
+- Infraestrutura e provisionamento: [`docs/infraestrutura.md`](docs/infraestrutura.md)
+- Pipeline e secrets: [`docs/ci-cd.md`](docs/ci-cd.md)
+- Governança de branches: [`docs/governanca-git.md`](docs/governanca-git.md)
+- Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
 
-Definido em [.github/workflows/deploy.yml](.github/workflows/deploy.yml), executa **apenas na branch `main`**:
+> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Use `workflow_dispatch` → destroy nos repos de infra após a demonstração.
 
-1. **Build & testes** — `yarn install`, `yarn lint`, `yarn build`, `yarn test:cov`.
-2. **Imagem Docker** — build e push para o **ECR** (tags `sha` e `latest`).
-3. **Deploy** — `aws eks update-kubeconfig`, cria/atualiza o Secret a partir dos GitHub Secrets, aplica os manifestos e aguarda o `rollout`.
+## Documentação
 
-### GitHub Secrets necessários
+Índice completo em [`docs/README.md`](docs/README.md).
 
-| Secret                                        | Descrição                                                        |
-| --------------------------------------------- | ---------------------------------------------------------------- |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Credenciais AWS para o deploy.                                   |
-| `AWS_REGION`                                  | Região (ex.: `us-east-1`).                                       |
-| `ECR_REPOSITORY`                              | URL do repositório ECR (`terraform output ecr_repository_url`).  |
-| `EKS_CLUSTER_NAME`                            | Nome do cluster (`terraform output cluster_name`).               |
-| `DATABASE_URL`                                | Connection string do RDS (`terraform output -raw database_url`). |
-| `JWT_SECRET`                                  | Segredo de assinatura do JWT.                                    |
-| `SENDGRID_API_KEY`                            | Chave do SendGrid (pode ficar vazio).                            |
-| `ADMIN_SENHA`                                 | Senha do administrador inicial.                                  |
+| Documento                                        | Conteúdo                                                    |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| [arquitetura](docs/arquitetura.md)               | Clean Architecture, estrutura de pastas e camadas           |
+| [configuracao](docs/configuracao.md)             | Variáveis de ambiente, execução local e scripts             |
+| [autenticacao](docs/autenticacao.md)             | Login JWT, perfis e permissões                              |
+| [api](docs/api.md)                               | Contratos HTTP de todos os endpoints                        |
+| [regras-de-negocio](docs/regras-de-negocio.md)   | Fila de OS, máquina de estados, orçamentos, estoque, e-mail |
+| [testes-e-qualidade](docs/testes-e-qualidade.md) | Testes, cobertura e SonarQube                               |
+| [arquitetura](docs/arquitetura/README.md)        | Visão Fase 3, diagramas, RFCs e ADRs                        |
+| [infraestrutura](docs/infraestrutura.md)         | AWS, Terraform, Kubernetes e HPA                            |
+| [banco](docs/banco/README.md)                    | Modelo relacional, ER e performance                         |
+| [runbooks](docs/runbooks/README.md)              | Procedimentos operacionais                                  |
+| [ci-cd](docs/ci-cd.md)                           | Pipeline do GitHub Actions e secrets                        |
 
-## Escalabilidade (HPA)
+**Vídeo demonstrativo:** _preencher URL após publicação (YouTube/Vimeo, ≤ 15 min)_ — também registrado em [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md).
 
-O `HorizontalPodAutoscaler` escala de **2 a 10 pods** conforme o consumo de CPU (70%) e memória (80%). O `metrics-server` (instalado via Terraform) fornece as métricas.
-
-Para demonstrar o autoescalonamento **sem subir nada na AWS**, use o cluster local do Docker Desktop:
-
-```bash
-bash scripts/k8s-local.sh          # sobe API + Postgres + metrics-server + HPA
-
-kubectl get hpa -n oficina -w      # em um terminal, observe as réplicas
-npx autocannon -c 100 -d 120 http://localhost/health   # em outro, gere carga
-```
-
-Detalhes e o equivalente no EKS em [k8s/README.md](k8s/README.md).
-
-## Documentação e demonstração
-
-- **Swagger / OpenAPI:** `http://<EXTERNAL-IP>/docs` (ou `http://localhost:3000/docs` local).
-- **Vídeo demonstrativo:** _adicionar link do YouTube/Vimeo aqui_.
-
-> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Após a demonstração, rode `terraform destroy` em `infra/`.
+**Entrega Fase 3 (PDF):** [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) · Matriz de conformidade: [`spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md`](spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md)
