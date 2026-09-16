@@ -27,7 +27,7 @@ flowchart LR
     POD --> SNS[SNS notificação]
 ```
 
-Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagramas/componentes-nuvem.md) · Visão geral: [`docs/arquitetura/visao-geral-nuvem.md`](docs/arquitetura/visao-geral-nuvem.md) · Código: [`docs/arquitetura.md`](docs/arquitetura.md)
+Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagramas/componentes-nuvem.md) · Arquitetura (RFCs, ADRs e diagramas): [`docs/README.md`](docs/README.md)
 
 ## Pré-requisitos
 
@@ -63,7 +63,7 @@ Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagram
 - Swagger: http://localhost:3000/docs
 - Postgres: localhost:5432
 
-Variáveis de ambiente, scripts do `package.json` e execução sem Docker em [`docs/configuracao.md`](docs/configuracao.md).
+Variáveis de ambiente, scripts do `package.json` e execução sem Docker em [`docs/local/api/configuracao.md`](docs/local/api/configuracao.md).
 
 ## Comandos úteis
 
@@ -75,7 +75,7 @@ docker compose down
 
 ## Endpoints
 
-Contratos HTTP em [`docs/api.md`](docs/api.md), especificação em [`docs/openapi.json`](docs/openapi.json)
+Contratos HTTP em [`docs/local/api/api.md`](docs/local/api/api.md), especificação em [`docs/local/api/openapi.json`](docs/local/api/openapi.json)
 
 Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
 
@@ -97,9 +97,9 @@ curl --location 'https://{api_gateway_url}/v1/clientes' \
   --header 'Authorization: Bearer SEU_TOKEN'
 ```
 
-Detalhes em [`docs/gateway-rotas.md`](docs/gateway-rotas.md).
+Detalhes em [`docs/local/api/gateway-rotas.md`](docs/local/api/gateway-rotas.md).
 
-Perfis, permissões e fluxo de login em [`docs/autenticacao.md`](docs/autenticacao.md).
+Perfis, permissões e fluxo de login em [`docs/local/api/autenticacao.md`](docs/local/api/autenticacao.md).
 
 Principais rotas:
 
@@ -114,7 +114,7 @@ Principais rotas:
 - `GET|POST /movimentacoes-estoque`
 - `GET|POST|PATCH|DELETE /usuarios` (somente ADMINISTRADOR)
 
-Fila de OS, máquina de estados, renegociação, desistência e notificação por e-mail em [`docs/regras-de-negocio.md`](docs/regras-de-negocio.md).
+Fila de OS, máquina de estados, renegociação, desistência e notificação por e-mail em [`docs/local/api/regras-de-negocio.md`](docs/local/api/regras-de-negocio.md).
 
 ## Como rodar os testes
 
@@ -131,7 +131,7 @@ yarn test:cov
 yarn test:e2e
 ```
 
-Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.md`](docs/testes-e-qualidade.md).
+Cobertura mínima, padrão dos testes e SonarQube em [`docs/local/operacao/testes-e-qualidade.md`](docs/local/operacao/testes-e-qualidade.md).
 
 ## Repositórios da solução (Fase 3)
 
@@ -142,7 +142,7 @@ Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.m
 | tech-challenge-infra-kubernetes   | VPC, EKS, ECR, API Gateway, mensageria, Datadog          | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
 | tech-challenge-infra-database     | RDS PostgreSQL, Secrets Manager                          | https://github.com/7feeh7/tech-challenge-infra-database   |
 
-**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º). Passo a passo: [`docs/runbook-subir-producao.md`](docs/runbook-subir-producao.md).
+**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º). Passo a passo: [`docs/local/operacao/runbook-subir-producao.md`](docs/local/operacao/runbook-subir-producao.md).
 
 ## Infraestrutura e deploy
 
@@ -157,7 +157,7 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 | Health                 | `{api_gateway_url}/health`                               |
 | Imagem ECR             | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
 
-> Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) para data de validação.
+> Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) para data de validação.
 
 ### Dockerfile
 
@@ -171,7 +171,7 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 | GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA`              |
 | Runtime K8s                   | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
 
-Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/ci-cd.md`](docs/ci-cd.md).
+Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/local/operacao/ci-cd.md`](docs/local/operacao/ci-cd.md).
 
 ### Seed de demonstração
 
@@ -181,35 +181,29 @@ Dados fictícios para gravação do vídeo — **somente manual**:
 ./scripts/seed-demo.sh
 ```
 
-Roteiro completo: [`docs/demo-fase3.md`](docs/demo-fase3.md).
+Roteiro completo: [`docs/local/entrega/demo-fase3.md`](docs/local/entrega/demo-fase3.md).
 
 - ADRs: [`docs/adrs/README.md`](docs/adrs/README.md) · RFCs: [`docs/rfcs/README.md`](docs/rfcs/README.md)
-- Arquitetura Fase 3: [`docs/arquitetura/README.md`](docs/arquitetura/README.md)
-- Infraestrutura e provisionamento: [`docs/infraestrutura.md`](docs/infraestrutura.md)
-- Pipeline e secrets: [`docs/ci-cd.md`](docs/ci-cd.md)
-- Governança de branches: [`docs/governanca-git.md`](docs/governanca-git.md)
+- Arquitetura Fase 3: [`docs/README.md`](docs/README.md)
+- Infraestrutura e provisionamento: [`docs/local/arquitetura/infraestrutura.md`](docs/local/arquitetura/infraestrutura.md)
+- Pipeline e secrets: [`docs/local/operacao/ci-cd.md`](docs/local/operacao/ci-cd.md)
+- Governança de branches: [`docs/local/operacao/governanca-git.md`](docs/local/operacao/governanca-git.md)
 - Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
 
 > **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Use `workflow_dispatch` → destroy nos repos de infra após a demonstração.
 
 ## Documentação
 
-Índice completo em [`docs/README.md`](docs/README.md).
+Arquitetura (RFCs, ADRs e diagramas): [`docs/README.md`](docs/README.md).  
+Arquivo operacional (API, banco, CI/CD, segurança, entrega): [`docs/local/README.md`](docs/local/README.md).
 
-| Documento                                        | Conteúdo                                                    |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| [arquitetura](docs/arquitetura.md)               | Clean Architecture, estrutura de pastas e camadas           |
-| [configuracao](docs/configuracao.md)             | Variáveis de ambiente, execução local e scripts             |
-| [autenticacao](docs/autenticacao.md)             | Login JWT, perfis e permissões                              |
-| [api](docs/api.md)                               | Contratos HTTP de todos os endpoints                        |
-| [regras-de-negocio](docs/regras-de-negocio.md)   | Fila de OS, máquina de estados, orçamentos, estoque, e-mail |
-| [testes-e-qualidade](docs/testes-e-qualidade.md) | Testes, cobertura e SonarQube                               |
-| [arquitetura](docs/arquitetura/README.md)        | Visão Fase 3, diagramas, RFCs e ADRs                        |
-| [infraestrutura](docs/infraestrutura.md)         | AWS, Terraform, Kubernetes e HPA                            |
-| [banco](docs/banco/README.md)                    | Modelo relacional, ER e performance                         |
-| [runbooks](docs/runbooks/README.md)              | Procedimentos operacionais                                  |
-| [ci-cd](docs/ci-cd.md)                           | Pipeline do GitHub Actions e secrets                        |
+| Documento | Conteúdo |
+| --- | --- |
+| [RFCs](docs/rfcs/README.md) | Propostas técnicas (AWS, RDS, auth, mensageria) |
+| [ADRs](docs/adrs/README.md) | Decisões aceitas |
+| [Diagramas](docs/diagramas/README.md) | Componentes, sequência e ER |
+| [Arquivo local](docs/local/README.md) | Contratos HTTP, operação, segurança e entrega |
 
-**Vídeo demonstrativo:** _preencher URL após publicação (YouTube/Vimeo, ≤ 15 min)_ — também registrado em [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md).
+**Vídeo demonstrativo:** _preencher URL após publicação (YouTube/Vimeo, ≤ 15 min)_ — também registrado em [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md).
 
-**Entrega Fase 3 (PDF):** [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) · Matriz de conformidade: [`spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md`](spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md)
+**Entrega Fase 3 (PDF):** [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) · Matriz de conformidade: [`spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md`](spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md)

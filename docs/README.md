@@ -1,88 +1,70 @@
-# Documentação — Tech Challenge (Fase 3)
+# Documentação de Arquitetura
 
-Índice central da documentação arquitetural. Visão geral e instalação no [README raiz](../README.md).
+Sistema de Gestão de Oficina Mecânica na AWS — cloud-native, Fase 3.
 
-## Proprietário dos documentos
+Visão de instalação e execução no [README raiz](../README.md). Material operacional, contratos HTTP, segurança e entrega ficam no [arquivo local](local/README.md).
 
-| Área                                                    | Repositório fonte                             | Demais repos  |
-| ------------------------------------------------------- | --------------------------------------------- | ------------- |
-| Arquitetura, RFCs, ADRs, diagramas, API, banco (schema) | **tech-challenge** (`docs/`)                  | Links para cá |
-| Contratos Lambda (auth, evento)                         | **tech-challenge-serverless** (`docs/`)       | Links         |
-| Contratos SSM, custo/teardown                           | **tech-challenge-infra-kubernetes** (`docs/`) | Links         |
-| Backup/restore RDS                                      | **tech-challenge-infra-database** (`docs/`)   | Links         |
+## Sumário
 
-## Arquitetura e diagramas
+1. [RFCs](#rfcs-request-for-comments)
+2. [ADRs](#adrs-architecture-decision-records)
+3. [Diagramas](#diagramas)
 
-| Documento                                                                | Conteúdo                                           |
-| ------------------------------------------------------------------------ | -------------------------------------------------- |
-| [arquitetura/README.md](arquitetura/README.md)                           | Índice arquitetural Fase 3                         |
-| [arquitetura/visao-geral-nuvem.md](arquitetura/visao-geral-nuvem.md)     | Componentes AWS e fronteiras de repositório        |
-| [arquitetura.md](arquitetura.md)                                         | Clean Architecture e estrutura de módulos          |
-| [infraestrutura.md](infraestrutura.md)                                   | Provisionamento, HPA, migrations, ordem cross-repo |
-| [diagramas/README.md](diagramas/README.md)                               | Índice de diagramas Mermaid                        |
-| [diagramas/componentes-nuvem.md](diagramas/componentes-nuvem.md)         | Visão completa da nuvem                            |
-| [diagramas/sequencia-auth-cpf.md](diagramas/sequencia-auth-cpf.md)       | Fluxo autenticação CPF → JWT                       |
-| [diagramas/sequencia-abertura-os.md](diagramas/sequencia-abertura-os.md) | Fluxo abertura de OS                               |
-| [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md)   | Diagrama ER                                        |
-| [diagramas/observabilidade.md](diagramas/observabilidade.md)             | Telemetria e Datadog                               |
+---
 
-## RFCs e ADRs
+## RFCs (Request for Comments)
 
-| Documento                            | Conteúdo                                        |
-| ------------------------------------ | ----------------------------------------------- |
-| [rfcs/README.md](rfcs/README.md)     | Propostas técnicas (AWS, RDS, auth, mensageria) |
-| [adrs/README.md](adrs/README.md)     | Decisões aceitas com status e supersessão       |
-| [rfcs/TEMPLATE.md](rfcs/TEMPLATE.md) | Template mínimo de RFC                          |
-| [adrs/TEMPLATE.md](adrs/TEMPLATE.md) | Template mínimo de ADR                          |
+Propostas técnicas com alternativas e discussão. Aceitas, viram ADR quando a decisão é permanente.
 
-## Banco de dados
+| RFC | Título | Status | ADR |
+| --- | --- | --- | --- |
+| [001](rfcs/001-escolha-aws.md) | Escolha da AWS como nuvem | aceito | — |
+| [002](rfcs/002-postgresql-rds.md) | PostgreSQL/RDS e modelo relacional | aceito | [ADR-003](adrs/003-postgresql-banco-gerenciado.md) |
+| [003](rfcs/003-autenticacao-cpf-jwt.md) | Autenticação por CPF/JWT | aceito | [ADR-002](adrs/002-api-gateway-borda-unica.md) |
+| [004](rfcs/004-serverless-notificacao-mensageria.md) | Serverless de notificação e mensageria | aceito | [ADR-004](adrs/004-comunicacao-sincrona-assincrona.md) |
 
-| Documento                                                      | Conteúdo                     |
-| -------------------------------------------------------------- | ---------------------------- |
-| [banco/README.md](banco/README.md)                             | Índice do modelo relacional  |
-| [modelo-relacional.md](modelo-relacional.md)                   | Entidades, FKs e constraints |
-| [performance-banco.md](performance-banco.md)                   | Índices e consultas críticas |
-| [migrations-compatibilidade.md](migrations-compatibilidade.md) | RollingUpdate e rollback     |
+Índice e template: [rfcs/README.md](rfcs/README.md).
 
-## API, autenticação e operação
+---
 
-| Documento                                                                        | Conteúdo                              |
-| -------------------------------------------------------------------------------- | ------------------------------------- |
-| [api.md](api.md)                                                                 | Contratos HTTP                        |
-| [openapi.json](openapi.json)                                                     | Especificação OpenAPI / Swagger       |
-| [autenticacao.md](autenticacao.md)                                               | JWT interno e cliente (CPF)           |
-| [gateway-rotas.md](gateway-rotas.md)                                             | Rotas do API Gateway                  |
-| [regras-de-negocio.md](regras-de-negocio.md)                                     | OS, orçamentos, estoque, notificações |
-| [notificacoes.md](notificacoes.md)                                               | SNS/SQS/Lambda/SendGrid               |
-| [observabilidade.md](observabilidade.md)                                         | Logs, métricas, Datadog               |
-| [runbooks/README.md](runbooks/README.md)                                         | Runbooks operacionais                 |
-| [runbooks/correlacao-observabilidade.md](runbooks/correlacao-observabilidade.md) | Correlação Gateway → SendGrid         |
-| [ci-cd.md](ci-cd.md)                                                             | Pipelines GitHub Actions              |
-| [testes-e-qualidade.md](testes-e-qualidade.md)                                   | Testes e SonarQube                    |
-| [governanca-git.md](governanca-git.md)                                           | Branch protection, OIDC, secrets      |
+## ADRs (Architecture Decision Records)
 
-## Segurança e privacidade
+Decisões aceitas e permanentes.
 
-| Documento                                                                            | Conteúdo                       |
-| ------------------------------------------------------------------------------------ | ------------------------------ |
-| [seguranca/modelo-ameacas.md](seguranca/modelo-ameacas.md)                           | Ativos, ameaças, controles     |
-| [seguranca/ciclo-vida-dados-pessoais.md](seguranca/ciclo-vida-dados-pessoais.md)     | Inventário PII, retenção, LGPD |
-| [seguranca/matriz-seguranca-evidencias.md](seguranca/matriz-seguranca-evidencias.md) | Ameaça → evidência             |
-| [seguranca/rotacao-segredos.md](seguranca/rotacao-segredos.md)                       | Rotação JWT, RDS, SendGrid     |
-| [seguranca/checklist-publicacao.md](seguranca/checklist-publicacao.md)               | Vídeo/PDF sem PII              |
+| ADR | Título | Status | Data |
+| --- | --- | --- | --- |
+| [001](adrs/001-ambiente-unico-provisionado.md) | Ambiente único provisionado | aceito | 2026-09-07 |
+| [002](adrs/002-api-gateway-borda-unica.md) | API Gateway como borda única | aceito | 2026-09-13 |
+| [003](adrs/003-postgresql-banco-gerenciado.md) | PostgreSQL gerenciado no RDS | aceito | 2026-09-13 |
+| [004](adrs/004-comunicacao-sincrona-assincrona.md) | HTTP síncrono + eventos assíncronos | aceito | 2026-09-13 |
+| [005](adrs/005-kubernetes-eks-hpa.md) | Kubernetes EKS com HPA | aceito | 2026-09-13 |
+| [006](adrs/006-separacao-quatro-repositorios.md) | Separação em quatro repositórios | aceito | 2026-09-13 |
+| [007](adrs/007-observabilidade-datadog.md) | Observabilidade com Datadog | aceito | 2026-09-13 |
 
-Scripts: `scripts/security/` · Evidências: `evidence/`
+Índice e template: [adrs/README.md](adrs/README.md).
 
-## Documentação de apoio
+---
 
-| [runbook-subir-producao.md](runbook-subir-producao.md) | Passo a passo develop → main (secrets, ordem dos PRs, seed) |
-| [demo-fase3.md](demo-fase3.md) | Roteiro de demonstração Fase 3 (vídeo ≤ 15 min) |
-| [entrega/entrega-fase3.md](entrega/entrega-fase3.md) | Documento base para PDF do Portal |
-| [postman/](postman/) | Coleção Postman da demo |
+## Diagramas
 
-Material de apoio em [local/](local/) (Event Storming, demo legado Fase 2).
+Fontes Mermaid versionadas. O GitHub renderiza nativamente; SVGs em [`diagramas/rendered/`](diagramas/rendered/).
 
-Manuais de infra junto do código:
+| Diagrama | Tipo | Descrição |
+| --- | --- | --- |
+| [componentes-nuvem.md](diagramas/componentes-nuvem.md) | Componentes | Gateway, Functions, EKS, RDS, mensageria, Datadog |
+| [sequencia-auth-cpf.md](diagramas/sequencia-auth-cpf.md) | Sequência | Autenticação por CPF → JWT → API protegida |
+| [sequencia-abertura-os.md](diagramas/sequencia-abertura-os.md) | Sequência | Abertura de ordem de serviço |
+| [modelo-relacional-er.md](diagramas/modelo-relacional-er.md) | ER | Entidades, PKs, FKs e cardinalidades |
+| [observabilidade.md](diagramas/observabilidade.md) | Componentes | Fontes de telemetria e destinos Datadog |
+| [diagrama-aplicacao.md](diagramas/diagrama-aplicacao.md) | Componentes | Repositório `tech-challenge` |
+| [diagrama-serverless.md](diagramas/diagrama-serverless.md) | Componentes | Repositório `tech-challenge-serverless` |
+| [diagrama-infra-kubernetes.md](diagramas/diagrama-infra-kubernetes.md) | Componentes | Repositório `tech-challenge-infra-kubernetes` |
+| [diagrama-infra-database.md](diagramas/diagrama-infra-database.md) | Componentes | Repositório `tech-challenge-infra-database` |
 
-- [k8s/README.md](../k8s/README.md) — manifests e HPA
-- [infra/README.md](../infra/README.md) — Terraform legado (esvaziado)
+Índice: [diagramas/README.md](diagramas/README.md).
+
+---
+
+## Arquivo
+
+Documentação de apoio (API, banco, operação, segurança, entrega e material legado) está em [`local/`](local/README.md). O conteúdo não foi descartado.

@@ -1,8 +1,8 @@
 # Autenticação e Autorização
 
-A API é protegida globalmente por JWT. Entrada pública via **API Gateway** (ver [gateway-rotas.md](gateway-rotas.md) e [ADR-002](adrs/002-api-gateway-borda-unica.md)). Rotas marcadas com `@Public()` (ex.: `POST /v1/auth/login` e `/health`) não exigem token.
+A API é protegida globalmente por JWT. Entrada pública via **API Gateway** (ver [gateway-rotas.md](gateway-rotas.md) e [ADR-002](../../adrs/002-api-gateway-borda-unica.md)). Rotas marcadas com `@Public()` (ex.: `POST /v1/auth/login` e `/health`) não exigem token.
 
-Fluxo completo: [diagramas/sequencia-auth-cpf.md](diagramas/sequencia-auth-cpf.md) · RFC: [rfcs/003-autenticacao-cpf-jwt.md](rfcs/003-autenticacao-cpf-jwt.md)
+Fluxo completo: [diagramas/sequencia-auth-cpf.md](../../diagramas/sequencia-auth-cpf.md) · RFC: [rfcs/003-autenticacao-cpf-jwt.md](../../rfcs/003-autenticacao-cpf-jwt.md)
 
 ## Funcionários internos
 

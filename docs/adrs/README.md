@@ -2,7 +2,7 @@
 
 Decisões arquiteturais **aceitas** e permanentes. Para propostas em discussão, veja [RFCs](../rfcs/README.md).
 
-**Repositório fonte:** `tech-challenge/docs/adrs/`.  
+Índice de arquitetura: [../README.md](../README.md).  
 Template: [TEMPLATE.md](TEMPLATE.md).
 
 | ADR | Título | Status | Data |

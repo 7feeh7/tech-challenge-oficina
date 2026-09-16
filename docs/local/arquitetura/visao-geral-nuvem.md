@@ -4,7 +4,7 @@ Solução distribuída em **quatro repositórios** com um único ambiente provis
 
 ## Diagrama de componentes
 
-Ver fonte versionada em [diagramas/componentes-nuvem.md](../diagramas/componentes-nuvem.md).
+Ver fonte versionada em [diagramas/componentes-nuvem.md](../../diagramas/componentes-nuvem.md).
 
 ## Repositórios e fronteiras
 
@@ -27,16 +27,16 @@ Contrato cross-repo: **outputs Terraform + parâmetros SSM** (`/tech-challenge/p
 
 ## Decisões relacionadas
 
-- [ADR-001](../adrs/001-ambiente-unico-provisionado.md) — ambiente único
-- [ADR-002](../adrs/002-api-gateway-borda-unica.md) — borda única
-- [ADR-006](../adrs/006-separacao-quatro-repositorios.md) — segregação de repos
-- [RFC-001](../rfcs/001-escolha-aws.md) — escolha AWS
+- [ADR-001](../../adrs/001-ambiente-unico-provisionado.md) — ambiente único
+- [ADR-002](../../adrs/002-api-gateway-borda-unica.md) — borda única
+- [ADR-006](../../adrs/006-separacao-quatro-repositorios.md) — segregação de repos
+- [RFC-001](../../rfcs/001-escolha-aws.md) — escolha AWS
 
 ## Referências externas (fonte de verdade por repo)
 
 | Tópico | Documento | Repositório |
 | --- | --- | --- |
-| Contratos SSM | [contratos-cross-repo.md](../../../tech-challenge-infra-kubernetes/docs/contratos-cross-repo.md) | infra-kubernetes |
-| Contrato auth CPF | [contrato-auth-cpf.md](../../../tech-challenge-serverless/docs/contrato-auth-cpf.md) | serverless |
-| Contrato evento notificação | [contrato-evento-notificacao.md](../../../tech-challenge-serverless/docs/contrato-evento-notificacao.md) | serverless |
-| Backup/restore RDS | [backup-restore.md](../../../tech-challenge-infra-database/docs/backup-restore.md) | infra-database |
+| Contratos SSM | [contratos-cross-repo.md](../../../../tech-challenge-infra-kubernetes/docs/contratos-cross-repo.md) | infra-kubernetes |
+| Contrato auth CPF | [contrato-auth-cpf.md](../../../../tech-challenge-serverless/docs/contrato-auth-cpf.md) | serverless |
+| Contrato evento notificação | [contrato-evento-notificacao.md](../../../../tech-challenge-serverless/docs/contrato-evento-notificacao.md) | serverless |
+| Backup/restore RDS | [backup-restore.md](../../../../tech-challenge-infra-database/docs/backup-restore.md) | infra-database |

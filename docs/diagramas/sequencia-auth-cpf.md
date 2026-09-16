@@ -49,5 +49,5 @@ sequenceDiagram
 ## Referências
 
 - [contrato-auth-cpf.md](../../../tech-challenge-serverless/docs/contrato-auth-cpf.md)
-- [autenticacao.md](../autenticacao.md)
+- [autenticacao.md](../local/api/autenticacao.md)
 - [RFC-003](../rfcs/003-autenticacao-cpf-jwt.md)

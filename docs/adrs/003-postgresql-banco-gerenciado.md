@@ -45,6 +45,6 @@ Comparação detalhada: [RFC-002](../rfcs/002-postgresql-rds.md).
 
 ## Referências
 
-- [banco/README.md](../banco/README.md)
-- [modelo-relacional.md](../modelo-relacional.md)
+- [banco/README.md](../local/banco/README.md)
+- [modelo-relacional.md](../local/banco/modelo-relacional.md)
 - [diagramas/modelo-relacional-er.md](../diagramas/modelo-relacional-er.md)

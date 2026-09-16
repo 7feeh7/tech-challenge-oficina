@@ -8,7 +8,7 @@ Atualizar após cada deploy relevante.
 | A2          | Timing pad 300 ms       | 010  | `timing-pad.service.ts` + testes                                  | —                                                         |
 | A3          | Throttle IP Gateway     | 003  | `api-gateway.tf` `route_settings` POST /auth/cpf                  | —                                                         |
 | A4          | Rate limit CPF DynamoDB | 010  | `cpf-rate-limit.service.ts`, `auth-security.tf`                   | —                                                         |
-| A5          | WAF distribuído         | 010  | Decisão documentada — [gateway-rotas.md](../gateway-rotas.md#waf) | Formal: não adotado                                       |
+| A5          | WAF distribuído         | 010  | Decisão documentada — [gateway-rotas.md](../api/gateway-rotas.md#waf) | Formal: não adotado                                       |
 | A6–A7       | Sanitização logs        | 007  | `log-sanitizer.spec.ts`, `datadog.tf`                             | —                                                         |
 | A8          | Ownership guard         | 002  | `ownership.guard.spec.ts`, `app.e2e-spec.ts`                      | —                                                         |
 | A9          | Segredos SM + scan      | 010  | TruffleHog nos 4 `pr-validation.yml`                              | —                                                         |

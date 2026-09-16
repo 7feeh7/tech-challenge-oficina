@@ -59,8 +59,7 @@ pids
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 src/shared/generated/prisma
-docs/local
-
+docs/local/
 .claude
 .cursor
 spec

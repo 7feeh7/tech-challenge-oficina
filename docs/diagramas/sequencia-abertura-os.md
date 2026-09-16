@@ -56,5 +56,5 @@ sequenceDiagram
 
 ## Referências
 
-- [regras-de-negocio.md](../regras-de-negocio.md)
-- [api.md](../api.md) — `POST /v1/ordens-servico`
+- [regras-de-negocio.md](../local/api/regras-de-negocio.md)
+- [api.md](../local/api/api.md) — `POST /v1/ordens-servico`

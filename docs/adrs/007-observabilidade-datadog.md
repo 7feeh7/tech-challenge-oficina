@@ -40,6 +40,6 @@ R-18 a R-26 exigem ferramenta de observabilidade com logs JSON correlacionados, 
 
 ## Referências
 
-- [observabilidade.md](../observabilidade.md)
-- [runbooks/correlacao-observabilidade.md](../runbooks/correlacao-observabilidade.md)
+- [observabilidade.md](../local/operacao/observabilidade.md)
+- [runbooks/correlacao-observabilidade.md](../local/operacao/runbooks/correlacao-observabilidade.md)
 - [diagramas/observabilidade.md](../diagramas/observabilidade.md)
