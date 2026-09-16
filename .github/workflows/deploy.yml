@@ -11,7 +11,7 @@ env:
   TF_ENVIRONMENT: producao
 
 concurrency:
-  group: deploy-${{ env.TF_ENVIRONMENT }}
+  group: deploy-producao
   cancel-in-progress: false
 
 jobs:
