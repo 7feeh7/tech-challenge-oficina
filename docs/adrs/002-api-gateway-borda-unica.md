@@ -11,7 +11,7 @@ A solução expõe autenticação serverless (`POST /auth/cpf`) e APIs de negóc
 ## Decisão
 
 1. **AWS HTTP API Gateway** é a única entrada pública.
-2. **`POST /auth/cpf`** integra por proxy com a Lambda (spec 002).
+2. **`POST /auth/cpf`** integra por proxy com a Lambda.
 3. **APIs `/v1/*`, `/health` e `/docs`** integram com o EKS via VPC Link → NLB interno → NodePort 30080.
 4. **JWT e autorização de ownership/perfil** permanecem na aplicação NestJS (guards existentes).
 5. O Gateway controla: exposição, roteamento, CORS, throttling, TLS (HTTPS nativo), access logs e `X-Correlation-Id` na borda.
@@ -34,11 +34,11 @@ A solução expõe autenticação serverless (`POST /auth/cpf`) e APIs de negóc
 
 ## Alternativas consideradas
 
-| Alternativa | Motivo de rejeição |
-| --- | --- |
-| ELB público direto no EKS | Bypass dos controles do Gateway |
-| JWT authorizer no Gateway | Duplica regras de ownership/perfil já na app |
-| ALB Ingress Controller | Mais complexo; NLB + VPC Link atende HTTP API |
+| Alternativa               | Motivo de rejeição                            |
+| ------------------------- | --------------------------------------------- |
+| ELB público direto no EKS | Bypass dos controles do Gateway               |
+| JWT authorizer no Gateway | Duplica regras de ownership/perfil já na app  |
+| ALB Ingress Controller    | Mais complexo; NLB + VPC Link atende HTTP API |
 
 ## Referências
 

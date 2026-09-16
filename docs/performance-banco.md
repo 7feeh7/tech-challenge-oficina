@@ -6,11 +6,11 @@ Spec 006 — mapeamento de queries, índices e metas de plano de execução.
 
 ### Cliente (`prisma-cliente.gateway.ts`)
 
-| Método | SQL equivalente | Índice usado |
-| --- | --- | --- |
-| `buscarPorId` | `WHERE id = $1` | PK |
-| `buscarPorEmailOuCpfCnpj` | `WHERE email = $1 OR cpf_cnpj = $2` | unique em email / cpf_cnpj |
-| `listar` | `WHERE nome ILIKE`, `ORDER BY criado_em DESC` | seq scan aceitável no volume demo; índice em nome não justificado (< 10k clientes) |
+| Método                    | SQL equivalente                               | Índice usado                                                                       |
+| ------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `buscarPorId`             | `WHERE id = $1`                               | PK                                                                                 |
+| `buscarPorEmailOuCpfCnpj` | `WHERE email = $1 OR cpf_cnpj = $2`           | unique em email / cpf_cnpj                                                         |
+| `listar`                  | `WHERE nome ILIKE`, `ORDER BY criado_em DESC` | seq scan aceitável no volume demo; índice em nome não justificado (< 10k clientes) |
 
 ### Auth CPF (Lambda)
 
@@ -84,15 +84,15 @@ docker compose exec -T postgres psql -U oficina -d oficina -f - < scripts/explai
 
 ### Resultados (2026-09-13, Postgres 16 local, seed 5k OS / 1k clientes)
 
-| Consulta | Plano | Tempo |
-| --- | --- | --- |
-| Auth CPF | `Index Scan` em `clientes_cpf_cnpj_key` | ~0.05 ms |
-| Fila OS | `Index Scan` em `ordens_servico_status_criado_em_idx` | ~1.2 ms |
-| Orçamento pendente | `Index Scan` em `orcamentos_ordem_servico_id_status_idx` | ~0.08 ms |
-| Movimentações peça | `Index Scan` em `movimentacoes_estoque_peca_id_criado_em_idx` | ~0.4 ms |
-| Volume diário | `Index Scan` em `ordens_servico_criado_em_idx` | ~0.9 ms |
+| Consulta           | Plano                                                         | Tempo    |
+| ------------------ | ------------------------------------------------------------- | -------- |
+| Auth CPF           | `Index Scan` em `clientes_cpf_cnpj_key`                       | ~0.05 ms |
+| Fila OS            | `Index Scan` em `ordens_servico_status_criado_em_idx`         | ~1.2 ms  |
+| Orçamento pendente | `Index Scan` em `orcamentos_ordem_servico_id_status_idx`      | ~0.08 ms |
+| Movimentações peça | `Index Scan` em `movimentacoes_estoque_peca_id_criado_em_idx` | ~0.4 ms  |
+| Volume diário      | `Index Scan` em `ordens_servico_criado_em_idx`                | ~0.9 ms  |
 
-> Antes dos índices compostos (spec 006), a fila de OS usava `Index Scan` só em `status` + sort em memória (~4–8 ms no mesmo dataset).
+> Antes dos índices compostos, a fila de OS usava `Index Scan` só em `status` + sort em memória (~4–8 ms no mesmo dataset).
 
 ## Dimensionamento de conexões
 

@@ -1,4 +1,4 @@
--- Seed mínimo para EXPLAIN ANALYZE (spec 006). Idempotente via TRUNCATE CASCADE.
+-- Seed mínimo para EXPLAIN ANALYZE. Idempotente via TRUNCATE CASCADE.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 TRUNCATE TABLE movimentacoes_estoque, historico_status_os, orcamentos,

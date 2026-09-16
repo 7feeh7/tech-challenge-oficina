@@ -1,4 +1,4 @@
--- Seed de demonstração Fase 3 (spec 009).
+-- Seed de demonstração.
 -- Idempotente: pode ser executado várias vezes sem duplicar registros demo.
 -- CPFs sintéticos válidos; e-mails @example.com (nunca dados pessoais reais).
 -- NÃO incluir em pipeline de deploy, docker-compose ou Job Kubernetes.

@@ -16,25 +16,25 @@ Roteiro para vídeo (máx. **15 min**), ensaio cronometrado e validação pré-g
 
 ## Dados fictícios (seed)
 
-| Entidade | Valor | Uso |
-| --- | --- | --- |
-| CPF ativo | `529.982.247-25` | Auth CPF → JWT |
-| CPF inativo | `390.533.447-05` | 401 sem enumeração |
-| CPF inválido | `111.111.111-11` | 400 validação |
-| Admin interno | `admin@oficina.com` / senha do secret `ADMIN_SENHA` | Login `/v1/auth/login` |
-| OS demo | UUID fixo no seed | `GET /v1/ordens-servico/{id}` com token cliente |
+| Entidade      | Valor                                               | Uso                                             |
+| ------------- | --------------------------------------------------- | ----------------------------------------------- |
+| CPF ativo     | `529.982.247-25`                                    | Auth CPF → JWT                                  |
+| CPF inativo   | `390.533.447-05`                                    | 401 sem enumeração                              |
+| CPF inválido  | `111.111.111-11`                                    | 400 validação                                   |
+| Admin interno | `admin@oficina.com` / senha do secret `ADMIN_SENHA` | Login `/v1/auth/login`                          |
+| OS demo       | UUID fixo no seed                                   | `GET /v1/ordens-servico/{id}` com token cliente |
 
 ## Tempo sugerido (≤ 15 min)
 
-| Bloco | Min | Conteúdo |
-| --- | ---: | --- |
-| 1. Auth CPF | 2 | Sucesso + falha (inativo/inválido) |
-| 2. API protegida | 2 | JWT cliente + 401/403 sem token ou ownership |
-| 3. CI/CD | 3 | PR → `develop` (validação) → merge `main` (deploy) |
-| 4. Kubernetes | 2 | Rollout, imagem/commit implantado |
-| 5. OS + notificação | 2 | PATCH status → fila → Lambda notificação |
-| 6. Observabilidade | 4 | Dashboards, logs JSON, trace por `correlationId`, alerta |
-| **Total** | **15** | Reservar tempo para **resultado ao vivo**, não só código |
+| Bloco               |    Min | Conteúdo                                                 |
+| ------------------- | -----: | -------------------------------------------------------- |
+| 1. Auth CPF         |      2 | Sucesso + falha (inativo/inválido)                       |
+| 2. API protegida    |      2 | JWT cliente + 401/403 sem token ou ownership             |
+| 3. CI/CD            |      3 | PR → `develop` (validação) → merge `main` (deploy)       |
+| 4. Kubernetes       |      2 | Rollout, imagem/commit implantado                        |
+| 5. OS + notificação |      2 | PATCH status → fila → Lambda notificação                 |
+| 6. Observabilidade  |      4 | Dashboards, logs JSON, trace por `correlationId`, alerta |
+| **Total**           | **15** | Reservar tempo para **resultado ao vivo**, não só código |
 
 ## 1. Autenticação por CPF
 
@@ -100,14 +100,14 @@ Verificar: métrica `oficina.ordem_servico.criada`, fila SQS, logs da Lambda `no
 
 ## 6. Observabilidade
 
-| Evidência | Onde |
-| --- | --- |
-| Latência, CPU, memória, uptime | Dashboard técnico Datadog (Terraform `datadog-dashboards.tf`) |
-| Volume diário OS, tempo por status | Dashboard negócio |
-| Falhas de integração | Dashboard integrações |
-| Logs JSON + `correlationId` | CloudWatch Gateway + Datadog `oficina-api` + Lambda |
-| Trace ponta a ponta | APM Datadog — mesmo `correlationId` |
-| Alerta | Monitor provisionado ou evento recente + recuperação |
+| Evidência                          | Onde                                                          |
+| ---------------------------------- | ------------------------------------------------------------- |
+| Latência, CPU, memória, uptime     | Dashboard técnico Datadog (Terraform `datadog-dashboards.tf`) |
+| Volume diário OS, tempo por status | Dashboard negócio                                             |
+| Falhas de integração               | Dashboard integrações                                         |
+| Logs JSON + `correlationId`        | CloudWatch Gateway + Datadog `oficina-api` + Lambda           |
+| Trace ponta a ponta                | APM Datadog — mesmo `correlationId`                           |
+| Alerta                             | Monitor provisionado ou evento recente + recuperação          |
 
 Runbook: [`runbooks/correlacao-observabilidade.md`](runbooks/correlacao-observabilidade.md)
 
@@ -121,6 +121,5 @@ Runbook: [`runbooks/correlacao-observabilidade.md`](runbooks/correlacao-observab
 
 ## Referências
 
-- Coleção Postman: [`postman/tech-challenge-fase3.postman_collection.json`](postman/tech-challenge-fase3.postman_collection.json)
 - Demo legado Fase 2 (local): [`local/demo-end-to-end.md`](local/demo-end-to-end.md)
 - PDF de entrega: [`entrega/entrega-fase3.md`](entrega/entrega-fase3.md)

@@ -1,13 +1,13 @@
 # Modelo relacional e integridade
 
-Documento de apoio à [spec 006](../spec/archive/006-banco-gerenciado-e-modelo-relacional/spec.md). Decisão em [ADR-003](adrs/003-postgresql-banco-gerenciado.md). RFC: [rfcs/002-postgresql-rds.md](rfcs/002-postgresql-rds.md). Diagrama: [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md). Índice: [banco/README.md](banco/README.md).
+Decisão em [ADR-003](adrs/003-postgresql-banco-gerenciado.md). RFC: [rfcs/002-postgresql-rds.md](rfcs/002-postgresql-rds.md). Diagrama: [diagramas/modelo-relacional-er.md](diagramas/modelo-relacional-er.md). Índice: [banco/README.md](banco/README.md).
 
 ## Separação de responsabilidades
 
-| Camada | Repositório | Responsabilidade |
-| --- | --- | --- |
-| Serviço RDS | `tech-challenge-infra-database` | VPC privada, TLS, backup, secrets, SG |
-| Schema/tabelas | `tech-challenge/prisma` | Entidades, FKs, índices, migrations |
+| Camada         | Repositório                     | Responsabilidade                      |
+| -------------- | ------------------------------- | ------------------------------------- |
+| Serviço RDS    | `tech-challenge-infra-database` | VPC privada, TLS, backup, secrets, SG |
+| Schema/tabelas | `tech-challenge/prisma`         | Entidades, FKs, índices, migrations   |
 
 ## Cliente e autenticação por CPF
 
@@ -31,13 +31,13 @@ Quando `movimentacoes_estoque.ordem_servico_id` está preenchido (baixa por OS),
 
 Complementam validações da aplicação (defesa em profundidade):
 
-| Tabela | Constraint | Regra |
-| --- | --- | --- |
-| `servicos` | `preco_base >= 0`, `tempo_estimado_min > 0` | Preço e tempo válidos |
-| `pecas` | `preco_unitario >= 0`, `quantidade_estoque >= 0`, `estoque_minimo >= 0` | Estoque não negativo |
-| `ordens_servico_*` | `quantidade >= 1`, `preco_unitario >= 0` | Itens de OS válidos |
-| `orcamentos` | `valor_total >= 0` | Orçamento não negativo |
-| `movimentacoes_estoque` | `quantidade > 0` | Movimentação sempre positiva |
+| Tabela                  | Constraint                                                              | Regra                        |
+| ----------------------- | ----------------------------------------------------------------------- | ---------------------------- |
+| `servicos`              | `preco_base >= 0`, `tempo_estimado_min > 0`                             | Preço e tempo válidos        |
+| `pecas`                 | `preco_unitario >= 0`, `quantidade_estoque >= 0`, `estoque_minimo >= 0` | Estoque não negativo         |
+| `ordens_servico_*`      | `quantidade >= 1`, `preco_unitario >= 0`                                | Itens de OS válidos          |
+| `orcamentos`            | `valor_total >= 0`                                                      | Orçamento não negativo       |
+| `movimentacoes_estoque` | `quantidade > 0`                                                        | Movimentação sempre positiva |
 
 ## Tipos monetários
 
@@ -47,11 +47,11 @@ Valores monetários usam `DECIMAL(10,2)` no PostgreSQL via Prisma — evita erro
 
 Ver detalhamento e metas de tempo em [performance-banco.md](performance-banco.md).
 
-| Consulta | Índice |
-| --- | --- |
-| Fila de OS por status + antiguidade | `(status, criado_em)` |
-| Volume diário / marcos temporais | `(criado_em)` |
-| Orçamento pendente por OS | `(ordem_servico_id, status)` |
-| Histórico cronológico | `(ordem_servico_id, criado_em)` |
-| Movimentações por peça | `(peca_id, criado_em)` |
-| Auth CPF | unique em `cpf_cnpj` |
+| Consulta                            | Índice                          |
+| ----------------------------------- | ------------------------------- |
+| Fila de OS por status + antiguidade | `(status, criado_em)`           |
+| Volume diário / marcos temporais    | `(criado_em)`                   |
+| Orçamento pendente por OS           | `(ordem_servico_id, status)`    |
+| Histórico cronológico               | `(ordem_servico_id, criado_em)` |
+| Movimentações por peça              | `(peca_id, criado_em)`          |
+| Auth CPF                            | unique em `cpf_cnpj`            |

@@ -1,6 +1,6 @@
 # Diagrama ER — Oficina Mecânica
 
-**Versão:** 2026-09-13 (spec 006)  
+**Versão:** 2026-09-13
 **Fonte de verdade do schema:** [`prisma/schema.prisma`](../../prisma/schema.prisma)
 
 ## Diagrama
@@ -108,13 +108,13 @@ erDiagram
 
 ## Legenda de políticas `onDelete`
 
-| Relação | Política | Motivo |
-| --- | --- | --- |
-| OS → itens (serviço/peça) | `CASCADE` | Itens não existem sem a OS |
-| OS → orçamento / histórico | `CASCADE` | Dados derivados da OS |
-| Movimentação → OS | `SET NULL` | Preserva trilha de estoque se OS for removida (cenário administrativo) |
-| Movimentação → peça | `RESTRICT` | Impede apagar peça com movimentações |
-| OS → cliente / veículo | `RESTRICT` | Impede apagar cliente com OS abertas |
+| Relação                    | Política   | Motivo                                                                 |
+| -------------------------- | ---------- | ---------------------------------------------------------------------- |
+| OS → itens (serviço/peça)  | `CASCADE`  | Itens não existem sem a OS                                             |
+| OS → orçamento / histórico | `CASCADE`  | Dados derivados da OS                                                  |
+| Movimentação → OS          | `SET NULL` | Preserva trilha de estoque se OS for removida (cenário administrativo) |
+| Movimentação → peça        | `RESTRICT` | Impede apagar peça com movimentações                                   |
+| OS → cliente / veículo     | `RESTRICT` | Impede apagar cliente com OS abertas                                   |
 
 ## Renderização
 

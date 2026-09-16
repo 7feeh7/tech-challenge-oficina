@@ -1,6 +1,6 @@
 # Diagrama — repositório tech-challenge
 
-**Versão:** 2026-09-13 (spec 008)
+**Versão:** 2026-09-13
 
 ```mermaid
 flowchart LR

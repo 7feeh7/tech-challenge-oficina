@@ -1,6 +1,6 @@
 # Sequência — autenticação por CPF
 
-**Versão:** 2026-09-13 (spec 008)  
+**Versão:** 2026-09-13
 **Implementação:** `tech-challenge-serverless/src/functions/auth-cpf/`, guards NestJS em `tech-challenge/src/modules/auth/`.
 
 ```mermaid

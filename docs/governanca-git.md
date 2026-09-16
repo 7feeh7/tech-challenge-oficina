@@ -26,11 +26,11 @@ Configuracoes de branch protection e GitHub Environments **nao sao versionadas**
 
 ## GitHub Environment `producao`
 
-| Configuracao | Valor |
-| --- | --- |
-| Deployment branch policy | Apenas `main` |
-| Aprovacao manual | Recomendada (reviewers antes do deploy) |
-| Secrets | Credenciais AWS, TF state, JWT, SendGrid, DB, admin |
+| Configuracao             | Valor                                               |
+| ------------------------ | --------------------------------------------------- |
+| Deployment branch policy | Apenas `main`                                       |
+| Aprovacao manual         | Recomendada (reviewers antes do deploy)             |
+| Secrets                  | Credenciais AWS, TF state, JWT, SendGrid, DB, admin |
 
 ### Por que secrets ficam no Environment e nao no repositorio
 
@@ -38,9 +38,9 @@ Secret de **repositorio** e legivel por qualquer workflow, em **qualquer branch*
 
 ### Secrets por escopo (quatro repos)
 
-| Escopo | Nomes (sem valores) |
-| --- | --- |
-| Repositorio | `SONAR_TOKEN` |
+| Escopo                 | Nomes (sem valores)                                                                                                                                                                 |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repositorio            | `SONAR_TOKEN`                                                                                                                                                                       |
 | Environment `producao` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `TF_STATE_BUCKET`, `TF_STATE_LOCK_TABLE`, `JWT_SECRET`, `SENDGRID_API_KEY`, `DB_SECRET_ARN`, `ADMIN_SENHA`, `LAMBDA_ARTIFACTS_BUCKET` |
 
 **Acao obrigatoria:** mover secrets de nuvem do nivel repositorio para `producao` e **rotacionar** os valores movidos.
@@ -75,7 +75,7 @@ jobs:
 
 O GitHub deve recusar a execucao com erro de deployment branch policy.
 
-## OIDC (spec 010)
+## OIDC
 
 Implementado em `tech-challenge-infra-kubernetes/terraform/github-oidc.tf`. Cada repositório possui role IAM própria; trust policy exige `ref:refs/heads/main`.
 

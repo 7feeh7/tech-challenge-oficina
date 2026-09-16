@@ -1,6 +1,6 @@
 # Sequência — abertura de ordem de serviço
 
-**Versão:** 2026-09-13 (spec 008)  
+**Versão:** 2026-09-13
 **Implementação:** `CriarOrdemServicoUseCase`, `PrismaOrdemServicoGateway.criar`, `OrdensServicoController.create`.
 
 ```mermaid

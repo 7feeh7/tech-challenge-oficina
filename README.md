@@ -4,17 +4,17 @@ API REST para gestão de uma oficina mecânica: clientes, veículos, peças, ser
 
 ## Tecnologias
 
-| Tecnologia | Versão |
-| --- | --- |
-| Node.js | 24+ |
-| NestJS | 11 |
-| Fastify | 11 |
-| Prisma | 7 |
-| PostgreSQL | 16 |
-| Jest | 30 |
-| Docker | multi-stage (`Dockerfile` na raiz) |
-| dd-trace (Datadog) | 6 |
-| SonarCloud | via CI |
+| Tecnologia         | Versão                             |
+| ------------------ | ---------------------------------- |
+| Node.js            | 24+                                |
+| NestJS             | 11                                 |
+| Fastify            | 11                                 |
+| Prisma             | 7                                  |
+| PostgreSQL         | 16                                 |
+| Jest               | 30                                 |
+| Docker             | multi-stage (`Dockerfile` na raiz) |
+| dd-trace (Datadog) | 6                                  |
+| SonarCloud         | via CI                             |
 
 ## Arquitetura
 
@@ -75,7 +75,7 @@ docker compose down
 
 ## Endpoints
 
-Contratos HTTP em [`docs/api.md`](docs/api.md), especificação em [`docs/openapi.json`](docs/openapi.json) e coleção Postman em [`docs/postman/tech-challenge-fase3.postman_collection.json`](docs/postman/tech-challenge-fase3.postman_collection.json).
+Contratos HTTP em [`docs/api.md`](docs/api.md), especificação em [`docs/openapi.json`](docs/openapi.json)
 
 Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
 
@@ -135,14 +135,14 @@ Cobertura mínima, padrão dos testes e SonarQube em [`docs/testes-e-qualidade.m
 
 ## Repositórios da solução (Fase 3)
 
-| Repositório | Responsabilidade | URL |
-| --- | --- | --- |
-| **tech-challenge-oficina** (este) | API NestJS, Prisma, `Dockerfile`, manifests `k8s/`, docs | https://github.com/7feeh7/tech-challenge-oficina |
-| tech-challenge-serverless | Functions auth CPF e notificação | https://github.com/7feeh7/tech-challenge-serverless |
-| tech-challenge-infra-kubernetes | VPC, EKS, ECR, API Gateway, mensageria, Datadog | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
-| tech-challenge-infra-database | RDS PostgreSQL, Secrets Manager | https://github.com/7feeh7/tech-challenge-infra-database |
+| Repositório                       | Responsabilidade                                         | URL                                                       |
+| --------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| **tech-challenge-oficina** (este) | API NestJS, Prisma, `Dockerfile`, manifests `k8s/`, docs | https://github.com/7feeh7/tech-challenge-oficina          |
+| tech-challenge-serverless         | Functions auth CPF e notificação                         | https://github.com/7feeh7/tech-challenge-serverless       |
+| tech-challenge-infra-kubernetes   | VPC, EKS, ECR, API Gateway, mensageria, Datadog          | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
+| tech-challenge-infra-database     | RDS PostgreSQL, Secrets Manager                          | https://github.com/7feeh7/tech-challenge-infra-database   |
 
-**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º).
+**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º). Passo a passo: [`docs/runbook-subir-producao.md`](docs/runbook-subir-producao.md).
 
 ## Infraestrutura e deploy
 
@@ -150,12 +150,12 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 
 ### Deploy ativo (produção)
 
-| Recurso | Como obter |
-| --- | --- |
-| API Gateway (URL base) | SSM `/tech-challenge/producao/infra/api_gateway_url` |
-| Swagger UI | `{api_gateway_url}/docs` |
-| Health | `{api_gateway_url}/health` |
-| Imagem ECR | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
+| Recurso                | Como obter                                               |
+| ---------------------- | -------------------------------------------------------- |
+| API Gateway (URL base) | SSM `/tech-challenge/producao/infra/api_gateway_url`     |
+| Swagger UI             | `{api_gateway_url}/docs`                                 |
+| Health                 | `{api_gateway_url}/health`                               |
+| Imagem ECR             | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
 
 > Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/entrega/entrega-fase3.md`](docs/entrega/entrega-fase3.md) para data de validação.
 
@@ -165,11 +165,11 @@ A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoesca
 
 ### Variáveis e secrets (sem valores)
 
-| Escopo | Nomes |
-| --- | --- |
-| `.env` local | Ver [`.env.example`](.env.example) |
-| GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA` |
-| Runtime K8s | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
+| Escopo                        | Nomes                                                                 |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `.env` local                  | Ver [`.env.example`](.env.example)                                    |
+| GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA`              |
+| Runtime K8s                   | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
 
 Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/ci-cd.md`](docs/ci-cd.md).
 

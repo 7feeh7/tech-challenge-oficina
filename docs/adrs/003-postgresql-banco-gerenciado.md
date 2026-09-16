@@ -2,8 +2,7 @@
 
 **Status:** aceito  
 **Data:** 2026-09-13  
-**RFC relacionada:** [RFC-002](../rfcs/002-postgresql-rds.md)  
-**Spec:** `006-banco-gerenciado-e-modelo-relacional`
+**RFC relacionada:** [RFC-002](../rfcs/002-postgresql-rds.md)
 
 ## Contexto
 
@@ -23,18 +22,18 @@ Manter **PostgreSQL 16 no Amazon RDS** como banco gerenciado, provisionado em re
 
 ### RPO e RTO
 
-| Métrica | Meta |
-| --- | --- |
+| Métrica | Meta                                    |
+| ------- | --------------------------------------- |
 | **RPO** | ≤ 24 h (backup diário, retenção 7 dias) |
-| **RTO** | ≤ 45 min (restore + cutover SSM) |
+| **RTO** | ≤ 45 min (restore + cutover SSM)        |
 
 ## Alternativas consideradas
 
-| Alternativa | Motivo de rejeição |
-| --- | --- |
-| DynamoDB | Retrabalho de modelagem; transações multi-tabela complexas |
-| Aurora Serverless v2 | Custo ~3× para demo |
-| MySQL/MariaDB | Equipe e Prisma já padronizados em PostgreSQL |
+| Alternativa          | Motivo de rejeição                                         |
+| -------------------- | ---------------------------------------------------------- |
+| DynamoDB             | Retrabalho de modelagem; transações multi-tabela complexas |
+| Aurora Serverless v2 | Custo ~3× para demo                                        |
+| MySQL/MariaDB        | Equipe e Prisma já padronizados em PostgreSQL              |
 
 Comparação detalhada: [RFC-002](../rfcs/002-postgresql-rds.md).
 

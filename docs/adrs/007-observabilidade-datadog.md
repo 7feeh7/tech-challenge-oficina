@@ -1,8 +1,7 @@
 # ADR-007 — Observabilidade com Datadog
 
 **Status:** aceito  
-**Data:** 2026-09-13  
-**Spec:** `007-observabilidade-logs-metricas-e-alertas`
+**Data:** 2026-09-13
 
 ## Contexto
 
@@ -32,12 +31,12 @@ R-18 a R-26 exigem ferramenta de observabilidade com logs JSON correlacionados, 
 
 ## Alternativas consideradas
 
-| Alternativa | Motivo de rejeição |
-| --- | --- |
-| New Relic | Equivalente; Datadog já integrado no Terraform entregue |
-| CloudWatch apenas | Dashboards de negócio e APM menos ergonômicos |
-| ELK self-hosted | Operação e custo de cluster adicional |
-| Grafana Cloud + Loki | Mais peças para correlacionar APM + logs |
+| Alternativa          | Motivo de rejeição                                      |
+| -------------------- | ------------------------------------------------------- |
+| New Relic            | Equivalente; Datadog já integrado no Terraform entregue |
+| CloudWatch apenas    | Dashboards de negócio e APM menos ergonômicos           |
+| ELK self-hosted      | Operação e custo de cluster adicional                   |
+| Grafana Cloud + Loki | Mais peças para correlacionar APM + logs                |
 
 ## Referências
 

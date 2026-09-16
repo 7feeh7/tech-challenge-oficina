@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Seed de demonstração — execução MANUAL exclusiva (spec 009).
+# Seed de demonstração.
 # Nunca invoque este script a partir de CI/CD, deploy.yml ou docker-compose.
 set -euo pipefail
 

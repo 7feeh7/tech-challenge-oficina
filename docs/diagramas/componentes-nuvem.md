@@ -1,6 +1,6 @@
 # Diagrama de componentes — nuvem completa
 
-**Versão:** 2026-09-13 (spec 008)  
+**Versão:** 2026-09-13
 **Ambiente:** `producao` (único provisionado)
 
 ```mermaid
@@ -84,11 +84,11 @@ flowchart TB
 
 ## Limites de rede
 
-| Zona | Componentes | Acesso |
-| --- | --- | --- |
-| Público | API Gateway | Internet → HTTPS |
-| Privado | EKS nodes, Lambda (VPC), RDS | Sem IP público |
-| NAT | Saída para SendGrid, Datadog, ECR | Egress controlado |
+| Zona    | Componentes                       | Acesso            |
+| ------- | --------------------------------- | ----------------- |
+| Público | API Gateway                       | Internet → HTTPS  |
+| Privado | EKS nodes, Lambda (VPC), RDS      | Sem IP público    |
+| NAT     | Saída para SendGrid, Datadog, ECR | Egress controlado |
 
 ## Legenda de repositório
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verifica que testes de sanitizacao passam (proxy local para evidencia spec 010).
+# Verifica que testes de sanitizacao passam.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
