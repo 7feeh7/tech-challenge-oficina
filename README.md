@@ -1,6 +1,8 @@
 # Tech Challenge — API de Oficina Mecânica
 
-API REST para gestão de uma oficina mecânica: clientes, veículos, peças, serviços, ordens de serviço, orçamentos e movimentações de estoque. Projeto do Tech Challenge (FIAP).
+API REST para gestão de uma oficina mecânica: clientes, veículos, peças, serviços, ordens de serviço, orçamentos e movimentações de estoque. Projeto do Tech Challenge (FIAP) — **Fase 3** (cloud-native na AWS).
+
+**Entrega Fase 3:** documento de entrega, roteiro de demonstração, vídeo e demais artefatos estão em [`docs/local/README.md`](docs/local/README.md) (seção [Entrega](docs/local/README.md#entrega)).
 
 ## Tecnologias
 
@@ -75,7 +77,7 @@ docker compose down
 
 ## Endpoints
 
-Contratos HTTP em [`docs/local/api/api.md`](docs/local/api/api.md), especificação em [`docs/local/api/openapi.json`](docs/local/api/openapi.json)
+Contratos HTTP em [`docs/local/api/api.md`](docs/local/api/api.md), OpenAPI em [`docs/local/api/openapi.json`](docs/local/api/openapi.json)
 
 Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
 
@@ -194,16 +196,11 @@ Roteiro completo: [`docs/local/entrega/demo-fase3.md`](docs/local/entrega/demo-f
 
 ## Documentação
 
-Arquitetura (RFCs, ADRs e diagramas): [`docs/README.md`](docs/README.md).  
-Arquivo operacional (API, banco, CI/CD, segurança, entrega): [`docs/local/README.md`](docs/local/README.md).
+| Documento                                 | Conteúdo                                             |
+| ----------------------------------------- | ---------------------------------------------------- |
+| [**Arquivo local**](docs/local/README.md) | API, banco, operação, segurança e **entrega Fase 3** |
+| [Arquitetura](docs/README.md)             | RFCs, ADRs e diagramas                               |
 
-| Documento | Conteúdo |
-| --- | --- |
-| [RFCs](docs/rfcs/README.md) | Propostas técnicas (AWS, RDS, auth, mensageria) |
-| [ADRs](docs/adrs/README.md) | Decisões aceitas |
-| [Diagramas](docs/diagramas/README.md) | Componentes, sequência e ER |
-| [Arquivo local](docs/local/README.md) | Contratos HTTP, operação, segurança e entrega |
+Detalhes operacionais, contratos HTTP, CI/CD, segurança e material de entrega: [`docs/local/README.md`](docs/local/README.md).
 
-**Vídeo demonstrativo:** _preencher URL após publicação (YouTube/Vimeo, ≤ 15 min)_ — também registrado em [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md).
-
-**Entrega Fase 3 (PDF):** [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) · Matriz de conformidade: [`spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md`](spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md)
+**Entrega Fase 3:** [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) (documento base para PDF) ·
