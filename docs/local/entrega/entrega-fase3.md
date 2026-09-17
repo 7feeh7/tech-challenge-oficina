@@ -59,20 +59,21 @@ Conteúdo obrigatório: auth CPF, API protegida, pipeline CI/CD, deploy K8s, das
 
 ## 4. Documentação técnica
 
-| Documento                  | Link                                                                                                                                        |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Índice geral               | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/README.md                                                                   |
-| OpenAPI / Swagger          | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/api/openapi.json · runtime: `/docs`                                    |
-| Diagrama componentes nuvem | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/componentes-nuvem.md                                              |
-| Sequência auth CPF         | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-auth-cpf.md                                             |
-| Sequência abertura OS      | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-abertura-os.md                                          |
-| Diagrama ER                | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/modelo-relacional-er.md                                           |
-| RFCs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/rfcs                                                                        |
-| ADRs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/adrs                                                                        |
-| Observabilidade            | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/operacao/observabilidade.md                                            |
-| Runbooks                   | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/local/operacao/runbooks                                                      |
-| Matriz de conformidade     | https://github.com/7feeh7/tech-challenge-oficina/blob/main/spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade.md     |
-| Desvio R-12                | https://github.com/7feeh7/tech-challenge-oficina/blob/main/spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade-r12.md |
+| Documento                  | Link                                                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| README raiz (Fase 3)       | https://github.com/7feeh7/tech-challenge-oficina/blob/main/README.md                                    |
+| Arquivo local (índice)     | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/README.md                           |
+| Índice de arquitetura      | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/README.md                                 |
+| OpenAPI / Swagger          | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/api/openapi.json · runtime: `/docs` |
+| Diagrama componentes nuvem | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/componentes-nuvem.md            |
+| Sequência auth CPF         | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-auth-cpf.md           |
+| Sequência abertura OS      | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/sequencia-abertura-os.md        |
+| Diagrama ER                | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/diagramas/modelo-relacional-er.md         |
+| RFCs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/rfcs                                      |
+| ADRs                       | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/adrs                                      |
+| Observabilidade            | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/local/operacao/observabilidade.md          |
+| Runbooks                   | https://github.com/7feeh7/tech-challenge-oficina/tree/main/docs/local/operacao/runbooks                    |
+| Desvio R-12 (ambiente único) | https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/adrs/001-ambiente-unico-provisionado.md |
 
 ---
 
@@ -91,7 +92,7 @@ Texto sugerido: _"O usuário GitHub `soat-architecture` foi adicionado como cola
 
 ## 6. Desvio R-12 (ambiente único)
 
-Conforme [ADR-001](https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/adrs/001-ambiente-unico-provisionado.md): pipelines automáticas em `develop` (validação) e `main` (deploy), porém **um único ambiente AWS** (`producao`) por motivo de custo. Detalhes: [`matriz-conformidade-r12.md`](https://github.com/7feeh7/tech-challenge-oficina/blob/main/spec/changes/009-readmes-demonstracao-e-entrega-final/matriz-conformidade-r12.md).
+Conforme [ADR-001](https://github.com/7feeh7/tech-challenge-oficina/blob/main/docs/adrs/001-ambiente-unico-provisionado.md): pipelines automáticas em `develop` (validação) e `main` (deploy), porém **um único ambiente AWS** (`producao`) por motivo de custo.
 
 ---
 
