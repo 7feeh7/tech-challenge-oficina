@@ -1568,12 +1568,12 @@
   resolved "https://registry.npmjs.org/@pkgr/core/-/core-0.2.9.tgz"
   integrity sha512-QNqXyfVS2wm9hweSYD2O7F0G06uurj9kZ96TRQE5Y9hU7+tgdZwIkbAKc5Ocy1HxEY2kuDQa6cQ1WRs/O5LFKA==
 
-"@prisma/adapter-pg@^7.8.0":
-  version "7.8.0"
-  resolved "https://registry.yarnpkg.com/@prisma/adapter-pg/-/adapter-pg-7.8.0.tgz#8f39dc10ec0fa3d5914e09df385977ce0500fbec"
-  integrity sha512-ygb3UkerK3v8MDpXVgCISdRNDozpxh6+JVJgiIGbSr5KBgz10LLf5ejUskPGoXlsIjxsOu6nuy1JVQr2EKGSlg==
+"@prisma/adapter-pg@^7.10.0":
+  version "7.10.0"
+  resolved "https://registry.yarnpkg.com/@prisma/adapter-pg/-/adapter-pg-7.10.0.tgz#8181c52b8406e7c8e9d6d52aa8b1e1f95aefa40e"
+  integrity sha512-N7nwSor0HO1Kz6xBv0TPAjAPysKK0fac6p4fVN3ensLOuzc/83Fgmln5k92eK/cvzqdkSR/2kkAqlbcdwVrwpw==
   dependencies:
-    "@prisma/driver-adapter-utils" "7.8.0"
+    "@prisma/driver-adapter-utils" "7.10.0"
     "@types/pg" "^8.16.0"
     pg "^8.16.3"
     postgres-array "3.0.4"
@@ -1599,6 +1599,11 @@
     deepmerge-ts "7.1.5"
     effect "3.20.0"
     empathic "2.0.0"
+
+"@prisma/debug@7.10.0":
+  version "7.10.0"
+  resolved "https://registry.yarnpkg.com/@prisma/debug/-/debug-7.10.0.tgz#9ac8ed485699bd08978fe83f97a80993f30d4638"
+  integrity sha512-caygJKtltmRIgdJ3jRpkOr7yM4DW6zxo5uOmojKWFb3asnxWoRkQOwZmXBgD8FZp4htrX+nMpcWqDwzlQ1+Y4g==
 
 "@prisma/debug@7.2.0":
   version "7.2.0"
@@ -1633,12 +1638,12 @@
     valibot "1.2.0"
     zeptomatch "2.1.0"
 
-"@prisma/driver-adapter-utils@7.8.0":
-  version "7.8.0"
-  resolved "https://registry.yarnpkg.com/@prisma/driver-adapter-utils/-/driver-adapter-utils-7.8.0.tgz#60f42a5bfb257d01185c27d8022a2a500d71d56b"
-  integrity sha512-/Q13o0ZT0rjc1Xk0Q9KhZYwuq2EW/vSbWUBKfgEKkaCuB/Sg6bqnjmTZqC5cD4d6y1vfFAEwBRzfzoSMIVJ55A==
+"@prisma/driver-adapter-utils@7.10.0":
+  version "7.10.0"
+  resolved "https://registry.yarnpkg.com/@prisma/driver-adapter-utils/-/driver-adapter-utils-7.10.0.tgz#c0a8480d48a86fb944f4ab6afff2d052a38beedc"
+  integrity sha512-u8zkcRLlaryO652T4qavBg0HmzNW5tSKdsCn6hc1PhWAp/J6k0vrxLuUs+b9o+HcjsK7Dfa01o4OFSn0frauJA==
   dependencies:
-    "@prisma/debug" "7.8.0"
+    "@prisma/debug" "7.10.0"
 
 "@prisma/engines-version@7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a":
   version "7.8.0-6.3c6e192761c0362d496ed980de936e2f3cebcd3a"
