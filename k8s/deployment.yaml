@@ -6,7 +6,7 @@ metadata:
   labels:
     app: oficina-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: oficina-api
@@ -21,7 +21,7 @@ spec:
         app: oficina-api
         tags.datadoghq.com/env: "producao"
         tags.datadoghq.com/service: "oficina-api"
-        tags.datadoghq.com/version: "latest"
+        tags.datadoghq.com/version: "__IMAGE_TAG__"
       annotations:
         ad.datadoghq.com/api.logs: '[{"source":"nodejs","service":"oficina-api"}]'
         ad.datadoghq.com/api.check_names: '["http_check"]'
@@ -51,7 +51,7 @@ spec:
         - name: api
           # A tag é atualizada pelo pipeline (kubectl set image) a cada deploy.
           # Substitua ECR_REPOSITORY_URL pela URL do output do Terraform.
-          image: ECR_REPOSITORY_URL:latest
+          image: ECR_REPOSITORY_URL:__IMAGE_TAG__
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

@@ -1,0 +1,112 @@
+name: Database Migration
+
+# Migration separada do deploy (D9.1). Só na main, com aprovação em producao.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag da imagem no ECR (padrão = SHA do commit atual)
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  K8S_NAMESPACE: oficina
+  TF_ENVIRONMENT: producao
+
+concurrency:
+  group: migrate-producao
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Prisma Migrate (Job)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolver parametros via SSM
+        id: ssm
+        run: |
+          PREFIX="/tech-challenge/${{ env.TF_ENVIRONMENT }}"
+          ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
+          EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
+          DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
+          JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
+          IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
+          SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
+          API_GATEWAY_URL=$(aws ssm get-parameter --name "${PREFIX}/infra/api_gateway_url" --query Parameter.Value --output text)
+          echo "ecr=$ECR" >> $GITHUB_OUTPUT
+          echo "eks=$EKS" >> $GITHUB_OUTPUT
+          echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
+          echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
+          echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
+          echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
+          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
+
+      - name: Montar DATABASE_URL a partir do Secrets Manager
+        id: db
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.db_arn }}" --query SecretString --output text)
+          USER=$(echo "$SECRET" | jq -r .username)
+          PASS=$(echo "$SECRET" | jq -r .password)
+          HOST=$(echo "$SECRET" | jq -r .host)
+          PORT=$(echo "$SECRET" | jq -r .port)
+          DB=$(echo "$SECRET" | jq -r .dbname)
+          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public"
+          echo "database_url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Obter JWT do Secrets Manager
+        id: jwt
+        run: |
+          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.jwt_arn }}" --query SecretString --output text)
+          JWT=$(echo "$SECRET" | jq -r .secret)
+          echo "jwt_secret=$JWT" >> $GITHUB_OUTPUT
+
+      - name: Configurar kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "${{ steps.ssm.outputs.eks }}"
+
+      - name: ServiceAccount e ConfigMap
+        env:
+          SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
+          IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
+          API_GATEWAY_URL: ${{ steps.ssm.outputs.api_gateway_url }}
+        run: |
+          sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
+          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" \
+              -e "s|__API_GATEWAY_URL__|${API_GATEWAY_URL}|g" \
+              k8s/configmap.yaml | kubectl apply -f -
+
+      - name: Secret do Kubernetes
+        run: |
+          kubectl create secret generic oficina-secret \
+            --namespace "$K8S_NAMESPACE" \
+            --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
+            --from-literal=JWT_SECRET='${{ steps.jwt.outputs.jwt_secret }}' \
+            --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Migrations (Job)
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
+        run: |
+          kubectl delete job oficina-migrate \
+            --namespace "$K8S_NAMESPACE" --ignore-not-found
+          sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${ECR_REPOSITORY}:${IMAGE_TAG}|g" \
+              k8s/migration-job.yaml | kubectl apply -f -
+          kubectl wait --for=condition=complete job/oficina-migrate \
+            --namespace "$K8S_NAMESPACE" --timeout=300s

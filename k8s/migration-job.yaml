@@ -1,4 +1,4 @@
-# Aplica as migrations do Prisma UMA vez por deploy, antes do rollout da API.
+# Aplica migrations via workflow migrate.yml (workflow_dispatch na main), antes do deploy.
 #
 # Roda dentro do cluster porque o RDS é privado (só os nodes do EKS o alcançam),
 # então o runner do GitHub Actions não conseguiria conectar direto no banco.
@@ -24,7 +24,7 @@ spec:
       containers:
         - name: migrate
           # A tag é injetada pelo pipeline (mesma imagem da API).
-          image: ECR_REPOSITORY_URL:latest
+          image: ECR_REPOSITORY_URL:__IMAGE_TAG__
           imagePullPolicy: Always
           command: ["yarn", "prisma", "migrate", "deploy"]
           envFrom:

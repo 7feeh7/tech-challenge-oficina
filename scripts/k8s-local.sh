@@ -19,7 +19,8 @@ IMAGE=oficina-api:local
 # O manifesto de produção aponta para o ECR e usa "Always"; local, a imagem já
 # está no nó e não há registry de onde puxar.
 localizar() {
-  sed -e "s|ECR_REPOSITORY_URL:latest|${IMAGE}|g" \
+  sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${IMAGE}|g" \
+      -e "s|__IMAGE_TAG__|local|g" \
       -e "s|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g" "$1"
 }
 
