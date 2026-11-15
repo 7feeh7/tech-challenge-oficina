@@ -52,9 +52,16 @@ A IRSA das aplicações não lê o Secrets Manager diretamente. Só o Job admini
 | Alternativa | Motivo de rejeição |
 | --- | --- |
 | Service mesh (Istio, Linkerd) | Custo e complexidade; D0.3, D6.4 |
-| Permissions boundaries complexos | Fora do escopo desta fase; D6.2 |
 | `NetworkPolicy` | Baixa eficácia no desenho atual; D6.4 |
 | Microsserviço de autenticação | Dependência nova sem justificativa; D6.3 |
+
+## Revisão (2026-11-15)
+
+**Permissions boundaries (revisão de D6.2).** Duas *boundaries* gerenciadas no root `terraform/bootstrap/` do `tech-challenge-infra-kubernetes`: `boundary-workload` (IRSAs e Lambdas) e `boundary-plataforma` (EKS, node group e cluster-autoscaler). O stack principal referencia os ARNs por convenção de nome. Toda role criada pelo CI do `infra-kubernetes` exige `iam:PermissionsBoundary` em uma das duas. As *boundaries* não concedem escrita IAM (exceto *service linked role* condicionada na plataforma), `sts:AssumeRole`, escrita em Secrets Manager nem acesso ao bucket de state.
+
+**Trust OIDC do CI.** As seis roles de CI aceitam um único *subject* `StringEquals`, com `repository_owner_id`, `repository_id`, `environment:producao` e `ref:refs/heads/main` no mesmo valor — sem *subject* alternativo, curinga nem `StringLike`. O GitHub deve usar customização de *subject* com `use_default: false` e as claim keys `repo`, `repository_owner_id`, `repository_id`, `context`, `ref`.
+
+**Proteção das roles administrativas.** Todas as roles de CI têm `Deny` explícito sobre versionamento e exclusão das *boundaries*, remoção de *boundary* em roles, escrita IAM nas roles `github-*`, `PassRole` para essas roles e mutação do provedor OIDC do GitHub. O CI do `infra-kubernetes` também não assume outras roles (`sts:AssumeRole` negado) e não altera a chave de state do bootstrap no S3.
 
 ## Referências
 
