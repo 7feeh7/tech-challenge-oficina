@@ -83,6 +83,6 @@ Duplicatas e ordem trocada são aceitas: o consumidor deduplica por `eventId` e 
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D2.12, D2.13, D2.16, D3.3, D3.4, D3.6, D3.9, D3.12, D4.2, D4.10
-- [05-communication.md](../../spec/fase-4/05-communication.md)
+- `decisoes.md` da Fase 4: D2.12, D2.13, D2.16, D3.3, D3.4, D3.6, D3.9, D3.12, D4.2, D4.10
+- Spec 05-communication.md da Fase 4 (não versionada)
 - [ADR-009](009-saga-orquestrada.md)

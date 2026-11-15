@@ -21,7 +21,7 @@ Template: [TEMPLATE.md](TEMPLATE.md).
 | [012](012-mercado-pago-orders.md) | Integração com Mercado Pago via Orders API | aceito | 2026-11-15 |
 | [013](013-seguranca-entre-servicos.md) | Segurança entre serviços | aceito | 2026-11-15 |
 | [014](014-observabilidade-distribuida.md) | Observabilidade distribuída | aceito | 2026-11-15 |
-| [015](015-virada.md) | Estratégia de virada do monólito para microsserviços | aceito | 2026-11-15 |
+| [015](015-virada.md) | Estratégia de implantação inicial | aceito | 2026-11-15 |
 
 ## Supersessão
 

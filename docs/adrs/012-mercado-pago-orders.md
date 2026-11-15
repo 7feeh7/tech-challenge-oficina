@@ -56,6 +56,6 @@ A Fase 4 exige integração com um gateway de pagamento (R4-09). O Mercado Pago 
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D3.10, D3.11, D3.15, D0.7, D1.15, D1.20
-- [services/billing.md](../../spec/fase-4/services/billing.md)
-- [03-service-boundaries.md](../../spec/fase-4/03-service-boundaries.md)
+- `decisoes.md` da Fase 4: D3.10, D3.11, D3.15, D0.7, D1.15, D1.20
+- Spec services/billing.md da Fase 4 (não versionada)
+- Spec 03-service-boundaries.md da Fase 4 (não versionada)

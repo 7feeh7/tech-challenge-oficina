@@ -60,6 +60,6 @@ Dashboard "Saga da OS" com as transições de status e os indicadores do fluxo d
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D7.1–D7.5, D3.9
-- [08-observability.md](../../spec/fase-4/08-observability.md)
+- `decisoes.md` da Fase 4: D7.1–D7.5, D3.9
+- Spec 08-observability.md da Fase 4 (não versionada)
 - [ADR-007](007-observabilidade-datadog.md)

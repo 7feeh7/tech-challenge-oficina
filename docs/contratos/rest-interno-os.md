@@ -2,7 +2,7 @@
 
 Dono: OS Service (`tech-challenge`). Versão: `v1`.
 
-Especificação completa em [`spec/fase-4/03-service-boundaries.md`](../../spec/fase-4/03-service-boundaries.md).
+Especificação completa em `decisoes.md` da Fase 4: D1.6, D1.12, D2.12, D3.5, D3.12, D3.13 e spec 03-service-boundaries.md (não versionada).
 
 ## Cabeçalhos obrigatórios
 

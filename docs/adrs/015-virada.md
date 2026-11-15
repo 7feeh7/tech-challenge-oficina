@@ -1,63 +1,59 @@
-# ADR-015 — Estratégia de virada do monólito para microsserviços
+# ADR-015 — Estratégia de implantação inicial
 
 **Status:** aceito  
 **Data:** 2026-11-15
 
 ## Contexto
 
-O `tech-challenge` está em produção como monólito. A Fase 4 transforma-o no OS Service enquanto o Billing e o Execution são criados do zero. A virada não pode deixar o estado distribuído inconsistente, e cada etapa precisa de aprovação explícita do autor antes de operações destrutivas ou na AWS (D9.1, D9.5).
+Não há recursos da Fase 3 provisionados na AWS. Os três serviços e toda a infraestrutura são implantados do zero. Não há monólito em execução a transformar; a Fase 4 é uma implantação inicial. A estratégia precisa garantir deploys reproduzíveis, recuperação por reexecução e proteção contra operações destrutivas acidentais (D2.9, D9.1–D9.4).
 
 ## Decisão
 
-**Branch de longa duração** `fase-4` no OS Service, com CI, testes e SonarCloud ativos, sem deploy automático (D9.1). Antes da virada: deployment com estratégia `Recreate`; sem `rollout undo` automático; migrations separadas do deployment.
+**Todo o desenvolvimento é local** (D9.1): cada etapa sai da branch `develop` e volta a ela por *squash merge*; CI, testes e SonarCloud ativos durante todo o desenvolvimento. Nenhuma operação na AWS e nenhuma promoção para a `main` durante o desenvolvimento.
 
-**Ordem da virada** (D2.9):
-1. Lambda de notificação: confirmação de que o SNS existente continua funcionando.
-2. Billing e Execution: deploy nos namespaces próprios.
-3. Validação isolada (rota de webhook, chaves RS256, token de teste); o fluxo legado e o novo não alteram a mesma OS.
-4. Interrupção do fluxo anterior.
-5. Migrations destrutivas (com backup lógico do database afetado e ensaio de restauração).
-6. Novo OS Service.
-7. Rotas no API Gateway.
-8. Seed e validação do fluxo distribuído completo.
+**Promoção `develop → main`** (D9.1): ocorre por *merge commit*, somente na implantação, na ordem do `13-deployment-runbook.md` (D2.9). Deploy só a partir da `main`, em *environment* protegido com aprovação explícita do autor.
 
-**Nenhuma operação na AWS** antes do aceite do autor da etapa E10, que valida a proteção de deploy (D9.7, D9.5).
+**Ordem de implantação** (D2.9, seguindo o runbook):
 
-**Reset autorizado do database `oficina`** (D9.2): sem dados reais; backup antes; ensaio de restauração num database temporário; reaproveitar o seed existente; sem afetar o database do Billing.
+1. Infraestrutura compartilhada (`tech-challenge-infra-kubernetes`): EKS, namespaces, NLB, API Gateway, IAM roles, SNS.
+2. Bancos de dados (`tech-challenge-infra-database`): RDS provisionado; Job administrativo cria databases `oficina` e `billing` vazios, com usuários donos; nenhum backup necessário porque não há dados a preservar (D5.3, D9.2).
+3. Serviços (OS, Billing, Execution): migrations, deploys nos namespaces próprios.
+4. Lambdas (`auth-cpf`, `notificacao`): deploy.
+5. Rotas no API Gateway.
+6. Seed e validação do fluxo distribuído completo.
 
-**Rollback** (D9.4): após operações distribuídas, restaurar só o database do OS gera inconsistência com Billing, Execution, SQS e Mercado Pago. Rollback diferenciado antes e depois da liberação do fluxo distribuído; documentar condições de interrupção e conciliação de estados. Sem rollback destrutivo automático.
+**Nenhuma operação na AWS** antes do aceite da etapa E10, que valida a proteção de deploy (D9.5).
 
-**Transição de tokens** (D9.3): Billing e Execution usam só RS256 desde a criação; HS256 restrito ao fluxo legado, com prazo de remoção; acesso da `auth-cpf` ao banco removido assim que a nova integração for validada; credenciais estáticas administrativas revogadas assim que os acessos substitutos forem validados.
+**Migration separada do deploy** (D9.1): sem `rollout undo` automático; `namespace.yaml` fora dos pipelines dos serviços.
 
-**Migration destrutiva de `orcamentos`** na Onda 9 (D9.3): separada e condicionada à autorização do autor, com backup e ensaio antes.
+**Segurança no bootstrap** (D9.3): RS256 desde o início, sem HS256 (D6.3); escaladas de IAM corrigidas no código antes do primeiro `apply`; credencial administrativa temporária do bootstrap revogada assim que os pipelines via OIDC forem validados.
 
-**Ondas** (D9.7): 42 etapas; a ordem é determinada pelas dependências, não pela numeração. Ondas 1 e 2 (infraestrutura e prova técnica do Mercado Pago) são prioritárias. Incompatibilidade impeditiva no Mercado Pago suspende só as etapas dependentes até a decisão do autor.
+**Recuperação** (D9.4): falha em qualquer passo é recuperada pela reexecução segura do mesmo passo do runbook — Terraform idempotente, migrations controladas, imagens imutáveis. `destroy` não é mecanismo de recuperação; operações destrutivas exigem autorização explícita.
 
 ## Consequências
 
 ### Positivas
 
-- Validação isolada antes da virada reduz o risco de inconsistência em produção.
-- Migrations separadas do deployment permitem rollback da aplicação sem reverter o schema.
-- Sem deploy automático na branch `fase-4` evita viradas acidentais.
+- Sem estado legado: a implantação inicial é mais simples e previsível.
+- Terraform idempotente e imagens imutáveis permitem reexecução segura.
+- Branch model simples: `develop → main` somente na implantação; sem branch de longa duração dedicada.
+- Databases nascem vazios: sem backup ou ensaio de restauração antes das migrations (D9.2).
 
 ### Negativas / trade-offs
 
-- Estratégia `Recreate` causa indisponibilidade temporária durante a virada (aceita no contexto acadêmico: D9.1).
-- Virada não é atômica; requer coordenação e aprovação manual em cada etapa destrutiva.
-- Branch `fase-4` de longa duração exige gestão de merge cuidadosa com `main`.
+- Deploy apenas da `main` em *environment* protegido exige aprovação manual para cada promoção.
+- Migration separada do deploy adiciona coordenação, mas evita rollback destrutivo (D9.4).
 
 ## Alternativas consideradas
 
 | Alternativa | Motivo de rejeição |
 | --- | --- |
-| Blue/Green deployment | Custo de duplicar recursos; cluster `t3.small` sem capacidade; D6.7 |
-| Canary release | Complexidade de roteamento; requer Istio ou outro recurso não disponível; D6.4 |
-| Rollback automático do banco | Gera inconsistência com estado distribuído; D9.4 |
-| Deploy automático da `fase-4` | Risco de virada acidental; D9.1 |
+| Branch `fase-4` de longa duração | Desnecessário; `develop` é suficiente para todo o desenvolvimento (D9.1) |
+| Blue/Green ou Canary | Sem estado legado a migrar; reexecução do runbook é mecanismo suficiente |
+| `terraform destroy` como rollback | Operação destrutiva; não autorizada sem aprovação explícita (D9.4) |
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D2.9, D9.1–D9.4, D9.7
+- `decisoes.md` da Fase 4: D2.9, D9.1–D9.4, D9.7, D6.3
+- Spec 13-deployment-runbook.md da Fase 4 (não versionada)
 - [ADR-008](008-divisao-em-microsservicos.md)
-- [E10](../../spec/fase-4/etapas/E10-pipeline-pre-virada-os.md)

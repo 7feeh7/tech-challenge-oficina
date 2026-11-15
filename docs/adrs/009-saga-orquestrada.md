@@ -69,6 +69,6 @@ Resposta indeterminada mantém a OS em `EM_CANCELAMENTO` com novas tentativas e 
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D4.1–D4.10, D2.11–D2.13, E10
-- [06-saga.md](../../spec/fase-4/06-saga.md)
+- `decisoes.md` da Fase 4: D4.1–D4.10, D2.11–D2.13, E10
+- Spec 06-saga.md da Fase 4 (não versionada)
 - [ADR-008](008-divisao-em-microsservicos.md)

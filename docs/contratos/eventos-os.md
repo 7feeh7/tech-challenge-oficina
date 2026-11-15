@@ -2,9 +2,9 @@
 
 Dono: OS Service (`tech-challenge`). Canal: SNS existente → Lambda `notificacao`.
 
-Especificação completa em [`spec/fase-4/03-service-boundaries.md`](../../spec/fase-4/03-service-boundaries.md).
+Especificação completa em `decisoes.md` da Fase 4: D3.7, D3.12 e spec 03-service-boundaries.md (não versionada).
 
-Envelope comum em [`spec/fase-4/05-communication.md`](../../spec/fase-4/05-communication.md).
+Envelope comum em spec 05-communication.md da Fase 4 (não versionada); ver D3.12.
 
 ---
 

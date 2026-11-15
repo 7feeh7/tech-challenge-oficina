@@ -19,7 +19,7 @@ Cada serviço tem padrões de acesso e requisitos de consistência distintos. O 
 
 **Por que DynamoDB para o Execution?** As tarefas têm acesso por chave primária, escrita condicional atômica (`TransactWriteItems`) e não exigem joins. Capacidade sob demanda, sem gerenciamento de instância (D5.2). Três tabelas: tarefas, outbox e mensagens processadas.
 
-**Isolamento entre serviços** (D0.4, P3): sem acesso cross-database; cada serviço tem credenciais próprias; a propriedade dos objetos de `oficina` é transferida ao usuário do OS (D5.3).
+**Isolamento entre serviços** (D0.4, P3): sem acesso cross-database; cada serviço tem credenciais próprias; o Job administrativo cria os databases `oficina` e `billing` já com o usuário de cada serviço como dono (D5.3).
 
 **Pool de conexões** (D5.5): uma única instância de `PrismaClient` por processo; pool configurado explicitamente; timeout de conexão explícito.
 
@@ -28,7 +28,7 @@ Cada serviço tem padrões de acesso e requisitos de consistência distintos. O 
 | OS | mín. 1, máx. 6 | 5 |
 | Billing | mín. 1, máx. 3 | 5 |
 
-**Migrations destrutivas** separadas e condicionadas à autorização do autor (D5.4). Sem restauração automática do RDS. Reset do database `oficina` autorizado para a virada (D9.2).
+**Migrations destrutivas** separadas e condicionadas à autorização do autor (D5.4). Sem restauração automática do RDS. Os databases nascem vazios na implantação inicial; a remoção das tabelas `orcamentos` do OS é uma migration normal da etapa E31, sem backup prévio (D5.4, D9.2).
 
 **Proteção do DynamoDB**: proteção contra exclusão habilitada; sem TTL em mensagens processadas nem em bloqueios de cancelamento (D5.2).
 
@@ -45,7 +45,7 @@ Cada serviço tem padrões de acesso e requisitos de consistência distintos. O 
 
 - Instância RDS compartilhada: domínio de falha comum entre OS e Billing (D5.6, P3).
 - Dois paradigmas de acesso a dados aumentam a superfície de aprendizado.
-- Sem backups automáticos por serviço; backup lógico condicionado à autorização do autor antes de migrations destrutivas (D5.4).
+- Migrations destrutivas exigem autorização; sem dados a preservar na implantação inicial, pois os databases nascem vazios (D5.4).
 
 ## Alternativas consideradas
 
@@ -58,6 +58,6 @@ Cada serviço tem padrões de acesso e requisitos de consistência distintos. O 
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D5.1–D5.6, D0.3, D0.4, P3
-- [04-database.md](../../spec/fase-4/04-database.md)
+- `decisoes.md` da Fase 4: D5.1–D5.6, D0.3, D0.4, P3
+- Spec 04-database.md da Fase 4 (não versionada)
 - [ADR-003](003-postgresql-banco-gerenciado.md)

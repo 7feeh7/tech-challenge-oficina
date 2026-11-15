@@ -74,6 +74,6 @@ Cancelamento/desistência leva a `EM_CANCELAMENTO` → `CANCELADA` (E3). Exceç�
 
 ## Referências
 
-- [`decisoes.md`](../../spec/fase-4/decisoes.md): D1.1–D1.21, D0.2–D0.4, P3, P4, E1–E10
-- [01-architecture.md](../../spec/fase-4/01-architecture.md)
-- [03-service-boundaries.md](../../spec/fase-4/03-service-boundaries.md)
+- `decisoes.md` da Fase 4: D1.1–D1.21, D0.2–D0.4, P3, P4, E1–E10
+- Spec 01-architecture.md da Fase 4 (não versionada)
+- Spec 03-service-boundaries.md da Fase 4 (não versionada)
