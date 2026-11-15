@@ -11,9 +11,18 @@ export class PrismaService
   constructor(configService: ConfigService) {
     const databaseUrl = configService.getOrThrow<string>('DATABASE_URL');
     const usarSsl = configService.get<string>('DATABASE_SSL') === 'true';
+    const poolMax = Number(
+      configService.get<string>('DATABASE_POOL_MAX') ?? '5',
+    );
+    const poolConnectionTimeoutMs = Number(
+      configService.get<string>('DATABASE_POOL_CONNECTION_TIMEOUT_MS') ??
+        '10000',
+    );
 
     const adapter = new PrismaPg({
       connectionString: databaseUrl,
+      max: poolMax,
+      connectionTimeoutMillis: poolConnectionTimeoutMs,
       // O RDS recusa conexão sem TLS (`rds.force_ssl`), mas seu certificado é
       // emitido pela CA da Amazon, que não está no trust store do Node — validar
       // a cadeia falharia com "self-signed certificate". O tráfego segue

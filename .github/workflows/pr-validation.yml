@@ -2,6 +2,7 @@ name: PR Validation
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]
     branches: [main, develop]
   push:
     branches: [develop]
@@ -10,6 +11,21 @@ env:
   DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
 
 jobs:
+  titulo-conventional-commits:
+    name: Título Conventional Commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar título do PR
+        env:
+          TITULO: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$TITULO" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?: .+'; then
+            echo "Título fora do Conventional Commits: $TITULO"
+            echo "Esperado: tipo(escopo opcional): descrição — ex. feat(os): adiciona pool explícito no Prisma"
+            exit 1
+          fi
+
   validate:
     name: Lint, Build e Testes
     runs-on: ubuntu-latest

@@ -13,6 +13,8 @@ data:
   PORT: "3000"
   NODE_ENV: "production"
   DATABASE_SSL: "true"
+  DATABASE_POOL_MAX: "5"
+  DATABASE_POOL_CONNECTION_TIMEOUT_MS: "10000"
   AWS_REGION: "us-east-1"
   NOTIFICACAO_TRANSPORT: "sns"
   ADMIN_NOME: "Administrador"

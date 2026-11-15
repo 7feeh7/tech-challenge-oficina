@@ -6,15 +6,15 @@ Deploy da API NestJS no cluster Kubernetes.
 
 | Arquivo | Recurso | Descrição |
 | --- | --- | --- |
-| `namespace.yaml` | Namespace | Isola os recursos da aplicação (`oficina`). |
+| `namespace.yaml` | Namespace | Isola os recursos da aplicação (`oficina`). Provisionado pelo `infra-kubernetes`; fora do pipeline da aplicação (D6.2, D9.1). |
 | `serviceaccount.yaml` | ServiceAccount | IRSA para publicação SNS (`oficina-api`). |
 | `configmap.yaml` | ConfigMap | Variáveis não sensíveis (`PORT`, `ADMIN_EMAIL`, etc.). |
 | `secret.example.yaml` | Secret | Modelo dos dados sensíveis (`DATABASE_URL`, `JWT_SECRET`, `ADMIN_SENHA`). O Secret real é criado pelo CI/CD. |
-| `migration-job.yaml` | Job | Aplica as migrations do Prisma **uma vez por deploy**, antes do rollout da API. |
-| `deployment.yaml` | Deployment | 2 réplicas, `RollingUpdate`, `securityContext` non-root, spread multi-AZ, probes. |
+| `migration-job.yaml` | Job | Aplica migrations via workflow `migrate.yml` (`workflow_dispatch` na `main`), antes do deploy. |
+| `deployment.yaml` | Deployment | 1 réplica inicial, `RollingUpdate`, `securityContext` non-root, spread multi-AZ, probes; tag de imagem por SHA no CI. |
 | `service.yaml` | Service | Tipo `NodePort` (30080), tráfego público só via API Gateway + NLB interno. |
 | `pdb.yaml` | PodDisruptionBudget | Garante `minAvailable: 1` durante evictions e rollouts. |
-| `hpa.yaml` | HorizontalPodAutoscaler | Escala de 2 a 10 pods por CPU (70%) e memória (80%). |
+| `hpa.yaml` | HorizontalPodAutoscaler | Escala de 1 a 6 pods por CPU (70%) e memória (80%) (D5.5, D6.7). |
 
 ## Deploy manual (o CI/CD faz isso automaticamente)
 

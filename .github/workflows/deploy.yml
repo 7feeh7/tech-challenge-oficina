@@ -3,6 +3,9 @@ name: Deploy Application
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "terraform/**"
+      - "docs/**"
   workflow_dispatch:
 
 env:
@@ -38,6 +41,7 @@ jobs:
 
   deploy:
     name: Deploy no EKS
+    if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     environment: producao
@@ -80,7 +84,7 @@ jobs:
           HOST=$(echo "$SECRET" | jq -r .host)
           PORT=$(echo "$SECRET" | jq -r .port)
           DB=$(echo "$SECRET" | jq -r .dbname)
-          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public&connection_limit=5&pool_timeout=10"
+          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public"
           echo "database_url=$URL" >> $GITHUB_OUTPUT
 
       - name: Obter JWT do Secrets Manager
@@ -97,9 +101,8 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REPOSITORY:latest"
 
       - name: Configurar kubectl
         run: |
@@ -107,13 +110,12 @@ jobs:
             --region "$AWS_REGION" \
             --name "${{ steps.ssm.outputs.eks }}"
 
-      - name: Namespace, ServiceAccount e ConfigMap
+      - name: ServiceAccount e ConfigMap
         env:
           SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
           IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
           API_GATEWAY_URL: ${{ steps.ssm.outputs.api_gateway_url }}
         run: |
-          kubectl apply -f k8s/namespace.yaml
           sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
           sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" \
               -e "s|__API_GATEWAY_URL__|${API_GATEWAY_URL}|g" \
@@ -128,27 +130,14 @@ jobs:
             --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Migrations (Job)
-        id: migrate
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
-        run: |
-          kubectl delete job oficina-migrate \
-            --namespace "$K8S_NAMESPACE" --ignore-not-found
-          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
-            k8s/migration-job.yaml | kubectl apply -f -
-          kubectl wait --for=condition=complete job/oficina-migrate \
-            --namespace "$K8S_NAMESPACE" --timeout=300s
-
       - name: Deployment, Service, PDB e HPA
-        id: rollout
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
-            k8s/deployment.yaml | kubectl apply -f -
+          sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${ECR_REPOSITORY}:${IMAGE_TAG}|g" \
+              -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
+              k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/pdb.yaml
           kubectl apply -f k8s/hpa.yaml
@@ -159,7 +148,6 @@ jobs:
             --namespace "$K8S_NAMESPACE" --timeout=180s
 
       - name: Smoke test — health readiness
-        id: smoke
         run: |
           kubectl run smoke-test-${{ github.run_id }} \
             --namespace "$K8S_NAMESPACE" \
@@ -171,12 +159,3 @@ jobs:
           kubectl exec smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE" -- \
             curl -sf "http://oficina-api/health/ready"
           kubectl delete pod smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE"
-
-      - name: Rollback automatico em falha pos-migration
-        if: failure() && steps.migrate.outcome == 'success'
-        run: |
-          echo "Falha detectada apos migration — revertendo Deployment para revisao anterior."
-          kubectl rollout undo deployment/oficina-api \
-            --namespace "$K8S_NAMESPACE" || true
-          kubectl rollout status deployment/oficina-api \
-            --namespace "$K8S_NAMESPACE" --timeout=180s || true
