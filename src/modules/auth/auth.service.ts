@@ -23,7 +23,10 @@ export class AuthService {
     };
 
     const accessToken = await this.jwtService.signAsync(payload, {
-      secret: this.configService.get<string>('JWT_SECRET'),
+      privateKey: this.configService.getOrThrow<string>('JWT_PRIVATE_KEY'),
+      algorithm: 'RS256',
+      issuer: this.configService.get<string>('JWT_ISSUER'),
+      audience: this.configService.get<string>('JWT_AUDIENCE'),
     });
 
     return {

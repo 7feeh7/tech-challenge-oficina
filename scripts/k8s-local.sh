@@ -47,13 +47,21 @@ kubectl apply -f k8s/local/postgres.yaml
 kubectl patch configmap oficina-config --namespace "${NS}" --type merge \
   -p '{"data":{"DATABASE_SSL":"false"}}'
 
-# Secret local — valores fakes para teste local, o Secret real do EKS vem do CI/CD.
+# Secret local — par RS256 e tokens descartáveis; o Secret real do EKS vem do CI/CD.
+JWT_LOCAL_DIR=$(mktemp -d)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${JWT_LOCAL_DIR}/priv.pem" 2>/dev/null
+openssl pkey -in "${JWT_LOCAL_DIR}/priv.pem" -pubout -out "${JWT_LOCAL_DIR}/pub.pem" 2>/dev/null
 kubectl create secret generic oficina-secret --namespace "${NS}" \
   --from-literal=DATABASE_URL='postgresql://oficina:oficina@postgres:5432/oficina?schema=public' \
-  --from-literal=JWT_SECRET='segredo-apenas-local' \
+  --from-file=JWT_PRIVATE_KEY="${JWT_LOCAL_DIR}/priv.pem" \
+  --from-file=JWT_PUBLIC_KEY="${JWT_LOCAL_DIR}/pub.pem" \
+  --from-literal=TOKEN_BILLING_OS='token-billing-local-descartavel' \
+  --from-literal=TOKEN_EXECUTION_OS='token-execution-local-descartavel' \
+  --from-literal=TOKEN_AUTH_CPF_OS='token-auth-cpf-local-descartavel' \
   --from-literal=SENDGRID_API_KEY='' \
   --from-literal=ADMIN_SENHA='admin12345' \
   --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${JWT_LOCAL_DIR}"
 
 kubectl rollout status deployment/postgres --namespace "${NS}" --timeout=180s
 

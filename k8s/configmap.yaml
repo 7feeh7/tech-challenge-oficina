@@ -6,12 +6,14 @@ metadata:
   labels:
     app: oficina-api
 # Variáveis NÃO sensíveis da aplicação.
-# Dados sensíveis (DATABASE_URL, JWT_SECRET, ADMIN_SENHA)
+# Dados sensíveis (DATABASE_URL, JWT_*_KEY, TOKEN_*_OS, ADMIN_SENHA)
 # ficam no Secret (secret.example.yaml), criado pelo pipeline de CI/CD.
 # A API publica eventos de notificação no SNS via IRSA (sem credencial estática).
 data:
   PORT: "3000"
   NODE_ENV: "production"
+  JWT_ISSUER: "tech-challenge-auth"
+  JWT_AUDIENCE: "tech-challenge-api"
   DATABASE_SSL: "true"
   DATABASE_POOL_MAX: "5"
   DATABASE_POOL_CONNECTION_TIMEOUT_MS: "10000"

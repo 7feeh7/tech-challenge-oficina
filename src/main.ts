@@ -9,10 +9,13 @@ import { AppModule } from '@/app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { JsonLoggerService } from '@/shared/observability/json-logger.service';
 import { registerRequestObservabilityHook } from '@/shared/observability/request-observability.hook';
+import { validarConfiguracaoOs } from '@/shared/config/validar-configuracao-os';
 
 const PORT = Number(process.env.PORT ?? 3000);
 
 async function bootstrap() {
+  validarConfiguracaoOs();
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
@@ -28,6 +31,8 @@ async function bootstrap() {
     exclude: [
       { path: 'health', method: RequestMethod.ALL },
       { path: 'health/ready', method: RequestMethod.ALL },
+      { path: 'internal', method: RequestMethod.ALL },
+      { path: 'internal/(.*)', method: RequestMethod.ALL },
     ],
   });
 
@@ -55,6 +60,11 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerConfig);
+  for (const path of Object.keys(document.paths)) {
+    if (path.startsWith('/internal')) {
+      delete document.paths[path];
+    }
+  }
 
   SwaggerModule.setup('docs', app, document, {
     customSiteTitle: 'Oficina API Docs',

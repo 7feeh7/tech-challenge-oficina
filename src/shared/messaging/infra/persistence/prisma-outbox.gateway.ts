@@ -20,7 +20,7 @@ export class PrismaOutboxGateway implements OutboxGateway {
       data: {
         eventId: input.eventId,
         eventType: input.eventType,
-        envelope: input.envelope as object,
+        envelope: input.envelope,
         correlationId: input.correlationId,
         destino: input.destino,
       },

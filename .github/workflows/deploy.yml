@@ -63,14 +63,22 @@ jobs:
           ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
           EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
           DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
-          JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
+          JWT_PRIVATE_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
+          JWT_PUBLIC_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_public_secret_arn" --query Parameter.Value --output text)
+          TOKEN_BILLING_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_billing_os_secret_arn" --query Parameter.Value --output text)
+          TOKEN_EXECUTION_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_execution_os_secret_arn" --query Parameter.Value --output text)
+          TOKEN_AUTH_CPF_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_auth_cpf_os_secret_arn" --query Parameter.Value --output text)
           SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
           IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
           API_GATEWAY_URL=$(aws ssm get-parameter --name "${PREFIX}/infra/api_gateway_url" --query Parameter.Value --output text)
           echo "ecr=$ECR" >> $GITHUB_OUTPUT
           echo "eks=$EKS" >> $GITHUB_OUTPUT
           echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
-          echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
+          echo "jwt_private_arn=$JWT_PRIVATE_ARN" >> $GITHUB_OUTPUT
+          echo "jwt_public_arn=$JWT_PUBLIC_ARN" >> $GITHUB_OUTPUT
+          echo "token_billing_os_arn=$TOKEN_BILLING_OS_ARN" >> $GITHUB_OUTPUT
+          echo "token_execution_os_arn=$TOKEN_EXECUTION_OS_ARN" >> $GITHUB_OUTPUT
+          echo "token_auth_cpf_os_arn=$TOKEN_AUTH_CPF_OS_ARN" >> $GITHUB_OUTPUT
           echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
           echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
           echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
@@ -87,12 +95,34 @@ jobs:
           URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public"
           echo "database_url=$URL" >> $GITHUB_OUTPUT
 
-      - name: Obter JWT do Secrets Manager
-        id: jwt
+      - name: Obter segredos JWT e tokens internos
+        id: secrets
+        env:
+          JWT_PRIVATE_ARN: ${{ steps.ssm.outputs.jwt_private_arn }}
+          JWT_PUBLIC_ARN: ${{ steps.ssm.outputs.jwt_public_arn }}
+          TOKEN_BILLING_OS_ARN: ${{ steps.ssm.outputs.token_billing_os_arn }}
+          TOKEN_EXECUTION_OS_ARN: ${{ steps.ssm.outputs.token_execution_os_arn }}
+          TOKEN_AUTH_CPF_OS_ARN: ${{ steps.ssm.outputs.token_auth_cpf_os_arn }}
         run: |
-          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.jwt_arn }}" --query SecretString --output text)
-          JWT=$(echo "$SECRET" | jq -r .secret)
-          echo "jwt_secret=$JWT" >> $GITHUB_OUTPUT
+          PRIV_JSON=$(aws secretsmanager get-secret-value --secret-id "$JWT_PRIVATE_ARN" --query SecretString --output text)
+          PUB_JSON=$(aws secretsmanager get-secret-value --secret-id "$JWT_PUBLIC_ARN" --query SecretString --output text)
+          JWT_PRIVATE=$(echo "$PRIV_JSON" | jq -r 'if .privateKey then .privateKey elif .private_key then .private_key else . end')
+          JWT_PUBLIC=$(echo "$PUB_JSON" | jq -r 'if .publicKey then .publicKey elif .public_key then .public_key else . end')
+          TOKEN_BILLING=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_BILLING_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
+          TOKEN_EXECUTION=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_EXECUTION_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
+          TOKEN_AUTH_CPF=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_AUTH_CPF_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
+          echo "jwt_private<<EOF" >> $GITHUB_OUTPUT
+          echo "$JWT_PRIVATE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "jwt_public<<EOF" >> $GITHUB_OUTPUT
+          echo "$JWT_PUBLIC" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "::add-mask::$TOKEN_BILLING"
+          echo "::add-mask::$TOKEN_EXECUTION"
+          echo "::add-mask::$TOKEN_AUTH_CPF"
+          echo "token_billing=$TOKEN_BILLING" >> $GITHUB_OUTPUT
+          echo "token_execution=$TOKEN_EXECUTION" >> $GITHUB_OUTPUT
+          echo "token_auth_cpf=$TOKEN_AUTH_CPF" >> $GITHUB_OUTPUT
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -126,7 +156,11 @@ jobs:
           kubectl create secret generic oficina-secret \
             --namespace "$K8S_NAMESPACE" \
             --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
-            --from-literal=JWT_SECRET='${{ steps.jwt.outputs.jwt_secret }}' \
+            --from-literal=JWT_PRIVATE_KEY='${{ steps.secrets.outputs.jwt_private }}' \
+            --from-literal=JWT_PUBLIC_KEY='${{ steps.secrets.outputs.jwt_public }}' \
+            --from-literal=TOKEN_BILLING_OS='${{ steps.secrets.outputs.token_billing }}' \
+            --from-literal=TOKEN_EXECUTION_OS='${{ steps.secrets.outputs.token_execution }}' \
+            --from-literal=TOKEN_AUTH_CPF_OS='${{ steps.secrets.outputs.token_auth_cpf }}' \
             --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 

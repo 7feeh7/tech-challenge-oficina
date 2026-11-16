@@ -25,7 +25,7 @@ import {
  *   login → criar cliente → criar veículo → catálogo (serviço/peça)
  *   → criar OS → criar orçamento → aprovar → consultar
  *
- * Requer PostgreSQL real acessível em DATABASE_URL e JWT_SECRET definido.
+ * Requer PostgreSQL real acessível em DATABASE_URL e par RS256 (JWT_*_KEY).
  */
 describe('Fluxo completo da oficina (e2e)', () => {
   let app: NestFastifyApplication;
@@ -272,7 +272,8 @@ describe('Fluxo completo da oficina (e2e)', () => {
         perfil: 'CLIENTE',
       },
       {
-        secret: process.env.JWT_SECRET,
+        privateKey: process.env.JWT_PRIVATE_KEY,
+        algorithm: 'RS256',
         issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
         audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
       },
@@ -301,7 +302,8 @@ describe('Fluxo completo da oficina (e2e)', () => {
         perfil: 'CLIENTE',
       },
       {
-        secret: process.env.JWT_SECRET,
+        privateKey: process.env.JWT_PRIVATE_KEY,
+        algorithm: 'RS256',
         issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
         audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
       },

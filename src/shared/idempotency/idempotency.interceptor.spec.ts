@@ -1,8 +1,10 @@
 import { ConflictException, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { firstValueFrom, of, throwError } from 'rxjs';
+import { CHAMADOR_INTERNO_KEY } from '@/modules/rotas-internas/decorators/chamador-interno.decorator';
 import { IdempotencyInterceptor } from './idempotency.interceptor';
 import { IdempotencyService } from './idempotency.service';
+import { IDEMPOTENT_SCOPE_KEY } from './idempotent.decorator';
 
 describe('IdempotencyInterceptor', () => {
   const idempotency = {
@@ -43,7 +45,11 @@ describe('IdempotencyInterceptor', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    reflector.getAllAndOverride = jest.fn().mockReturnValue('scope-test');
+    reflector.getAllAndOverride = jest.fn((key: string) => {
+      if (key === CHAMADOR_INTERNO_KEY) return undefined;
+      if (key === IDEMPOTENT_SCOPE_KEY) return 'scope-test';
+      return undefined;
+    });
     idempotency.hashRequest.mockReturnValue('hash-body');
     idempotency.findReplay.mockResolvedValue(null);
     idempotency.store.mockResolvedValue(undefined);
@@ -51,10 +57,24 @@ describe('IdempotencyInterceptor', () => {
   });
 
   it('ignora interceptor quando rota não tem escopo idempotente', async () => {
-    reflector.getAllAndOverride.mockReturnValue(undefined);
+    reflector.getAllAndOverride = jest.fn(() => undefined);
 
     const result = await firstValueFrom(
       interceptor.intercept(criarContexto(), next),
+    );
+
+    expect(result).toEqual({ created: true });
+    expect(idempotency.findReplay).not.toHaveBeenCalled();
+  });
+
+  it('não intercepta rotas internas com chamador configurado', async () => {
+    reflector.getAllAndOverride = jest.fn((key: string) => {
+      if (key === CHAMADOR_INTERNO_KEY) return 'BILLING';
+      return undefined;
+    });
+
+    const result = await firstValueFrom(
+      interceptor.intercept(criarContexto({ 'idempotency-key': 'x' }), next),
     );
 
     expect(result).toEqual({ created: true });
