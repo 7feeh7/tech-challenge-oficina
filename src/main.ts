@@ -21,6 +21,7 @@ async function bootstrap() {
 
   const logger = app.get(JsonLoggerService);
   app.useLogger(logger);
+  app.enableShutdownHooks();
   registerRequestObservabilityHook(app.getHttpAdapter().getInstance(), logger);
 
   app.setGlobalPrefix('v1', {

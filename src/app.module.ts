@@ -21,10 +21,12 @@ import { IdempotencyModule } from './shared/idempotency/idempotency.module';
 import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interceptor';
 import { CorrelationIdInterceptor } from './shared/http/correlation-id.interceptor';
 import { ObservabilityModule } from './shared/observability/observability.module';
+import { MensageriaModule } from './shared/messaging/mensageria.module';
 
 @Module({
   imports: [
     ObservabilityModule,
+    MensageriaModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

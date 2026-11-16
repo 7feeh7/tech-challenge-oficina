@@ -1,0 +1,33 @@
+export const EVENTO_STATUS_CHANGED = 'ordem-servico.status-changed.v1';
+export const EVENTO_PAGAMENTO_DISPONIVEL =
+  'ordem-servico.pagamento-disponivel.v1';
+
+export const EVENTO_ORCAMENTO_GERADO = 'billing.orcamento-gerado.v1';
+export const EVENTO_ORCAMENTO_REJEITADO = 'billing.orcamento-rejeitado.v1';
+export const EVENTO_COBRANCA_CRIADA = 'billing.cobranca-criada.v1';
+export const EVENTO_PAGAMENTO_CONFIRMADO = 'billing.pagamento-confirmado.v1';
+export const EVENTO_RESPOSTA_CANCELAMENTO =
+  'billing.resposta-cancelamento-financeiro.v1';
+export const EVENTO_PENDENCIA_RESOLVIDA = 'billing.pendencia-resolvida.v1';
+export const EVENTO_ESTORNO_CONCLUIDO = 'billing.estorno-concluido.v1';
+export const EVENTO_COBRANCA_EXPIRADA = 'billing.cobranca-expirada.v1';
+export const EVENTO_PAGAMENTO_TARDIO_REGISTRADO =
+  'billing.pagamento-tardio-registrado.v1';
+export const EVENTO_SITUACAO_FINANCEIRA = 'billing.situacao-financeira.v1';
+
+export const DESTINO_FILA_BILLING = 'billing-in';
+export const DESTINO_FILA_EXECUTION = 'execution-in';
+export const DESTINO_TOPICO_NOTIFICACAO = 'sns-notificacao';
+
+export interface EnvelopeMensagem<T = unknown> {
+  eventId: string;
+  eventType: string;
+  version: number;
+  occurredAt: string;
+  source: string;
+  correlationId: string;
+  causationId: string | null;
+  ordemServicoId: string;
+  rodada: number;
+  payload: T;
+}
