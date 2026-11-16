@@ -1,3 +1,4 @@
+import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
 import { Peca } from '../../domain/entities/peca.entity';
 import {
   CodigoPecaJaExisteError,
@@ -17,7 +18,10 @@ export interface AtualizarPecaInput {
 }
 
 export class AtualizarPecaUseCase {
-  constructor(private readonly pecas: PecaGateway) {}
+  constructor(
+    private readonly pecas: PecaGateway,
+    private readonly unitOfWork: UnitOfWork,
+  ) {}
 
   async execute(id: string, input: AtualizarPecaInput): Promise<PecaOutput> {
     const peca = await this.pecas.buscarPorId(id);
@@ -47,7 +51,11 @@ export class AtualizarPecaUseCase {
       }
     }
 
-    return PecaOutputMapper.toOutput(await this.pecas.atualizar(id, peca));
+    return this.unitOfWork.executar(async (contexto) =>
+      PecaOutputMapper.toOutput(
+        await this.pecas.atualizarNoContexto(contexto, id, peca, input),
+      ),
+    );
   }
 
   private async garantirCodigoDisponivel(

@@ -25,5 +25,6 @@ export const criarGatewayMock = (): jest.Mocked<PecaGateway> => ({
   listar: jest.fn(),
   criar: jest.fn(),
   atualizar: jest.fn(),
+  atualizarNoContexto: jest.fn(),
   remover: jest.fn(),
 });

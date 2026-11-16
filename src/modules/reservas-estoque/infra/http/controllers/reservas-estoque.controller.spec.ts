@@ -3,7 +3,9 @@ import { AjustarEstoqueDivergenciaUseCase } from '@/modules/reservas-estoque/app
 
 describe('ReservasEstoqueController', () => {
   it('registra ajuste com o responsável autenticado', async () => {
-    const ajustar = { execute: jest.fn() } as unknown as AjustarEstoqueDivergenciaUseCase;
+    const ajustar = {
+      execute: jest.fn(),
+    } as unknown as AjustarEstoqueDivergenciaUseCase;
     const controller = new ReservasEstoqueController(ajustar);
 
     await controller.registrarAjusteDivergencia(
