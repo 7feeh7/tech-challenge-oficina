@@ -271,3 +271,30 @@ model IdempotencyRecord {
   @@map("idempotency_records")
 }
 
+// ===================== MENSAGERIA (outbox e consumo SQS) =====================
+
+model OutboxMensagem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  eventId            String    @unique @map("event_id") @db.Uuid
+  eventType          String    @map("event_type")
+  envelope           Json
+  correlationId      String    @map("correlation_id") @db.Uuid
+  destino            String
+  bloqueadoAte       DateTime? @map("bloqueado_ate")
+  tokenReivindicacao String?   @map("token_reivindicacao") @db.Uuid
+  enviadoEm          DateTime? @map("enviado_em")
+  tentativas         Int       @default(0)
+  criadoEm           DateTime  @default(now()) @map("criado_em")
+
+  @@index([enviadoEm, bloqueadoAte])
+  @@map("outbox_mensagens")
+}
+
+model MensagemProcessada {
+  eventId      String   @id @map("event_id") @db.Uuid
+  hashConteudo String   @map("hash_conteudo")
+  processadoEm DateTime @default(now()) @map("processado_em")
+
+  @@map("mensagens_processadas")
+}
+
