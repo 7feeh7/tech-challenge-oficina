@@ -9,6 +9,9 @@ on:
 
 env:
   DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+  JWT_SECRET: segredo-fixo-apenas-para-ci
+  JWT_ISSUER: tech-challenge-auth
+  JWT_AUDIENCE: tech-challenge-api
 
 jobs:
   titulo-conventional-commits:
@@ -29,6 +32,20 @@ jobs:
   validate:
     name: Lint, Build e Testes
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,9 +58,12 @@ jobs:
 
       - run: yarn install --frozen-lockfile
       - run: yarn prisma generate
+      - run: yarn prisma migrate deploy
       - run: yarn lint
       - run: yarn build
       - run: yarn test:cov
+      - run: yarn test:int
+      - run: yarn test:e2e
 
       # - name: Auditoria npm (alta/critica)
       #   run: yarn audit --level high

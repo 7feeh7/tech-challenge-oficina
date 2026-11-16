@@ -11,6 +11,10 @@ import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import {
+  exigirDatabaseUrl,
+  verificarConexaoPostgres,
+} from './helpers/exigir-database-integracao';
+import {
   PerfilUsuario,
   StatusOS,
   StatusOrcamento,
@@ -45,6 +49,8 @@ describe('Fluxo completo da oficina (e2e)', () => {
   let jwtService: JwtService;
 
   beforeAll(async () => {
+    exigirDatabaseUrl();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -66,6 +72,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     httpServer = app.getHttpServer();
 
     prisma = app.get(PrismaService);
+    await verificarConexaoPostgres(() => prisma.$queryRaw`SELECT 1`);
     jwtService = app.get(JwtService);
 
     const senhaHash = await bcrypt.hash(senhaPlain, 10);
@@ -281,7 +288,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         nome: 'Outro Cliente E2E',
-        cpfCnpj: '15396887700',
+        cpfCnpj: '52998224725',
         email: `outro.e2e+${Date.now()}@oficina.test`,
         telefone: '11988887777',
       })

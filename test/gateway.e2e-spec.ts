@@ -9,6 +9,10 @@ import * as bcrypt from 'bcryptjs';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/shared/database/prisma.service';
+import {
+  exigirDatabaseUrl,
+  verificarConexaoPostgres,
+} from './helpers/exigir-database-integracao';
 import { PerfilUsuario } from '../src/shared/generated/prisma/enums';
 import { JsonLoggerService } from '../src/shared/observability/json-logger.service';
 import { registerRequestObservabilityHook } from '../src/shared/observability/request-observability.hook';
@@ -23,6 +27,8 @@ describe('Gateway contract (e2e)', () => {
   const senhaPlain = 'senha-gateway-e2e';
 
   beforeAll(async () => {
+    exigirDatabaseUrl();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -52,6 +58,7 @@ describe('Gateway contract (e2e)', () => {
     await app.getHttpAdapter().getInstance().ready();
     httpServer = app.getHttpServer();
     prisma = app.get(PrismaService);
+    await verificarConexaoPostgres(() => prisma.$queryRaw`SELECT 1`);
 
     const senhaHash = await bcrypt.hash(senhaPlain, 10);
     await prisma.usuario.create({
