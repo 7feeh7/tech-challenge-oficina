@@ -8,6 +8,7 @@ export interface PecaPrisma {
   descricao: string | null;
   precoUnitario: unknown;
   quantidadeEstoque: number;
+  quantidadeReservada: number;
   estoqueMinimo: number;
   ativo: boolean;
   criadoEm: Date;

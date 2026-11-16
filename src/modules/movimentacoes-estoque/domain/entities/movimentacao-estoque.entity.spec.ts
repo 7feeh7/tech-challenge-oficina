@@ -15,7 +15,7 @@ describe('MovimentacaoEstoque', () => {
   it('soma ao saldo quando é entrada', () => {
     const entrada = new MovimentacaoEstoque(props);
 
-    expect(entrada.saldoApos(10)).toBe(15);
+    expect(entrada.saldoFisicoApos(10, 10)).toBe(15);
   });
 
   it('subtrai do saldo quando é baixa', () => {
@@ -24,7 +24,7 @@ describe('MovimentacaoEstoque', () => {
       tipo: TipoMovimentacaoEstoque.BAIXA,
     });
 
-    expect(baixa.saldoApos(10)).toBe(5);
+    expect(baixa.saldoFisicoApos(10, 10)).toBe(5);
   });
 
   it('permite baixar exatamente todo o saldo disponível', () => {
@@ -34,7 +34,7 @@ describe('MovimentacaoEstoque', () => {
       quantidade: 10,
     });
 
-    expect(baixa.saldoApos(10)).toBe(0);
+    expect(baixa.saldoFisicoApos(10, 10)).toBe(0);
   });
 
   it('recusa baixa maior que o saldo disponível', () => {
@@ -44,7 +44,9 @@ describe('MovimentacaoEstoque', () => {
       quantidade: 11,
     });
 
-    expect(() => baixa.saldoApos(10)).toThrow(EstoqueInsuficienteError);
+    expect(() => baixa.saldoFisicoApos(10, 10)).toThrow(
+      EstoqueInsuficienteError,
+    );
   });
 
   it('informa disponível e solicitado na mensagem de estoque insuficiente', () => {
@@ -54,9 +56,22 @@ describe('MovimentacaoEstoque', () => {
       quantidade: 11,
     });
 
-    expect(() => baixa.saldoApos(10)).toThrow(
+    expect(() => baixa.saldoFisicoApos(10, 10)).toThrow(
       'Estoque insuficiente. Disponível: 10, solicitado: 11.',
     );
+  });
+
+  it('baixa respeita o disponível e não o físico quando há reserva', () => {
+    const baixa = new MovimentacaoEstoque({
+      ...props,
+      tipo: TipoMovimentacaoEstoque.BAIXA,
+      quantidade: 6,
+    });
+
+    expect(() => baixa.saldoFisicoApos(20, 5)).toThrow(
+      EstoqueInsuficienteError,
+    );
+    expect(baixa.saldoFisicoApos(20, 6)).toBe(14);
   });
 
   it('não instancia movimentação com quantidade zero ou negativa', () => {

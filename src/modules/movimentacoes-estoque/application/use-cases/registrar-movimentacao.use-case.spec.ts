@@ -31,7 +31,11 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('registra a entrada somando ao saldo da peça', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(10);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 10,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 10,
+    });
 
     const result = await useCase.execute(entrada);
 
@@ -44,7 +48,11 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('registra a baixa subtraindo do saldo da peça', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(10);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 10,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 10,
+    });
 
     await useCase.execute(baixa);
 
@@ -52,7 +60,11 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('recusa baixa maior que o saldo e não grava nada', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(3);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 3,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 3,
+    });
 
     await expect(useCase.execute(baixa)).rejects.toThrow(
       EstoqueInsuficienteError,
@@ -61,7 +73,7 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('falha quando a peça não existe', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(null);
+    gateway.buscarSaldosDaPeca.mockResolvedValue(null);
 
     await expect(useCase.execute(entrada)).rejects.toThrow(
       PecaDaMovimentacaoNaoEncontradaError,
@@ -70,7 +82,11 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('permite baixar todo o saldo, zerando o estoque', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(5);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 5,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 5,
+    });
 
     await useCase.execute(baixa);
 
@@ -81,11 +97,15 @@ describe('RegistrarMovimentacaoUseCase', () => {
     await expect(
       useCase.execute({ ...entrada, quantidade: 0 }),
     ).rejects.toThrow(QuantidadeMovimentacaoInvalidaError);
-    expect(gateway.buscarSaldoDaPeca).not.toHaveBeenCalled();
+    expect(gateway.buscarSaldosDaPeca).not.toHaveBeenCalled();
   });
 
   it('mantém o vínculo com a ordem de serviço quando informado', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(10);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 10,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 10,
+    });
 
     const result = await useCase.execute({
       ...baixa,
@@ -100,7 +120,11 @@ describe('RegistrarMovimentacaoUseCase', () => {
   });
 
   it('devolve a movimentação já persistida com a peça', async () => {
-    gateway.buscarSaldoDaPeca.mockResolvedValue(10);
+    gateway.buscarSaldosDaPeca.mockResolvedValue({
+      quantidadeFisica: 10,
+      quantidadeReservada: 0,
+      quantidadeDisponivel: 10,
+    });
     gateway.registrar.mockResolvedValue(criarMovimentacaoComPecaFake());
 
     const result = await useCase.execute(entrada);

@@ -33,6 +33,16 @@ enum TipoMovimentacaoEstoque {
   BAIXA
 }
 
+enum SituacaoReservaEstoque {
+  ATIVA
+  LIBERADA
+  CONSUMIDA
+}
+
+enum TipoPendenciaOs {
+  INVENTARIO
+}
+
 enum PerfilUsuario {
   ADMINISTRADOR
   ATENDENTE
@@ -119,20 +129,79 @@ model Servico {
 }
 
 model Peca {
-  id                String               @id @default(uuid()) @db.Uuid
-  codigo            String               @unique
-  nome              String
-  descricao         String?
-  precoUnitario     Decimal              @map("preco_unitario") @db.Decimal(10, 2)
-  quantidadeEstoque Int                  @default(0) @map("quantidade_estoque")
-  estoqueMinimo     Int                  @default(0) @map("estoque_minimo")
-  ativo             Boolean              @default(true)
-  itensOrdem        OrdemServicoPeca[]
-  movimentacoes     MovimentacaoEstoque[]
-  criadoEm          DateTime             @default(now()) @map("criado_em")
-  atualizadoEm      DateTime             @updatedAt @map("atualizado_em")
+  id                  String                    @id @default(uuid()) @db.Uuid
+  codigo              String                    @unique
+  nome                String
+  descricao           String?
+  precoUnitario       Decimal                   @map("preco_unitario") @db.Decimal(10, 2)
+  quantidadeEstoque   Int                       @default(0) @map("quantidade_estoque")
+  quantidadeReservada Int                       @default(0) @map("quantidade_reservada")
+  estoqueMinimo       Int                       @default(0) @map("estoque_minimo")
+  ativo               Boolean                   @default(true)
+  itensOrdem          OrdemServicoPeca[]
+  movimentacoes       MovimentacaoEstoque[]
+  reservasEstoque     ReservaEstoque[]
+  ajustesAdministrativos AjusteEstoqueAdministrativo[]
+  criadoEm            DateTime                  @default(now()) @map("criado_em")
+  atualizadoEm        DateTime                  @updatedAt @map("atualizado_em")
 
   @@map("pecas")
+}
+
+model ReservaEstoque {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  grupoReservaId       String                 @map("grupo_reserva_id") @db.Uuid
+  ordemServicoId       String                 @map("ordem_servico_id") @db.Uuid
+  ordemServico         OrdemServico           @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  rodada               Int
+  pecaId               String                 @map("peca_id") @db.Uuid
+  peca                 Peca                   @relation(fields: [pecaId], references: [id])
+  quantidade           Int
+  quantidadeConsumida  Int                    @default(0) @map("quantidade_consumida")
+  situacao             SituacaoReservaEstoque @default(ATIVA)
+  prazoReferencia      DateTime?              @map("prazo_referencia")
+  criadoEm             DateTime               @default(now()) @map("criado_em")
+  atualizadoEm         DateTime               @updatedAt @map("atualizado_em")
+
+  @@unique([ordemServicoId, rodada, pecaId])
+  @@index([grupoReservaId])
+  @@index([ordemServicoId])
+  @@index([pecaId])
+  @@map("reservas_estoque")
+}
+
+model PendenciaOs {
+  id             String          @id @default(uuid()) @db.Uuid
+  ordemServicoId String          @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico    @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  rodada         Int
+  tipo           TipoPendenciaOs
+  resolvida      Boolean         @default(false)
+  detalhes       Json
+  resolvidaEm    DateTime?       @map("resolvida_em")
+  resolvidaPorId String?         @map("resolvida_por_id") @db.Uuid
+  criadoEm       DateTime        @default(now()) @map("criado_em")
+  ajustes        AjusteEstoqueAdministrativo[]
+
+  @@index([ordemServicoId, resolvida])
+  @@map("pendencias_os")
+}
+
+model AjusteEstoqueAdministrativo {
+  id                      String       @id @default(uuid()) @db.Uuid
+  pecaId                  String       @map("peca_id") @db.Uuid
+  peca                    Peca         @relation(fields: [pecaId], references: [id])
+  ordemServicoId          String?      @map("ordem_servico_id") @db.Uuid
+  pendenciaId             String?      @map("pendencia_id") @db.Uuid
+  pendencia               PendenciaOs? @relation(fields: [pendenciaId], references: [id], onDelete: SetNull)
+  quantidadeFisicaAnterior Int         @map("quantidade_fisica_anterior")
+  quantidadeFisicaNova    Int          @map("quantidade_fisica_nova")
+  motivo                  String       @db.VarChar(500)
+  responsavelId           String       @map("responsavel_id") @db.Uuid
+  criadoEm                DateTime     @default(now()) @map("criado_em")
+
+  @@index([pecaId])
+  @@map("ajustes_estoque_administrativos")
 }
 
 // ===================== ORDEM DE SERVIÇO =====================
@@ -152,6 +221,8 @@ model OrdemServico {
   orcamentos        Orcamento[]
   historicoStatus    HistoricoStatusOS[]
   movimentacoesEstoque MovimentacaoEstoque[]
+  reservasEstoque      ReservaEstoque[]
+  pendencias           PendenciaOs[]
   iniciadaEm         DateTime?            @map("iniciada_em")
   finalizadaEm       DateTime?            @map("finalizada_em")
   entregueEm         DateTime?            @map("entregue_em")

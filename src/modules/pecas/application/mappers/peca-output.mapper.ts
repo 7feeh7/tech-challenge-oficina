@@ -7,6 +7,7 @@ export interface PecaOutput {
   descricao: string | null;
   precoUnitario: number;
   quantidadeEstoque: number;
+  quantidadeDisponivel: number;
   estoqueMinimo: number;
   ativo: boolean;
 }
@@ -20,6 +21,7 @@ export class PecaOutputMapper {
       descricao: peca.descricao,
       precoUnitario: peca.precoUnitario,
       quantidadeEstoque: peca.quantidadeEstoque,
+      quantidadeDisponivel: peca.quantidadeDisponivel,
       estoqueMinimo: peca.estoqueMinimo,
       ativo: peca.ativo,
     };

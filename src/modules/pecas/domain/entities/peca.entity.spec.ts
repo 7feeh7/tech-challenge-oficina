@@ -17,6 +17,16 @@ const props = {
 };
 
 describe('Peca', () => {
+  it('calcula disponível como físico menos reservado', () => {
+    const peca = new Peca({
+      ...props,
+      quantidadeEstoque: 20,
+      quantidadeReservada: 7,
+    });
+
+    expect(peca.quantidadeDisponivel).toBe(13);
+  });
+
   it('normaliza o código para caixa alta', () => {
     const peca = new Peca({ ...props, codigo: ' flt-001 ' });
 
@@ -32,6 +42,8 @@ describe('Peca', () => {
 
     expect(peca.ativo).toBe(true);
     expect(peca.quantidadeEstoque).toBe(0);
+    expect(peca.quantidadeReservada).toBe(0);
+    expect(peca.quantidadeDisponivel).toBe(0);
     expect(peca.estoqueMinimo).toBe(0);
   });
 
