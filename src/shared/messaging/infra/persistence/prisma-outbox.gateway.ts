@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
+import type { Prisma } from '@/shared/generated/prisma/client';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import type {
   OutboxGateway,
@@ -20,7 +21,7 @@ export class PrismaOutboxGateway implements OutboxGateway {
       data: {
         eventId: input.eventId,
         eventType: input.eventType,
-        envelope: input.envelope,
+        envelope: input.envelope as unknown as Prisma.InputJsonValue,
         correlationId: input.correlationId,
         destino: input.destino,
       },

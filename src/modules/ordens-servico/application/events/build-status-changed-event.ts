@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { getCorrelationId } from '@/shared/http/correlation-id.context';
+import { requireCorrelationId } from '@/shared/http/correlation-id.context';
 import { NotificacaoDeStatus } from '../ports/notificador-status.gateway';
 import {
   STATUS_CHANGED_EVENT_TYPE,
@@ -15,7 +15,7 @@ export function buildStatusChangedEvent(
     eventId: randomUUID(),
     eventType: STATUS_CHANGED_EVENT_TYPE,
     occurredAt: new Date().toISOString(),
-    correlationId: getCorrelationId(),
+    correlationId: requireCorrelationId(),
     ordemServicoId: notificacao.ordemServicoId,
     numeroOS: notificacao.numeroOS,
     statusAnterior: notificacao.statusAnterior,

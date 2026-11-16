@@ -87,11 +87,13 @@ describe('Gateway contract (e2e)', () => {
   it('GET /health stays outside /v1 and returns correlation id', async () => {
     const res = await request(httpServer)
       .get('/health')
-      .set('X-Correlation-Id', 'corr-test-123')
+      .set('X-Correlation-Id', '550e8400-e29b-41d4-a716-446655440123')
       .expect(200);
 
     expect(res.body.status).toBe('ok');
-    expect(res.headers['x-correlation-id']).toBe('corr-test-123');
+    expect(res.headers['x-correlation-id']).toBe(
+      '550e8400-e29b-41d4-a716-446655440123',
+    );
   });
 
   it('creates correlation id when header is absent', async () => {

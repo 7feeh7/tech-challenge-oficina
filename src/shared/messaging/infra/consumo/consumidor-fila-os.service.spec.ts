@@ -1,7 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { ProcessarMensagemEntradaService } from '../../application/services/processar-mensagem-entrada.service';
 import { ConteudoMensagemDivergenteError } from '../../domain/mensageria.errors';
+import {
+  criarMessagingMetricsFake,
+  criarOsMetricsMensageriaFake,
+} from '../../testing/observabilidade-mensageria.test-doubles';
 import { ConsumidorFilaOsService } from './consumidor-fila-os.service';
+
+const mensageriaMetrics = criarMessagingMetricsFake();
+const osMetrics = criarOsMetricsMensageriaFake();
 
 const envelopeValido = {
   eventId: '550e8400-e29b-41d4-a716-446655440099',
@@ -41,7 +48,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.poller();
 
     expect(processar.executar).toHaveBeenCalled();
@@ -70,7 +83,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(fila.confirmar).not.toHaveBeenCalled();
   });
@@ -96,7 +115,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(fila.enviarCorpoBruto).toHaveBeenCalledWith(
       'dlq',
@@ -127,7 +152,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(corpoNaoJson, 'rh');
     expect(fila.enviarCorpoBruto).toHaveBeenCalledWith(
       'dlq',
@@ -156,7 +187,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(fila.confirmar).not.toHaveBeenCalled();
   });
@@ -185,7 +222,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.poller();
     expect(processar.executar).toHaveBeenCalledTimes(2);
     expect(fila.confirmar).toHaveBeenCalledWith('url', 'rh2');
@@ -205,6 +248,8 @@ describe('ConsumidorFilaOsService', () => {
       config,
       { receber: jest.fn() } as never,
       { executar: jest.fn() } as never,
+      mensageriaMetrics,
+      osMetrics,
     );
     consumidor.onModuleInit();
     expect((consumidor as { agendador?: unknown }).agendador).toBeDefined();
@@ -230,7 +275,13 @@ describe('ConsumidorFilaOsService', () => {
         return undefined;
       }),
     } as unknown as ConfigService;
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(fila.confirmar).not.toHaveBeenCalled();
   });
@@ -252,7 +303,13 @@ describe('ConsumidorFilaOsService', () => {
       }),
     } as unknown as ConfigService;
 
-    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    const consumidor = new ConsumidorFilaOsService(
+      config,
+      fila,
+      processar,
+      mensageriaMetrics,
+      osMetrics,
+    );
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(processar.executar).toHaveBeenCalled();
     expect(fila.confirmar).toHaveBeenCalled();
@@ -266,6 +323,8 @@ describe('ConsumidorFilaOsService', () => {
       config,
       { receber: jest.fn() } as never,
       { executar: jest.fn() } as never,
+      mensageriaMetrics,
+      osMetrics,
     );
     consumidor.onModuleInit();
     expect((consumidor as { agendador?: unknown }).agendador).toBeUndefined();

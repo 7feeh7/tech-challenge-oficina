@@ -9,7 +9,10 @@ jest.mock('@/tracer', () => ({
   },
 }));
 
-import { getActiveTraceIds } from './trace-context';
+import {
+  getActiveTraceIds,
+  tagActiveSpanWithCorrelation,
+} from './trace-context';
 
 describe('getActiveTraceIds', () => {
   beforeEach(() => {
@@ -34,5 +37,28 @@ describe('getActiveTraceIds', () => {
       traceId: 'trace-1',
       spanId: 'span-1',
     });
+  });
+});
+
+describe('tagActiveSpanWithCorrelation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('ignora tag quando correlation id está ausente', () => {
+    tagActiveSpanWithCorrelation(undefined);
+    expect(mockActive).not.toHaveBeenCalled();
+  });
+
+  it('marca span ativo com correlation_id', () => {
+    const setTag = jest.fn();
+    mockActive.mockReturnValue({ setTag });
+
+    tagActiveSpanWithCorrelation('550e8400-e29b-41d4-a716-446655440000');
+
+    expect(setTag).toHaveBeenCalledWith(
+      'correlation_id',
+      '550e8400-e29b-41d4-a716-446655440000',
+    );
   });
 });

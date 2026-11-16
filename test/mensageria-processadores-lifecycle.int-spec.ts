@@ -9,6 +9,14 @@ import {
 import { ProcessarMensagemEntradaService } from '@/shared/messaging/application/services/processar-mensagem-entrada.service';
 import { ConsumidorFilaOsService } from '@/shared/messaging/infra/consumo/consumidor-fila-os.service';
 import { PublicadorOutboxService } from '@/shared/messaging/infra/outbox/publicador-outbox.service';
+import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { MessagingMetricsService } from '@/shared/observability/messaging-metrics.service';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
+import {
+  criarJsonLoggerMensageriaFake,
+  criarMessagingMetricsFake,
+  criarOsMetricsMensageriaFake,
+} from '@/shared/messaging/testing/observabilidade-mensageria.test-doubles';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
 
 describe('Lifecycle dos processadores de mensageria', () => {
@@ -71,6 +79,18 @@ describe('Lifecycle dos processadores de mensageria', () => {
         },
         { provide: FILA_MENSAGENS, useValue: fila },
         { provide: PUBLICACAO_NOTIFICACAO, useValue: { publicar: jest.fn() } },
+        {
+          provide: JsonLoggerService,
+          useValue: criarJsonLoggerMensageriaFake(),
+        },
+        {
+          provide: MessagingMetricsService,
+          useValue: criarMessagingMetricsFake(),
+        },
+        {
+          provide: OsMetricsService,
+          useValue: criarOsMetricsMensageriaFake(),
+        },
       ],
     }).compile();
 

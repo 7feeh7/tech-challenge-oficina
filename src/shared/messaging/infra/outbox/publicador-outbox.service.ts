@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { correlationIdStorage } from '@/shared/http/correlation-id.context';
+import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { MessagingMetricsService } from '@/shared/observability/messaging-metrics.service';
+import { tagActiveSpanWithCorrelation } from '@/shared/observability/trace-context';
 import { calcularBloqueadoAteRetentativaOutbox } from '../../application/calcular-espera-retentativa-outbox';
 import type { PublicacaoNotificacaoGateway } from '../../application/ports/publicacao-notificacao.gateway';
 import type { FilaMensagensGateway } from '../../application/ports/fila-mensagens.gateway';
@@ -41,6 +45,8 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     private readonly fila: FilaMensagensGateway,
     @Inject(PUBLICACAO_NOTIFICACAO)
     private readonly notificacao: PublicacaoNotificacaoGateway,
+    private readonly jsonLogger: JsonLoggerService,
+    private readonly mensageriaMetrics: MessagingMetricsService,
   ) {
     this.habilitado =
       this.config.get<string>('OUTBOX_PUBLISHER_HABILITADO') === 'true';
@@ -82,6 +88,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     for (const mensagem of mensagens) {
       await this.publicarMensagemReivindicada(mensagem);
     }
+    await this.mensageriaMetrics.recordOutboxBacklog();
   }
 
   async reivindicarLote(): Promise<
@@ -133,7 +140,17 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     if (!token) return;
 
     try {
-      await this.enviarParaDestino(mensagem.destino, mensagem);
+      await correlationIdStorage.run(
+        {
+          correlationId: mensagem.correlationId,
+          requestId: randomUUID(),
+          eventId: mensagem.eventId,
+        },
+        async () => {
+          tagActiveSpanWithCorrelation(mensagem.correlationId);
+          await this.enviarParaDestino(mensagem.destino, mensagem);
+        },
+      );
       const confirmado = await this.prisma.outboxMensagem.updateMany({
         where: {
           id: mensagem.id,
@@ -147,14 +164,43 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
         },
       });
       if (confirmado.count === 0) {
-        this.logger.warn(
-          `Fencing: confirmação de envio ignorada para outbox ${mensagem.id}`,
+        correlationIdStorage.run(
+          {
+            correlationId: mensagem.correlationId,
+            requestId: randomUUID(),
+            eventId: mensagem.eventId,
+          },
+          () => {
+            tagActiveSpanWithCorrelation(mensagem.correlationId);
+            this.jsonLogger.logWithMeta(
+              'warn',
+              'outbox.publicacao.fencing',
+              { outboxId: mensagem.id },
+              'OutboxPublicador',
+            );
+          },
         );
       }
     } catch (erro) {
-      this.logger.warn(
-        `Falha ao publicar evento ${mensagem.eventId}`,
-        erro instanceof Error ? erro.message : erro,
+      this.mensageriaMetrics.recordPublicacaoFalha();
+      correlationIdStorage.run(
+        {
+          correlationId: mensagem.correlationId,
+          requestId: randomUUID(),
+          eventId: mensagem.eventId,
+        },
+        () => {
+          tagActiveSpanWithCorrelation(mensagem.correlationId);
+          this.jsonLogger.logWithMeta(
+            'warn',
+            'outbox.publicacao.falha',
+            {
+              eventId: mensagem.eventId,
+              error: erro instanceof Error ? erro.message : 'erro desconhecido',
+            },
+            'OutboxPublicador',
+          );
+        },
       );
       const tentativasAtuais = mensagem.tentativas ?? 0;
       const novasTentativas = tentativasAtuais + 1;

@@ -2,6 +2,7 @@ const mockIncrement = jest.fn();
 const mockDistribution = jest.fn();
 const mockHistogram = jest.fn();
 const mockTiming = jest.fn();
+const mockGauge = jest.fn();
 
 jest.mock('@/tracer', () => ({
   __esModule: true,
@@ -11,6 +12,7 @@ jest.mock('@/tracer', () => ({
       distribution: mockDistribution,
       histogram: mockHistogram,
       timing: mockTiming,
+      gauge: mockGauge,
     },
   },
 }));
@@ -58,6 +60,16 @@ describe('MetricsService', () => {
     service.timing(METRIC_NAMES.osTempoPorStatus, 150, ['status:FINALIZADA']);
 
     expect(mockHistogram).toHaveBeenCalledTimes(2);
+  });
+
+  it('registra gauge com tags base', () => {
+    service.gauge(METRIC_NAMES.outboxPendentes, 2);
+
+    expect(mockGauge).toHaveBeenCalledWith(
+      METRIC_NAMES.outboxPendentes,
+      2,
+      expect.arrayContaining(['service:oficina-api']),
+    );
   });
 
   it('nao propaga erro quando dogstatsd falha', () => {
