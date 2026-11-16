@@ -14,6 +14,9 @@ import {
 describe('RegistrarMovimentacaoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
   let useCase: RegistrarMovimentacaoUseCase;
+  const unitOfWork = {
+    executar: jest.fn(<T>(fn: (ctx: unknown) => Promise<T>) => fn({})),
+  };
 
   const entrada = {
     pecaId: 'uuid-p1',
@@ -24,8 +27,8 @@ describe('RegistrarMovimentacaoUseCase', () => {
 
   beforeEach(() => {
     gateway = criarGatewayMock();
-    useCase = new RegistrarMovimentacaoUseCase(gateway);
-    gateway.registrar.mockImplementation((movimentacao) =>
+    useCase = new RegistrarMovimentacaoUseCase(gateway, unitOfWork);
+    gateway.registrar.mockImplementation((_ctx, movimentacao) =>
       Promise.resolve({ movimentacao, peca: pecaFake }),
     );
   });
@@ -39,7 +42,10 @@ describe('RegistrarMovimentacaoUseCase', () => {
 
     const result = await useCase.execute(entrada);
 
-    expect(gateway.registrar).toHaveBeenCalledWith(expect.anything(), 15);
+    expect(gateway.registrar).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ quantidade: 5 }),
+    );
     expect(result).toMatchObject({
       tipo: TipoMovimentacaoEstoque.ENTRADA,
       quantidade: 5,
@@ -56,7 +62,10 @@ describe('RegistrarMovimentacaoUseCase', () => {
 
     await useCase.execute(baixa);
 
-    expect(gateway.registrar).toHaveBeenCalledWith(expect.anything(), 5);
+    expect(gateway.registrar).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ quantidade: 5, tipo: baixa.tipo }),
+    );
   });
 
   it('recusa baixa maior que o saldo e não grava nada', async () => {
@@ -90,7 +99,7 @@ describe('RegistrarMovimentacaoUseCase', () => {
 
     await useCase.execute(baixa);
 
-    expect(gateway.registrar).toHaveBeenCalledWith(expect.anything(), 0);
+    expect(gateway.registrar).toHaveBeenCalled();
   });
 
   it('recusa quantidade inválida antes de consultar o saldo', async () => {

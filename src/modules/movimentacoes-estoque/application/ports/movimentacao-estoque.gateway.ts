@@ -1,3 +1,4 @@
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { MovimentacaoEstoque } from '../../domain/entities/movimentacao-estoque.entity';
 
 /** Peça na visão da movimentação: só o necessário para identificá-la. */
@@ -32,11 +33,11 @@ export interface MovimentacaoEstoqueGateway {
     pecaId?: string,
   ): Promise<PaginaMovimentacoes>;
   /**
-   * Grava a movimentação e ajusta o saldo da peça na MESMA transação — as duas
-   * escritas precisam acontecer juntas, ou o histórico e o saldo divergem.
+   * Bloqueia a peça, aplica entrada/baixa com UPDATE relativo e grava o histórico
+   * na mesma transação do Unit of Work (D2.20, D3.16).
    */
   registrar(
+    contexto: ContextoTransacao,
     movimentacao: MovimentacaoEstoque,
-    novoSaldo: number,
   ): Promise<MovimentacaoComPeca>;
 }

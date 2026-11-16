@@ -10,10 +10,16 @@ describe('AtualizarPecaUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
   let useCase: AtualizarPecaUseCase;
 
+  const unitOfWork = {
+    executar: jest.fn(<T>(fn: (ctx: unknown) => Promise<T>) => fn({})),
+  };
+
   beforeEach(() => {
     gateway = criarGatewayMock();
-    useCase = new AtualizarPecaUseCase(gateway);
-    gateway.atualizar.mockImplementation((_id, peca) => Promise.resolve(peca));
+    useCase = new AtualizarPecaUseCase(gateway, unitOfWork);
+    gateway.atualizarNoContexto.mockImplementation((_ctx, _id, peca) =>
+      Promise.resolve(peca),
+    );
   });
 
   it('aplica as alterações pelos comportamentos da entidade', async () => {
@@ -45,7 +51,7 @@ describe('AtualizarPecaUseCase', () => {
     await expect(
       useCase.execute('inexistente', { precoUnitario: 10 }),
     ).rejects.toThrow(PecaNaoEncontradaError);
-    expect(gateway.atualizar).not.toHaveBeenCalled();
+    expect(gateway.atualizarNoContexto).not.toHaveBeenCalled();
   });
 
   it('recusa código já usado por outra peça', async () => {
@@ -55,7 +61,7 @@ describe('AtualizarPecaUseCase', () => {
     await expect(
       useCase.execute('uuid-p1', { codigo: 'FLT-999' }),
     ).rejects.toThrow(CodigoPecaJaExisteError);
-    expect(gateway.atualizar).not.toHaveBeenCalled();
+    expect(gateway.atualizarNoContexto).not.toHaveBeenCalled();
   });
 
   it('não checa duplicidade quando o código informado é o mesmo da peça', async () => {
@@ -64,7 +70,7 @@ describe('AtualizarPecaUseCase', () => {
     await useCase.execute('uuid-p1', { codigo: ' flt-001 ' });
 
     expect(gateway.codigoPertenceAOutraPeca).not.toHaveBeenCalled();
-    expect(gateway.atualizar).toHaveBeenCalled();
+    expect(gateway.atualizarNoContexto).toHaveBeenCalled();
   });
 
   it('não permite deixar o estoque negativo', async () => {
@@ -73,6 +79,6 @@ describe('AtualizarPecaUseCase', () => {
     await expect(
       useCase.execute('uuid-p1', { quantidadeEstoque: -1 }),
     ).rejects.toThrow(QuantidadeEstoqueInvalidaError);
-    expect(gateway.atualizar).not.toHaveBeenCalled();
+    expect(gateway.atualizarNoContexto).not.toHaveBeenCalled();
   });
 });

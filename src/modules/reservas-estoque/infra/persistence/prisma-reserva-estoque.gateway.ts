@@ -1,14 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { devePersistirResultadoIdempotente } from '@/shared/idempotency/idempotencia-interna';
 import {
+  EstoqueFisicoAbaixoReservadoError,
   EstoqueInsuficienteReservaError,
+  MotivoAjusteAdministrativoInvalidoError,
   PendenciaInventarioJaResolvidaError,
   PendenciaInventarioNaoEncontradaError,
   ConteudoIdempotenciaDivergenteError,
+  PecaNaoConstaDivergenciaError,
+  ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
 } from '../../domain/errors/reserva-estoque.errors';
 import { SituacaoReservaEstoque } from '@/shared/generated/prisma/enums';
@@ -25,8 +29,32 @@ import { PrismaReservaEstoqueMapper } from './prisma-reserva-estoque.mapper';
 
 const TTL_HORAS = 24;
 
+type ClienteTransacao = ReturnType<typeof obterClienteTransacao>;
+
+interface ReservaBloqueadaRow {
+  id: string;
+  grupo_reserva_id: string;
+  ordem_servico_id: string;
+  rodada: number;
+  peca_id: string;
+  quantidade: number;
+  quantidade_consumida: number;
+  situacao: string;
+  prazo_referencia: Date | null;
+}
+
+interface PendenciaBloqueadaRow {
+  id: string;
+  ordem_servico_id: string;
+  rodada: number;
+  resolvida: boolean;
+  detalhes: { divergencias?: { pecaId: string }[] };
+}
+
 @Injectable()
 export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
+  private readonly logger = new Logger(PrismaReservaEstoqueGateway.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async buscarIdempotencia<T>(
@@ -109,6 +137,12 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     const itensOrdenados = [...agregados.entries()]
       .map(([pecaId, quantidade]) => ({ pecaId, quantidade }))
       .sort((a, b) => a.pecaId.localeCompare(b.pecaId));
+
+    await this.bloquearReservasAtivas(
+      cliente,
+      input.ordemServicoId,
+      input.rodada,
+    );
 
     const saldos = new Map<string, SaldoPecaEstoque>();
     for (const item of itensOrdenados) {
@@ -206,26 +240,32 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     rodada: number,
   ): Promise<LinhaReservaEstoque[]> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const linhas = await cliente.reservaEstoque.findMany({
-      where: {
-        ordemServicoId,
-        rodada,
-        situacao: SituacaoReservaEstoque.ATIVA,
-      },
-      orderBy: { pecaId: 'asc' },
-    });
+    const linhas = await this.bloquearReservasAtivas(
+      cliente,
+      ordemServicoId,
+      rodada,
+    );
 
     if (linhas.length === 0) {
+      const possuiAlgumaReserva = await cliente.reservaEstoque.findFirst({
+        where: { ordemServicoId, rodada },
+        select: { id: true },
+      });
+      if (!possuiAlgumaReserva) {
+        throw new ReservaEstoqueNaoEncontradaError(ordemServicoId, rodada);
+      }
       return [];
     }
 
+    const idsProcessados: string[] = [];
+
     for (const linha of linhas) {
-      await this.bloquearPeca(cliente, linha.pecaId);
+      await this.bloquearPeca(cliente, linha.peca_id);
 
       const liberado = await cliente.$executeRaw`
         UPDATE pecas
         SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
-        WHERE id = ${linha.pecaId}::uuid
+        WHERE id = ${linha.peca_id}::uuid
           AND quantidade_reservada >= ${linha.quantidade}
       `;
 
@@ -233,18 +273,21 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
         throw new ReservaJaProcessadaError();
       }
 
-      await cliente.reservaEstoque.update({
-        where: { id: linha.id },
-        data: { situacao: SituacaoReservaEstoque.LIBERADA },
-      });
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.LIBERADA,
+        {},
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
+
+      idsProcessados.push(linha.id);
     }
 
     const atualizadas = await cliente.reservaEstoque.findMany({
-      where: {
-        ordemServicoId,
-        rodada,
-        id: { in: linhas.map((l) => l.id) },
-      },
+      where: { id: { in: idsProcessados } },
     });
 
     return atualizadas.map((raw) => PrismaReservaEstoqueMapper.toLinha(raw));
@@ -259,20 +302,49 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     },
   ): Promise<ResultadoConsumoReserva> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const linhasAtivas = await cliente.reservaEstoque.findMany({
-      where: {
-        ordemServicoId: input.ordemServicoId,
-        rodada: input.rodada,
-        situacao: SituacaoReservaEstoque.ATIVA,
-      },
-    });
+    const linhasAtivas = await this.bloquearReservasAtivas(
+      cliente,
+      input.ordemServicoId,
+      input.rodada,
+    );
 
-    const mapaReservas = new Map(linhasAtivas.map((l) => [l.pecaId, l]));
+    if (linhasAtivas.length === 0) {
+      const possuiAlgumaReserva = await cliente.reservaEstoque.findFirst({
+        where: {
+          ordemServicoId: input.ordemServicoId,
+          rodada: input.rodada,
+        },
+        select: { id: true },
+      });
+      if (!possuiAlgumaReserva) {
+        throw new ReservaEstoqueNaoEncontradaError(
+          input.ordemServicoId,
+          input.rodada,
+        );
+      }
+      throw new ReservaJaProcessadaError();
+    }
+
+    const mapaReservas = new Map(linhasAtivas.map((l) => [l.peca_id, l]));
     const divergencias: ResultadoConsumoReserva['divergencias'] = [];
 
+    const itensOrdenados = [...input.itensUtilizados].sort((a, b) =>
+      a.pecaId.localeCompare(b.pecaId),
+    );
     const pecasProcessadas = new Set<string>();
 
-    for (const item of input.itensUtilizados) {
+    const pecaIdsOrdenados = [
+      ...new Set<string>([
+        ...linhasAtivas.map((l) => l.peca_id),
+        ...itensOrdenados.map((i) => i.pecaId),
+      ]),
+    ].sort((a, b) => a.localeCompare(b));
+
+    for (const pecaId of pecaIdsOrdenados) {
+      await this.bloquearPeca(cliente, pecaId);
+    }
+
+    for (const item of itensOrdenados) {
       const linha = mapaReservas.get(item.pecaId);
       if (!linha) {
         divergencias.push({
@@ -296,52 +368,55 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       const utilizada = Math.min(item.quantidade, linha.quantidade);
       pecasProcessadas.add(item.pecaId);
 
-      await this.bloquearPeca(cliente, linha.pecaId);
-
       const consumoFisico = await cliente.$executeRaw`
-      UPDATE pecas
-      SET quantidade_estoque = quantidade_estoque - ${utilizada},
-          quantidade_reservada = quantidade_reservada - ${linha.quantidade}
-      WHERE id = ${linha.pecaId}::uuid
-        AND quantidade_estoque >= ${utilizada}
-        AND quantidade_reservada >= ${linha.quantidade}
-    `;
+        UPDATE pecas
+        SET quantidade_estoque = quantidade_estoque - ${utilizada},
+            quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_estoque >= ${utilizada}
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
 
       if (consumoFisico !== 1) {
         throw new ReservaJaProcessadaError();
       }
 
-      await cliente.reservaEstoque.update({
-        where: { id: linha.id },
-        data: {
-          quantidadeConsumida: utilizada,
-          situacao: SituacaoReservaEstoque.CONSUMIDA,
-        },
-      });
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.CONSUMIDA,
+        { quantidadeConsumida: utilizada },
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
     }
 
     for (const linha of linhasAtivas) {
-      if (pecasProcessadas.has(linha.pecaId)) {
+      if (pecasProcessadas.has(linha.peca_id)) {
         continue;
       }
 
-      await this.bloquearPeca(cliente, linha.pecaId);
-
       const liberado = await cliente.$executeRaw`
-      UPDATE pecas
-      SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
-      WHERE id = ${linha.pecaId}::uuid
-        AND quantidade_reservada >= ${linha.quantidade}
-    `;
+        UPDATE pecas
+        SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
 
       if (liberado !== 1) {
         throw new ReservaJaProcessadaError();
       }
 
-      await cliente.reservaEstoque.update({
-        where: { id: linha.id },
-        data: { situacao: SituacaoReservaEstoque.LIBERADA },
-      });
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.LIBERADA,
+        {},
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
     }
 
     const linhasAtualizadas = await cliente.reservaEstoque.findMany({
@@ -400,11 +475,20 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       responsavelId: string;
     },
   ): Promise<void> {
-    const cliente = obterClienteTransacao(contexto, this.prisma);
-    const pendencia = await cliente.pendenciaOs.findUnique({
-      where: { id: input.pendenciaId },
-    });
+    const motivoNormalizado = input.motivo.trim();
+    if (!motivoNormalizado) {
+      throw new MotivoAjusteAdministrativoInvalidoError();
+    }
 
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const pendenciaRows = await cliente.$queryRaw<PendenciaBloqueadaRow[]>`
+      SELECT id, ordem_servico_id, rodada, resolvida, detalhes
+      FROM pendencias_os
+      WHERE id = ${input.pendenciaId}::uuid
+      FOR UPDATE
+    `;
+
+    const pendencia = pendenciaRows[0];
     if (!pendencia) {
       throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
     }
@@ -413,46 +497,127 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       throw new PendenciaInventarioJaResolvidaError();
     }
 
-    await this.bloquearPeca(cliente, input.pecaId);
-    const peca = await cliente.peca.findUniqueOrThrow({
-      where: { id: input.pecaId },
-      select: { quantidadeEstoque: true, quantidadeReservada: true },
-    });
-
-    if (input.quantidadeFisicaNova < peca.quantidadeReservada) {
-      throw new ReservaJaProcessadaError();
+    const divergencias = pendencia.detalhes?.divergencias ?? [];
+    if (!divergencias.some((d) => d.pecaId === input.pecaId)) {
+      throw new PecaNaoConstaDivergenciaError(input.pecaId);
     }
 
-    await cliente.peca.update({
-      where: { id: input.pecaId },
-      data: { quantidadeEstoque: input.quantidadeFisicaNova },
-    });
+    await this.bloquearReservasAtivas(
+      cliente,
+      pendencia.ordem_servico_id,
+      pendencia.rodada,
+    );
+
+    const saldo = await this.bloquearPeca(cliente, input.pecaId);
+    if (!saldo) {
+      throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
+    }
+
+    if (input.quantidadeFisicaNova < saldo.quantidadeReservada) {
+      throw new EstoqueFisicoAbaixoReservadoError();
+    }
+
+    const fisicoAtualizado = await cliente.$executeRaw`
+      UPDATE pecas
+      SET quantidade_estoque = ${input.quantidadeFisicaNova}
+      WHERE id = ${input.pecaId}::uuid
+        AND quantidade_reservada <= ${input.quantidadeFisicaNova}
+    `;
+
+    if (fisicoAtualizado !== 1) {
+      throw new EstoqueFisicoAbaixoReservadoError();
+    }
 
     await cliente.ajusteEstoqueAdministrativo.create({
       data: {
         id: randomUUID(),
         pecaId: input.pecaId,
-        ordemServicoId: pendencia.ordemServicoId,
+        ordemServicoId: pendencia.ordem_servico_id,
         pendenciaId: pendencia.id,
-        quantidadeFisicaAnterior: peca.quantidadeEstoque,
+        quantidadeFisicaAnterior: saldo.quantidadeFisica,
         quantidadeFisicaNova: input.quantidadeFisicaNova,
-        motivo: input.motivo,
+        motivo: motivoNormalizado,
         responsavelId: input.responsavelId,
       },
     });
 
-    await cliente.pendenciaOs.update({
-      where: { id: pendencia.id },
-      data: {
-        resolvida: true,
-        resolvidaEm: new Date(),
-        resolvidaPorId: input.responsavelId,
-      },
+    const resolvida = await cliente.$executeRaw`
+      UPDATE pendencias_os
+      SET resolvida = true,
+          resolvida_em = NOW(),
+          resolvida_por_id = ${input.responsavelId}::uuid
+      WHERE id = ${input.pendenciaId}::uuid
+        AND resolvida = false
+    `;
+
+    if (resolvida !== 1) {
+      throw new PendenciaInventarioJaResolvidaError();
+    }
+
+    this.logger.log({
+      message: 'estoque.ajuste_administrativo',
+      pendenciaId: pendencia.id,
+      pecaId: input.pecaId,
+      ordemServicoId: pendencia.ordem_servico_id,
+      quantidadeFisicaAnterior: saldo.quantidadeFisica,
+      quantidadeFisicaNova: input.quantidadeFisicaNova,
+      responsavelId: input.responsavelId,
     });
   }
 
+  private async bloquearReservasAtivas(
+    cliente: ClienteTransacao,
+    ordemServicoId: string,
+    rodada: number,
+  ): Promise<ReservaBloqueadaRow[]> {
+    return cliente.$queryRaw<ReservaBloqueadaRow[]>`
+      SELECT
+        id,
+        grupo_reserva_id,
+        ordem_servico_id,
+        rodada,
+        peca_id,
+        quantidade,
+        quantidade_consumida,
+        situacao,
+        prazo_referencia
+      FROM reservas_estoque
+      WHERE ordem_servico_id = ${ordemServicoId}::uuid
+        AND rodada = ${rodada}
+        AND situacao = 'ATIVA'
+      ORDER BY peca_id
+      FOR UPDATE
+    `;
+  }
+
+  private async transicionarReserva(
+    cliente: ClienteTransacao,
+    reservaId: string,
+    situacaoNova: SituacaoReservaEstoque,
+    extras: { quantidadeConsumida?: number },
+  ): Promise<boolean> {
+    if (extras.quantidadeConsumida !== undefined) {
+      const linhas = await cliente.$executeRaw`
+        UPDATE reservas_estoque
+        SET situacao = ${situacaoNova},
+            quantidade_consumida = ${extras.quantidadeConsumida}
+        WHERE id = ${reservaId}::uuid
+          AND situacao = 'ATIVA'
+      `;
+      return linhas === 1;
+    }
+
+    const linhas = await cliente.$executeRaw`
+      UPDATE reservas_estoque
+      SET situacao = ${situacaoNova}
+      WHERE id = ${reservaId}::uuid
+        AND situacao = 'ATIVA'
+    `;
+    return linhas === 1;
+  }
+
   private async bloquearPeca(
-    cliente: ReturnType<typeof obterClienteTransacao>,
+    cliente: ClienteTransacao,
     pecaId: string,
   ): Promise<SaldoPecaEstoque | null> {
     const rows = await cliente.$queryRaw<

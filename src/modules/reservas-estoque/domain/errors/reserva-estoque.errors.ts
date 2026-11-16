@@ -56,3 +56,25 @@ export class PendenciaInventarioJaResolvidaError extends DomainConflictError {
     super('A pendência de inventário já foi resolvida.');
   }
 }
+
+export class EstoqueFisicoAbaixoReservadoError extends DomainConflictError {
+  constructor() {
+    super(
+      'A quantidade física não pode ficar abaixo da quantidade reservada da peça.',
+    );
+  }
+}
+
+export class PecaNaoConstaDivergenciaError extends DomainValidationError {
+  constructor(pecaId: string) {
+    super(
+      `A peça "${pecaId}" não consta das divergências da pendência de inventário.`,
+    );
+  }
+}
+
+export class MotivoAjusteAdministrativoInvalidoError extends DomainValidationError {
+  constructor() {
+    super('O motivo do ajuste administrativo é obrigatório.');
+  }
+}

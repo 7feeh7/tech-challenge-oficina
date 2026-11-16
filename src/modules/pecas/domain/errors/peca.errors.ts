@@ -51,3 +51,11 @@ export class CodigoPecaJaExisteError extends DomainConflictError {
     super(message);
   }
 }
+
+export class EstoqueFisicoAbaixoReservadoError extends DomainConflictError {
+  constructor() {
+    super(
+      'A quantidade física não pode ficar abaixo da quantidade reservada da peça.',
+    );
+  }
+}

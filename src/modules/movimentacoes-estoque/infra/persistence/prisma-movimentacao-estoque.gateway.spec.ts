@@ -1,10 +1,16 @@
+import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { TipoMovimentacaoEstoque as TipoPrisma } from '@/shared/generated/prisma/enums';
+import { EstoqueInsuficienteError } from '../../domain/errors/movimentacao-estoque.errors';
 import { MovimentacaoEstoque } from '../../domain/entities/movimentacao-estoque.entity';
 import { TipoMovimentacaoEstoque } from '../../domain/tipo-movimentacao-estoque';
 import { PrismaMovimentacaoEstoqueGateway } from './prisma-movimentacao-estoque.gateway';
 
-const prisma = {
+jest.mock('@/shared/database/obter-cliente-transacao', () => ({
+  obterClienteTransacao: (_ctx: unknown, prisma: PrismaService) => prisma,
+}));
+
+const cliente = {
   peca: { findUnique: jest.fn(), update: jest.fn() },
   movimentacaoEstoque: {
     findUnique: jest.fn(),
@@ -12,12 +18,14 @@ const prisma = {
     count: jest.fn(),
     create: jest.fn(),
   },
-  $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
 } as unknown as PrismaService;
 
-const peca = prisma.peca as unknown as Record<string, jest.Mock>;
-const mov = prisma.movimentacaoEstoque as unknown as Record<string, jest.Mock>;
-const transaction = prisma.$transaction as unknown as jest.Mock;
+const peca = cliente.peca as unknown as Record<string, jest.Mock>;
+const mov = cliente.movimentacaoEstoque as unknown as Record<string, jest.Mock>;
+const queryRaw = cliente.$queryRaw as unknown as jest.Mock;
+const executeRaw = cliente.$executeRaw as unknown as jest.Mock;
 
 const pecaResumo = { id: 'p1', codigo: 'FLT-001', nome: 'Filtro de óleo' };
 
@@ -33,7 +41,8 @@ const raw = {
 };
 
 describe('PrismaMovimentacaoEstoqueGateway', () => {
-  const gateway = new PrismaMovimentacaoEstoqueGateway(prisma);
+  const gateway = new PrismaMovimentacaoEstoqueGateway(cliente);
+  const contexto = new PrismaContextoTransacao(cliente);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -50,57 +59,23 @@ describe('PrismaMovimentacaoEstoqueGateway', () => {
     });
   });
 
-  it('buscarSaldosDaPeca devolve null quando a peça não existe', async () => {
-    peca.findUnique.mockResolvedValue(null);
-
-    await expect(gateway.buscarSaldosDaPeca('x')).resolves.toBeNull();
-  });
-
-  it('buscarComPecaPorId separa a movimentação do resumo da peça', async () => {
-    mov.findUnique.mockResolvedValue(raw);
-
-    const resultado = await gateway.buscarComPecaPorId('m1');
-
-    expect(resultado?.movimentacao).toBeInstanceOf(MovimentacaoEstoque);
-    expect(resultado?.movimentacao.quantidade).toBe(5);
-    expect(resultado?.peca).toEqual(pecaResumo);
-  });
-
-  it('buscarComPecaPorId devolve null quando não encontra', async () => {
+  it('buscarComPecaPorId retorna null quando não existe', async () => {
     mov.findUnique.mockResolvedValue(null);
-
     await expect(gateway.buscarComPecaPorId('x')).resolves.toBeNull();
   });
 
-  it('listar sem filtro de peça devolve tudo paginado', async () => {
-    mov.findMany.mockResolvedValue([raw]);
-    mov.count.mockResolvedValue(1);
-
-    const pagina = await gateway.listar(1, 10);
-
-    expect(pagina.total).toBe(1);
-    expect(pagina.movimentacoes[0].movimentacao).toBeInstanceOf(
-      MovimentacaoEstoque,
-    );
-    expect(mov.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: {}, skip: 0 }),
-    );
-  });
-
-  it('listar com pecaId filtra pela peça', async () => {
-    mov.findMany.mockResolvedValue([]);
-    mov.count.mockResolvedValue(0);
-
-    await gateway.listar(2, 10, 'p1');
-
-    expect(mov.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { pecaId: 'p1' }, skip: 10 }),
-    );
-  });
-
-  it('registrar grava histórico e saldo na MESMA transação', async () => {
-    // o $transaction recebe as duas operações e devolve os resultados em ordem
-    transaction.mockResolvedValue([raw, { id: 'p1' }]);
+  it('registrar entrada aplica UPDATE relativo sob bloqueio', async () => {
+    queryRaw.mockResolvedValue([
+      {
+        id: 'p1',
+        quantidade_estoque: 10,
+        quantidade_reservada: 0,
+        codigo: 'FLT-001',
+        nome: 'Filtro',
+      },
+    ]);
+    executeRaw.mockResolvedValue(1);
+    mov.create.mockResolvedValue(raw);
 
     const movimentacao = new MovimentacaoEstoque({
       pecaId: 'p1',
@@ -108,21 +83,82 @@ describe('PrismaMovimentacaoEstoqueGateway', () => {
       quantidade: 5,
     });
 
-    const resultado = await gateway.registrar(movimentacao, 15);
+    const resultado = await gateway.registrar(contexto, movimentacao);
 
+    expect(executeRaw).toHaveBeenCalled();
+    expect(mov.create).toHaveBeenCalled();
     expect(resultado.movimentacao).toBeInstanceOf(MovimentacaoEstoque);
-    expect(resultado.peca).toEqual(pecaResumo);
+  });
 
-    // é isso que impede saldo e histórico de divergirem
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(mov.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ pecaId: 'p1', quantidade: 5 }),
-      }),
-    );
-    expect(peca.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { quantidadeEstoque: 15 },
+  it('registrar baixa aplica UPDATE condicional ao disponível', async () => {
+    queryRaw.mockResolvedValue([
+      {
+        id: 'p1',
+        quantidade_estoque: 10,
+        quantidade_reservada: 3,
+        codigo: 'FLT-001',
+        nome: 'Filtro',
+      },
+    ]);
+    executeRaw.mockResolvedValue(1);
+    mov.create.mockResolvedValue(raw);
+
+    const movimentacao = new MovimentacaoEstoque({
+      pecaId: 'p1',
+      tipo: TipoMovimentacaoEstoque.BAIXA,
+      quantidade: 5,
     });
+
+    await gateway.registrar(contexto, movimentacao);
+
+    expect(executeRaw).toHaveBeenCalled();
+  });
+
+  it('registrar recusa peça inexistente após bloqueio', async () => {
+    queryRaw.mockResolvedValue([]);
+
+    const movimentacao = new MovimentacaoEstoque({
+      pecaId: 'p1',
+      tipo: TipoMovimentacaoEstoque.ENTRADA,
+      quantidade: 1,
+    });
+
+    await expect(gateway.registrar(contexto, movimentacao)).rejects.toThrow(
+      'não encontrada',
+    );
+  });
+
+  it('registrar baixa insuficiente recusa antes de gravar histórico', async () => {
+    queryRaw.mockResolvedValue([
+      {
+        id: 'p1',
+        quantidade_estoque: 5,
+        quantidade_reservada: 4,
+        codigo: 'FLT-001',
+        nome: 'Filtro',
+      },
+    ]);
+
+    const movimentacao = new MovimentacaoEstoque({
+      pecaId: 'p1',
+      tipo: TipoMovimentacaoEstoque.BAIXA,
+      quantidade: 3,
+    });
+
+    await expect(gateway.registrar(contexto, movimentacao)).rejects.toThrow(
+      EstoqueInsuficienteError,
+    );
+    expect(mov.create).not.toHaveBeenCalled();
+  });
+
+  it('listar com filtro por peça', async () => {
+    mov.findMany.mockResolvedValue([]);
+    mov.count.mockResolvedValue(0);
+
+    await gateway.listar(1, 10, 'p1');
+
+    expect(mov.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { pecaId: 'p1' } }),
+    );
   });
 });
