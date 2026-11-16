@@ -53,6 +53,13 @@ describe('MetricsService', () => {
     );
   });
 
+  it('registra histogram e timing reutilizando histogram', () => {
+    service.histogram(METRIC_NAMES.osTempoPorStatus, 90, ['status:RECEBIDA']);
+    service.timing(METRIC_NAMES.osTempoPorStatus, 150, ['status:FINALIZADA']);
+
+    expect(mockHistogram).toHaveBeenCalledTimes(2);
+  });
+
   it('nao propaga erro quando dogstatsd falha', () => {
     mockIncrement.mockImplementation(() => {
       throw new Error('datadog indisponivel');
