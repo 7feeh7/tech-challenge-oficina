@@ -80,6 +80,15 @@ describe('Consumidor SQS — idempotência (integração)', () => {
       dlq.push(envelope);
       return Promise.resolve();
     }
+    enviarCorpoBruto(
+      _url: string,
+      corpo: string,
+      _correlationId: string,
+    ): Promise<void> {
+      void _correlationId;
+      dlq.push(corpo);
+      return Promise.resolve();
+    }
   }
 
   const correlationId = randomUUID();
@@ -165,12 +174,34 @@ describe('Consumidor SQS — idempotência (integração)', () => {
     expect(await prisma.outboxMensagem.count()).toBe(1);
   });
 
-  it('erro permanente vai para DLQ simulada', async () => {
+  it('erro permanente vai para DLQ simulada com corpo idêntico ao recebido', async () => {
+    const corpo = JSON.stringify({ eventType: 'invalido' });
     const consumidor = nestModule.get(ConsumidorFilaOsService);
-    await consumidor.processarUma(
-      JSON.stringify({ eventType: 'invalido' }),
-      'rh',
-    );
+    await consumidor.processarUma(corpo, 'rh');
     expect(dlq).toHaveLength(1);
+    expect(dlq[0]).toBe(corpo);
+  });
+
+  it('envelope válido na DLQ é reprocessável na os-in com processador registrado', async () => {
+    const semProcessador = {
+      ...envelope,
+      eventId: randomUUID(),
+      eventType: 'billing.sem-processador.v1',
+    };
+    const corpoDlq = JSON.stringify(semProcessador);
+    const consumidor = nestModule.get(ConsumidorFilaOsService);
+    dlq.length = 0;
+
+    await consumidor.processarUma(corpoDlq, 'rh-dlq');
+    expect(dlq[0]).toBe(corpoDlq);
+
+    const reprocessavel = {
+      ...envelope,
+      eventId: randomUUID(),
+      eventType: EVENTO_TESTE_INTEGRACAO,
+    };
+    const corpoReprocessado = JSON.stringify(reprocessavel);
+    await processar.executar(corpoReprocessado);
+    expect(await prisma.mensagemProcessada.count()).toBe(1);
   });
 });

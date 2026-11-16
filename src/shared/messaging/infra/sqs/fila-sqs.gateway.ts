@@ -9,16 +9,25 @@ import { ConfigService } from '@nestjs/config';
 import type {
   FilaMensagensGateway,
   MensagemFilaRecebida,
+  OpcoesReceberFila,
 } from '../../application/ports/fila-mensagens.gateway';
+import { criarOpcoesClienteSqs } from '../aws/config-cliente-mensageria-aws';
+import { sinalOperacaoAws } from '../aws/sinal-operacao-aws';
 
 @Injectable()
 export class FilaSqsGateway implements FilaMensagensGateway {
   private readonly client: SQSClient;
   private readonly waitTimeSeconds: number;
+  private readonly operationDeadlineMs: number;
 
   constructor(configService: ConfigService) {
-    const region = configService.get<string>('AWS_REGION') ?? 'us-east-1';
-    this.client = new SQSClient({ region });
+    const opcoes = criarOpcoesClienteSqs(configService);
+    this.operationDeadlineMs = opcoes.operationDeadlineMs;
+    this.client = new SQSClient({
+      region: opcoes.region,
+      maxAttempts: opcoes.maxAttempts,
+      requestHandler: opcoes.requestHandler,
+    });
     this.waitTimeSeconds = Number(
       configService.get<string>('SQS_LONG_POLL_SECONDS') ?? '10',
     );
@@ -27,6 +36,7 @@ export class FilaSqsGateway implements FilaMensagensGateway {
   async receber(
     filaUrl: string,
     quantidadeMaxima = 10,
+    opcoes?: OpcoesReceberFila,
   ): Promise<MensagemFilaRecebida[]> {
     const resposta = await this.client.send(
       new ReceiveMessageCommand({
@@ -35,6 +45,12 @@ export class FilaSqsGateway implements FilaMensagensGateway {
         WaitTimeSeconds: this.waitTimeSeconds,
         MessageAttributeNames: ['All'],
       }),
+      {
+        abortSignal: sinalOperacaoAws(
+          this.operationDeadlineMs,
+          opcoes?.sinalAbortamento,
+        ),
+      },
     );
 
     return (resposta.Messages ?? [])
@@ -51,6 +67,9 @@ export class FilaSqsGateway implements FilaMensagensGateway {
         QueueUrl: filaUrl,
         ReceiptHandle: receiptHandle,
       }),
+      {
+        abortSignal: sinalOperacaoAws(this.operationDeadlineMs),
+      },
     );
   }
 
@@ -70,6 +89,31 @@ export class FilaSqsGateway implements FilaMensagensGateway {
           },
         },
       }),
+      {
+        abortSignal: sinalOperacaoAws(this.operationDeadlineMs),
+      },
+    );
+  }
+
+  async enviarCorpoBruto(
+    filaUrl: string,
+    corpo: string,
+    correlationId: string,
+  ): Promise<void> {
+    await this.client.send(
+      new SendMessageCommand({
+        QueueUrl: filaUrl,
+        MessageBody: corpo,
+        MessageAttributes: {
+          correlationId: {
+            DataType: 'String',
+            StringValue: correlationId,
+          },
+        },
+      }),
+      {
+        abortSignal: sinalOperacaoAws(this.operationDeadlineMs),
+      },
     );
   }
 }

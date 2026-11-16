@@ -13,7 +13,12 @@ describe('TopicoNotificacaoSnsGateway', () => {
     (SNSClient as jest.Mock).mockImplementation(() => ({ send }));
 
     const gateway = new TopicoNotificacaoSnsGateway({
-      get: jest.fn().mockReturnValue('us-east-1'),
+      get: jest.fn((chave: string) => {
+        if (chave === 'AWS_REGION') return 'us-east-1';
+        if (chave === 'SNS_HTTP_ATTEMPT_TIMEOUT_MS') return '12000';
+        if (chave === 'SNS_OPERATION_DEADLINE_MS') return '45000';
+        return undefined;
+      }),
       getOrThrow: jest.fn().mockReturnValue('arn:sns:topico'),
     } as unknown as ConfigService);
 

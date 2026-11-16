@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { calcularBloqueadoAteRetentativaOutbox } from '../../application/calcular-espera-retentativa-outbox';
 import type { PublicacaoNotificacaoGateway } from '../../application/ports/publicacao-notificacao.gateway';
 import type { FilaMensagensGateway } from '../../application/ports/fila-mensagens.gateway';
 import {
@@ -20,15 +21,18 @@ import {
   DESTINO_TOPICO_NOTIFICACAO,
   type EnvelopeMensagem,
 } from '../../envelope';
+import { AgendadorCicloProcessador } from '../agendador-ciclo-processador';
 
 @Injectable()
 export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PublicadorOutboxService.name);
-  private intervalo?: NodeJS.Timeout;
+  private agendador?: AgendadorCicloProcessador;
   private readonly habilitado: boolean;
   private readonly intervaloMs: number;
   private readonly posseMs: number;
   private readonly loteMaximo: number;
+  private readonly retentativaBaseMs: number;
+  private readonly retentativaTetoMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -44,25 +48,33 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
       this.config.get<string>('OUTBOX_PUBLISHER_INTERVAL_MS') ?? '2000',
     );
     this.posseMs = Number(
-      this.config.get<string>('OUTBOX_REIVINDICACAO_MS') ?? '30000',
+      this.config.get<string>('OUTBOX_REIVINDICACAO_MS') ?? '300000',
     );
     this.loteMaximo = Number(
-      this.config.get<string>('OUTBOX_PUBLISHER_LOTE') ?? '10',
+      this.config.get<string>('OUTBOX_PUBLISHER_LOTE') ?? '5',
+    );
+    this.retentativaBaseMs = Number(
+      this.config.get<string>('OUTBOX_RETRY_BASE_MS') ?? '1000',
+    );
+    this.retentativaTetoMs = Number(
+      this.config.get<string>('OUTBOX_RETRY_TETO_MS') ?? '300000',
     );
   }
 
   onModuleInit(): void {
     if (!this.habilitado) return;
 
-    this.intervalo = setInterval(() => {
-      void this.publicarLote().catch((erro) =>
-        this.logger.error('Falha ao publicar outbox', erro),
-      );
-    }, this.intervaloMs);
+    this.agendador = new AgendadorCicloProcessador(
+      this.intervaloMs,
+      () => this.publicarLote(),
+      this.logger,
+      'Falha ao publicar outbox',
+    );
+    this.agendador.iniciar();
   }
 
-  onModuleDestroy(): void {
-    if (this.intervalo) clearInterval(this.intervalo);
+  async onModuleDestroy(): Promise<void> {
+    await this.agendador?.parar();
   }
 
   async publicarLote(): Promise<void> {
@@ -80,6 +92,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
       correlationId: string;
       eventId: string;
       tokenReivindicacao: string | null;
+      tentativas: number;
     }[]
   > {
     const agora = new Date();
@@ -114,6 +127,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     correlationId: string;
     eventId: string;
     tokenReivindicacao: string | null;
+    tentativas?: number;
   }): Promise<void> {
     const token = mensagem.tokenReivindicacao;
     if (!token) return;
@@ -142,11 +156,18 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
         `Falha ao publicar evento ${mensagem.eventId}`,
         erro instanceof Error ? erro.message : erro,
       );
+      const tentativasAtuais = mensagem.tentativas ?? 0;
+      const novasTentativas = tentativasAtuais + 1;
+      const bloqueadoAte = calcularBloqueadoAteRetentativaOutbox(
+        novasTentativas,
+        this.retentativaBaseMs,
+        this.retentativaTetoMs,
+      );
       await this.prisma.outboxMensagem.updateMany({
         where: { id: mensagem.id, tokenReivindicacao: token },
         data: {
           tentativas: { increment: 1 },
-          bloqueadoAte: null,
+          bloqueadoAte,
           tokenReivindicacao: null,
         },
       });

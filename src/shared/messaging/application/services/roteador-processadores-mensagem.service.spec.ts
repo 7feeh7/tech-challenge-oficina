@@ -11,9 +11,12 @@ describe('RoteadorProcessadoresMensagemService', () => {
     };
     const roteador = new RoteadorProcessadoresMensagemService([processador]);
 
-    await roteador.processar({} as never, {
-      eventType: 'billing.teste.v1',
-    } as never);
+    await roteador.processar(
+      {} as never,
+      {
+        eventType: 'billing.teste.v1',
+      } as never,
+    );
 
     expect(processar).toHaveBeenCalled();
   });
@@ -21,9 +24,12 @@ describe('RoteadorProcessadoresMensagemService', () => {
   it('rejeita tipo sem processador', async () => {
     const roteador = new RoteadorProcessadoresMensagemService([]);
     await expect(
-      roteador.processar({} as never, {
-        eventType: 'desconhecido.v1',
-      } as never),
+      roteador.processar(
+        {} as never,
+        {
+          eventType: 'desconhecido.v1',
+        } as never,
+      ),
     ).rejects.toThrow(ErroMensagemPermanente);
   });
 });

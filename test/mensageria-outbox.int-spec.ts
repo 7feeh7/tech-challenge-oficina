@@ -36,6 +36,9 @@ describe('Outbox — publicador (integração)', () => {
       enviados.push(e.eventId);
       return Promise.resolve();
     }
+    enviarCorpoBruto(): Promise<void> {
+      return Promise.resolve();
+    }
   }
 
   beforeAll(async () => {
@@ -149,6 +152,68 @@ describe('Outbox — publicador (integração)', () => {
     await publicador.publicarLote();
 
     expect(enviados).toEqual([eventId]);
+  });
+
+  it('falha de publicação grava bloqueado_ate progressivo', async () => {
+    const eventId = randomUUID();
+    const registro = await prisma.outboxMensagem.create({
+      data: {
+        eventId,
+        eventType: 'os.teste.v1',
+        envelope: { eventId },
+        correlationId: randomUUID(),
+        destino: DESTINO_FILA_BILLING,
+      },
+    });
+
+    const config = nestModule.get(ConfigService);
+    const filaFalha: FilaMensagensGateway = {
+      receber: () => Promise.resolve([]),
+      confirmar: () => Promise.resolve(),
+      enviar: () => Promise.reject(new Error('indisponível')),
+      enviarCorpoBruto: () => Promise.resolve(),
+    };
+    const publicador = new PublicadorOutboxService(prisma, config, filaFalha, {
+      publicar: jest.fn(),
+    });
+    await publicador.publicarLote();
+
+    const atualizado = await prisma.outboxMensagem.findUnique({
+      where: { id: registro.id },
+    });
+    expect(atualizado?.tentativas).toBe(1);
+    expect(atualizado?.bloqueadoAte).not.toBeNull();
+    expect(atualizado?.bloqueadoAte!.getTime()).toBeGreaterThan(Date.now());
+    expect(enviados).toHaveLength(0);
+  });
+
+  it('mensagens com falha contínua não ocupam o lote seguinte (bloqueado_ate)', async () => {
+    const falhaId = randomUUID();
+    const okId = randomUUID();
+    await prisma.outboxMensagem.createMany({
+      data: [
+        {
+          eventId: falhaId,
+          eventType: 'os.teste.v1',
+          envelope: { eventId: falhaId },
+          correlationId: randomUUID(),
+          destino: DESTINO_FILA_BILLING,
+          tentativas: 3,
+          bloqueadoAte: new Date(Date.now() + 60_000),
+        },
+        {
+          eventId: okId,
+          eventType: 'os.teste.v1',
+          envelope: { eventId: okId },
+          correlationId: randomUUID(),
+          destino: DESTINO_FILA_BILLING,
+        },
+      ],
+    });
+
+    const publicador = nestModule.get(PublicadorOutboxService);
+    await publicador.publicarLote();
+    expect(enviados).toEqual([okId]);
   });
 
   it('fencing impede confirmação após perda de posse', async () => {
