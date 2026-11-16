@@ -24,7 +24,12 @@ const jwtServiceMock = {
 };
 
 const configServiceMock = {
-  get: jest.fn().mockReturnValue('secret-de-teste'),
+  get: jest.fn((key: string) => {
+    if (key === 'JWT_ISSUER') return 'tech-challenge-auth';
+    if (key === 'JWT_AUDIENCE') return 'tech-challenge-api';
+    return undefined;
+  }),
+  getOrThrow: jest.fn(() => process.env.JWT_PRIVATE_KEY),
 };
 
 describe('AuthService', () => {
@@ -95,7 +100,10 @@ describe('AuthService', () => {
           email: 'admin@oficina.com',
           perfil: PerfilUsuario.ADMINISTRADOR,
         },
-        { secret: 'secret-de-teste' },
+        expect.objectContaining({
+          algorithm: 'RS256',
+          privateKey: process.env.JWT_PRIVATE_KEY,
+        }),
       );
     });
   });

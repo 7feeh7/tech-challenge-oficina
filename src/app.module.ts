@@ -22,6 +22,9 @@ import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interce
 import { CorrelationIdInterceptor } from './shared/http/correlation-id.interceptor';
 import { ObservabilityModule } from './shared/observability/observability.module';
 import { MensageriaModule } from './shared/messaging/mensageria.module';
+import { RotasInternasModule } from './modules/rotas-internas/rotas-internas.module';
+import { TokenChamadorInternoGuard } from './modules/rotas-internas/guards/token-chamador-interno.guard';
+import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idempotency-key-interna.guard';
 
 @Module({
   imports: [
@@ -32,6 +35,7 @@ import { MensageriaModule } from './shared/messaging/mensageria.module';
       envFilePath: '.env',
     }),
     IdempotencyModule,
+    RotasInternasModule,
     AuthModule,
     HealthModule,
     ClientesModule,
@@ -50,6 +54,14 @@ import { MensageriaModule } from './shared/messaging/mensageria.module';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TokenChamadorInternoGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: IdempotencyKeyInternaGuard,
     },
     {
       provide: APP_GUARD,

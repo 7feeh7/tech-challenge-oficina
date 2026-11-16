@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
 import { IdempotencyService } from './idempotency.service';
 
 const prismaMock = {
@@ -55,6 +56,28 @@ describe('IdempotencyService', () => {
         responseBody: { ok: true },
       }),
     });
+  });
+
+  it('não grava idempotência interna para 4xx na transação', async () => {
+    const cliente = { idempotencyRecord: { create: jest.fn() } };
+    const contexto = new PrismaContextoTransacao(cliente as never);
+
+    await service.gravarNaTransacao(contexto, 'k1', 'interno', 'hash', 409, {
+      codigo: 'X',
+    });
+
+    expect(cliente.idempotencyRecord.create).not.toHaveBeenCalled();
+  });
+
+  it('grava idempotência interna 2xx na transação', async () => {
+    const cliente = { idempotencyRecord: { create: jest.fn() } };
+    const contexto = new PrismaContextoTransacao(cliente as never);
+
+    await service.gravarNaTransacao(contexto, 'k1', 'interno', 'hash', 200, {
+      ok: true,
+    });
+
+    expect(cliente.idempotencyRecord.create).toHaveBeenCalled();
   });
 
   it('throws conflict when key matches but body hash differs', async () => {

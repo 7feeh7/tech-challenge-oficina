@@ -2,6 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
+import { sign } from 'jsonwebtoken';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 describe('JwtAuthGuard', () => {
@@ -10,7 +11,7 @@ describe('JwtAuthGuard', () => {
   } as unknown as JwtService;
 
   const configPadrao = (key: string) => {
-    if (key === 'JWT_SECRET') return 'segredo';
+    if (key === 'JWT_PUBLIC_KEY') return process.env.JWT_PUBLIC_KEY;
     if (key === 'JWT_ISSUER') return 'tech-challenge-auth';
     if (key === 'JWT_AUDIENCE') return 'tech-challenge-api';
     return undefined;
@@ -18,6 +19,7 @@ describe('JwtAuthGuard', () => {
 
   const configService = {
     get: jest.fn(configPadrao),
+    getOrThrow: jest.fn(configPadrao),
   } as unknown as ConfigService;
 
   const reflector = {
@@ -39,8 +41,25 @@ describe('JwtAuthGuard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     configService.get = jest.fn(configPadrao);
+    configService.getOrThrow = jest.fn(configPadrao);
     reflector.getAllAndOverride = jest.fn().mockReturnValue(false);
     jwtService.verifyAsync = jest.fn();
+  });
+
+  it('verifica token com RS256 e chave pública', async () => {
+    jwtService.verifyAsync = jest.fn().mockResolvedValue({
+      sub: 'usuario-1',
+      email: 'a@b.com',
+      perfil: 'ADMINISTRADOR',
+      iss: 'tech-challenge-auth',
+      aud: 'tech-challenge-api',
+    });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(jwtService.verifyAsync).toHaveBeenCalledWith(
+      'token',
+      expect.objectContaining({ algorithms: ['RS256'] }),
+    );
   });
 
   it('aceita token interno valido', async () => {
@@ -48,6 +67,8 @@ describe('JwtAuthGuard', () => {
       sub: 'usuario-1',
       email: 'a@b.com',
       perfil: 'ADMINISTRADOR',
+      iss: 'tech-challenge-auth',
+      aud: 'tech-challenge-api',
     });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
@@ -111,6 +132,20 @@ describe('JwtAuthGuard', () => {
     );
   });
 
+  it('rejeita token interno com issuer inválido', async () => {
+    jwtService.verifyAsync = jest.fn().mockResolvedValue({
+      sub: 'usuario-1',
+      email: 'a@b.com',
+      perfil: 'ADMINISTRADOR',
+      iss: 'outro-issuer',
+      aud: 'tech-challenge-api',
+    });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
   it('aceita audience de cliente informada como array', async () => {
     jwtService.verifyAsync = jest.fn().mockResolvedValue({
       sub: 'cliente-1',
@@ -125,8 +160,12 @@ describe('JwtAuthGuard', () => {
 
   it('aceita token de cliente quando audience não está configurada', async () => {
     configService.get = jest.fn((key: string) => {
-      if (key === 'JWT_SECRET') return 'segredo';
+      if (key === 'JWT_PUBLIC_KEY') return process.env.JWT_PUBLIC_KEY;
       if (key === 'JWT_ISSUER') return 'tech-challenge-auth';
+      return undefined;
+    });
+    configService.getOrThrow = jest.fn((key: string) => {
+      if (key === 'JWT_PUBLIC_KEY') return process.env.JWT_PUBLIC_KEY;
       return undefined;
     });
 
@@ -175,6 +214,30 @@ describe('JwtAuthGuard', () => {
     });
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
+  it('rejeita HS256 na verificação real', async () => {
+    const hs = sign(
+      { sub: 'u', email: 'a@b.com', perfil: 'ADMINISTRADOR' },
+      'segredo-hs256',
+      { algorithm: 'HS256' },
+    );
+    const jwtReal = new JwtService({
+      publicKey: process.env.JWT_PUBLIC_KEY,
+      verifyOptions: { algorithms: ['RS256'] },
+    });
+    const guardReal = new JwtAuthGuard(jwtReal, reflector, configService);
+    const ctx = {
+      getHandler: () => ({}),
+      getClass: () => ({}),
+      switchToHttp: () => ({
+        getRequest: () => ({ headers: { authorization: `Bearer ${hs}` } }),
+      }),
+    } as never;
+
+    await expect(guardReal.canActivate(ctx)).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
   });

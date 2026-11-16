@@ -107,6 +107,9 @@
       "lcov",
       "cobertura"
     ],
+    "setupFiles": [
+      "<rootDir>/../test/setup-env.ts"
+    ],
     "testEnvironment": "node",
     "coverageThreshold": {
       "global": {
