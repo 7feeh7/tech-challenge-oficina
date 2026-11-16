@@ -49,19 +49,22 @@ export class MovimentacaoEstoque {
   }
 
   /**
-   * Saldo da peça depois de aplicar esta movimentação.
-   * Recusa a baixa que deixaria o estoque negativo.
+   * Saldo físico depois de aplicar esta movimentação.
+   * Baixa manual respeita o disponível (físico − reservado), não o físico bruto (D2.20).
    */
-  saldoApos(saldoAtual: number): number {
+  saldoFisicoApos(
+    quantidadeFisica: number,
+    quantidadeDisponivel: number,
+  ): number {
     if (this.ehEntrada()) {
-      return saldoAtual + this.quantidade;
+      return quantidadeFisica + this.quantidade;
     }
 
-    if (this.quantidade > saldoAtual) {
-      throw new EstoqueInsuficienteError(saldoAtual, this.quantidade);
+    if (this.quantidade > quantidadeDisponivel) {
+      throw new EstoqueInsuficienteError(quantidadeDisponivel, this.quantidade);
     }
 
-    return saldoAtual - this.quantidade;
+    return quantidadeFisica - this.quantidade;
   }
 
   private static validarPecaId(pecaId: string): string {

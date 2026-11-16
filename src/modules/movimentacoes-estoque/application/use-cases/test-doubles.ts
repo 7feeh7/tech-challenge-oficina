@@ -37,7 +37,7 @@ export const criarMovimentacaoComPecaFake = (
 
 export const criarGatewayMock =
   (): jest.Mocked<MovimentacaoEstoqueGateway> => ({
-    buscarSaldoDaPeca: jest.fn(),
+    buscarSaldosDaPeca: jest.fn(),
     buscarComPecaPorId: jest.fn(),
     listar: jest.fn(),
     registrar: jest.fn(),

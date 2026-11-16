@@ -37,16 +37,23 @@ describe('PrismaMovimentacaoEstoqueGateway', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('buscarSaldoDaPeca devolve o saldo quando a peça existe', async () => {
-    peca.findUnique.mockResolvedValue({ quantidadeEstoque: 10 });
+  it('buscarSaldosDaPeca devolve físico, reservado e disponível', async () => {
+    peca.findUnique.mockResolvedValue({
+      quantidadeEstoque: 10,
+      quantidadeReservada: 2,
+    });
 
-    await expect(gateway.buscarSaldoDaPeca('p1')).resolves.toBe(10);
+    await expect(gateway.buscarSaldosDaPeca('p1')).resolves.toEqual({
+      quantidadeFisica: 10,
+      quantidadeReservada: 2,
+      quantidadeDisponivel: 8,
+    });
   });
 
-  it('buscarSaldoDaPeca devolve null quando a peça não existe', async () => {
+  it('buscarSaldosDaPeca devolve null quando a peça não existe', async () => {
     peca.findUnique.mockResolvedValue(null);
 
-    await expect(gateway.buscarSaldoDaPeca('x')).resolves.toBeNull();
+    await expect(gateway.buscarSaldosDaPeca('x')).resolves.toBeNull();
   });
 
   it('buscarComPecaPorId separa a movimentação do resumo da peça', async () => {

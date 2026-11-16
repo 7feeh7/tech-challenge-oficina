@@ -17,8 +17,14 @@ export interface PaginaMovimentacoes {
   total: number;
 }
 
+export interface SaldosPecaMovimentacao {
+  quantidadeFisica: number;
+  quantidadeReservada: number;
+  quantidadeDisponivel: number;
+}
+
 export interface MovimentacaoEstoqueGateway {
-  buscarSaldoDaPeca(pecaId: string): Promise<number | null>;
+  buscarSaldosDaPeca(pecaId: string): Promise<SaldosPecaMovimentacao | null>;
   buscarComPecaPorId(id: string): Promise<MovimentacaoComPeca | null>;
   listar(
     page: number,

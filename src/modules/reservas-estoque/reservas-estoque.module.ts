@@ -1,0 +1,56 @@
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '@/shared/database/prisma.module';
+import { UNIT_OF_WORK } from '@/shared/database/unit-of-work.port';
+import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
+import { RESERVA_ESTOQUE_GATEWAY } from './application/ports/tokens';
+import type { ReservaEstoqueGateway } from './application/ports/reserva-estoque.gateway';
+import { ReservarEstoqueUseCase } from './application/use-cases/reservar-estoque.use-case';
+import { LiberarReservaEstoqueUseCase } from './application/use-cases/liberar-reserva-estoque.use-case';
+import { ConsumirReservaEstoqueUseCase } from './application/use-cases/consumir-reserva-estoque.use-case';
+import { AjustarEstoqueDivergenciaUseCase } from './application/use-cases/ajustar-estoque-divergencia.use-case';
+import { PrismaReservaEstoqueGateway } from './infra/persistence/prisma-reserva-estoque.gateway';
+import { ReservasEstoqueController } from './infra/http/controllers/reservas-estoque.controller';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [ReservasEstoqueController],
+  providers: [
+    PrismaReservaEstoqueGateway,
+    {
+      provide: RESERVA_ESTOQUE_GATEWAY,
+      useExisting: PrismaReservaEstoqueGateway,
+    },
+    {
+      provide: ReservarEstoqueUseCase,
+      useFactory: (reservas: ReservaEstoqueGateway, uow: UnitOfWork) =>
+        new ReservarEstoqueUseCase(reservas, uow),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK],
+    },
+    {
+      provide: LiberarReservaEstoqueUseCase,
+      useFactory: (reservas: ReservaEstoqueGateway, uow: UnitOfWork) =>
+        new LiberarReservaEstoqueUseCase(reservas, uow),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK],
+    },
+    {
+      provide: ConsumirReservaEstoqueUseCase,
+      useFactory: (reservas: ReservaEstoqueGateway, uow: UnitOfWork) =>
+        new ConsumirReservaEstoqueUseCase(reservas, uow),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK],
+    },
+    {
+      provide: AjustarEstoqueDivergenciaUseCase,
+      useFactory: (reservas: ReservaEstoqueGateway, uow: UnitOfWork) =>
+        new AjustarEstoqueDivergenciaUseCase(reservas, uow),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK],
+    },
+  ],
+  exports: [
+    RESERVA_ESTOQUE_GATEWAY,
+    ReservarEstoqueUseCase,
+    LiberarReservaEstoqueUseCase,
+    ConsumirReservaEstoqueUseCase,
+    AjustarEstoqueDivergenciaUseCase,
+  ],
+})
+export class ReservasEstoqueModule {}

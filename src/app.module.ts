@@ -12,6 +12,7 @@ import { PecasModule } from './modules/pecas/pecas.module';
 import { OrdensServicoModule } from './modules/ordens-servico/ordens-servico.module';
 import { OrcamentosModule } from './modules/orcamentos/orcamentos.module';
 import { MovimentacoesEstoqueModule } from './modules/movimentacoes-estoque/movimentacoes-estoque.module';
+import { ReservasEstoqueModule } from './modules/reservas-estoque/reservas-estoque.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './modules/auth/guards/roles.guard';
@@ -47,6 +48,7 @@ import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idem
     OrdensServicoModule,
     OrcamentosModule,
     MovimentacoesEstoqueModule,
+    ReservasEstoqueModule,
   ],
   controllers: [],
   providers: [

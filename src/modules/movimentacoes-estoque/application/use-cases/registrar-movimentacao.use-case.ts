@@ -23,14 +23,17 @@ export class RegistrarMovimentacaoUseCase {
   ): Promise<MovimentacaoEstoqueOutput> {
     const movimentacao = new MovimentacaoEstoque(input);
 
-    const saldoAtual = await this.movimentacoes.buscarSaldoDaPeca(
+    const saldos = await this.movimentacoes.buscarSaldosDaPeca(
       movimentacao.pecaId,
     );
-    if (saldoAtual === null) {
+    if (saldos === null) {
       throw new PecaDaMovimentacaoNaoEncontradaError(movimentacao.pecaId);
     }
 
-    const novoSaldo = movimentacao.saldoApos(saldoAtual);
+    const novoSaldo = movimentacao.saldoFisicoApos(
+      saldos.quantidadeFisica,
+      saldos.quantidadeDisponivel,
+    );
 
     return MovimentacaoEstoqueOutputMapper.toOutput(
       await this.movimentacoes.registrar(movimentacao, novoSaldo),

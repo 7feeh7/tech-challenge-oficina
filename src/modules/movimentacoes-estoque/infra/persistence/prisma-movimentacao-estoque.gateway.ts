@@ -14,12 +14,19 @@ const SELECT_PECA = { select: { id: true, codigo: true, nome: true } };
 export class PrismaMovimentacaoEstoqueGateway implements MovimentacaoEstoqueGateway {
   constructor(private readonly prisma: PrismaService) {}
 
-  async buscarSaldoDaPeca(pecaId: string): Promise<number | null> {
+  async buscarSaldosDaPeca(pecaId: string) {
     const peca = await this.prisma.peca.findUnique({
       where: { id: pecaId },
-      select: { quantidadeEstoque: true },
+      select: { quantidadeEstoque: true, quantidadeReservada: true },
     });
-    return peca ? peca.quantidadeEstoque : null;
+    if (!peca) {
+      return null;
+    }
+    return {
+      quantidadeFisica: peca.quantidadeEstoque,
+      quantidadeReservada: peca.quantidadeReservada,
+      quantidadeDisponivel: peca.quantidadeEstoque - peca.quantidadeReservada,
+    };
   }
 
   async buscarComPecaPorId(id: string): Promise<MovimentacaoComPeca | null> {
