@@ -30,6 +30,7 @@ describe('ConsumidorFilaOsService', () => {
       ]),
       confirmar: jest.fn(),
       enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
     };
     const config = {
       get: jest.fn((k: string) => {
@@ -59,6 +60,7 @@ describe('ConsumidorFilaOsService', () => {
         ]),
       confirmar: jest.fn(),
       enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
     };
     const config = {
       get: jest.fn((k: string) => {
@@ -83,6 +85,7 @@ describe('ConsumidorFilaOsService', () => {
       receber: jest.fn(),
       confirmar: jest.fn(),
       enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
     };
     const config = {
       get: jest.fn((k: string) => {
@@ -95,7 +98,7 @@ describe('ConsumidorFilaOsService', () => {
 
     const consumidor = new ConsumidorFilaOsService(config, fila, processar);
     await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
-    expect(fila.enviar).toHaveBeenCalledWith(
+    expect(fila.enviarCorpoBruto).toHaveBeenCalledWith(
       'dlq',
       JSON.stringify(envelopeValido),
       envelopeValido.correlationId,
@@ -103,7 +106,93 @@ describe('ConsumidorFilaOsService', () => {
     expect(fila.confirmar).toHaveBeenCalledWith('url', 'rh');
   });
 
-  it('inicia polling somente com habilitado === true e URL', () => {
+  it('envia à DLQ o corpo bruto sem re-serializar (inclusive não-JSON)', async () => {
+    const corpoNaoJson = 'texto{quebra"json';
+    const processar = {
+      executar: jest
+        .fn()
+        .mockRejectedValue(new ConteudoMensagemDivergenteError('e')),
+    } as unknown as ProcessarMensagemEntradaService;
+    const fila = {
+      receber: jest.fn(),
+      confirmar: jest.fn(),
+      enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
+    };
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'SQS_OS_IN_URL') return 'url';
+        if (k === 'SQS_OS_IN_DLQ_URL') return 'dlq';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+
+    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    await consumidor.processarUma(corpoNaoJson, 'rh');
+    expect(fila.enviarCorpoBruto).toHaveBeenCalledWith(
+      'dlq',
+      corpoNaoJson,
+      expect.any(String),
+    );
+  });
+
+  it('não confirma a original quando o envio à DLQ falha', async () => {
+    const processar = {
+      executar: jest
+        .fn()
+        .mockRejectedValue(new ConteudoMensagemDivergenteError('e')),
+    } as unknown as ProcessarMensagemEntradaService;
+    const fila = {
+      receber: jest.fn(),
+      confirmar: jest.fn(),
+      enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn().mockRejectedValue(new Error('SQS down')),
+    };
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'SQS_OS_IN_URL') return 'url';
+        if (k === 'SQS_OS_IN_DLQ_URL') return 'dlq';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+
+    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
+    expect(fila.confirmar).not.toHaveBeenCalled();
+  });
+
+  it('falha na DLQ de uma mensagem não interrompe as demais do lote', async () => {
+    const processar = {
+      executar: jest
+        .fn()
+        .mockRejectedValueOnce(new ConteudoMensagemDivergenteError('e'))
+        .mockResolvedValueOnce(undefined),
+    } as unknown as ProcessarMensagemEntradaService;
+    const fila = {
+      receber: jest.fn().mockResolvedValue([
+        { corpo: 'permanente', receiptHandle: 'rh1' },
+        { corpo: JSON.stringify(envelopeValido), receiptHandle: 'rh2' },
+      ]),
+      confirmar: jest.fn(),
+      enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn().mockRejectedValue(new Error('DLQ off')),
+    };
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'SQS_OS_IN_URL') return 'url';
+        if (k === 'SQS_OS_IN_DLQ_URL') return 'dlq';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+
+    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    await consumidor.poller();
+    expect(processar.executar).toHaveBeenCalledTimes(2);
+    expect(fila.confirmar).toHaveBeenCalledWith('url', 'rh2');
+    expect(fila.confirmar).not.toHaveBeenCalledWith('url', 'rh1');
+  });
+
+  it('inicia polling somente com habilitado === true e URL', async () => {
     const config = {
       get: jest.fn((k: string) => {
         if (k === 'SQS_OS_IN_URL') return 'url';
@@ -118,8 +207,8 @@ describe('ConsumidorFilaOsService', () => {
       { executar: jest.fn() } as never,
     );
     consumidor.onModuleInit();
-    expect((consumidor as { intervalo?: unknown }).intervalo).toBeDefined();
-    consumidor.onModuleDestroy();
+    expect((consumidor as { agendador?: unknown }).agendador).toBeDefined();
+    await consumidor.onModuleDestroy();
   });
 
   it('não confirma quando DLQ não está configurada em erro permanente', async () => {
@@ -132,6 +221,7 @@ describe('ConsumidorFilaOsService', () => {
       receber: jest.fn(),
       confirmar: jest.fn(),
       enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
     };
     const config = {
       get: jest.fn((k: string) => {
@@ -140,15 +230,32 @@ describe('ConsumidorFilaOsService', () => {
         return undefined;
       }),
     } as unknown as ConfigService;
-    const consumidor = new ConsumidorFilaOsService(
-      config,
-      fila as never,
-      processar,
-    );
-    await expect(
-      consumidor.processarUma(JSON.stringify(envelopeValido), 'rh'),
-    ).rejects.toThrow();
+    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
     expect(fila.confirmar).not.toHaveBeenCalled();
+  });
+
+  it('falha ao confirmar após processamento bem-sucedido não conclui consumo na fila', async () => {
+    const processar = {
+      executar: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ProcessarMensagemEntradaService;
+    const fila = {
+      receber: jest.fn(),
+      confirmar: jest.fn().mockRejectedValue(new Error('SQS indisponível')),
+      enviar: jest.fn(),
+      enviarCorpoBruto: jest.fn(),
+    };
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'SQS_OS_IN_URL') return 'url';
+        return undefined;
+      }),
+    } as unknown as ConfigService;
+
+    const consumidor = new ConsumidorFilaOsService(config, fila, processar);
+    await consumidor.processarUma(JSON.stringify(envelopeValido), 'rh');
+    expect(processar.executar).toHaveBeenCalled();
+    expect(fila.confirmar).toHaveBeenCalled();
   });
 
   it('não inicia polling quando consumidor desabilitado', () => {
@@ -161,6 +268,6 @@ describe('ConsumidorFilaOsService', () => {
       { executar: jest.fn() } as never,
     );
     consumidor.onModuleInit();
-    expect((consumidor as { intervalo?: unknown }).intervalo).toBeUndefined();
+    expect((consumidor as { agendador?: unknown }).agendador).toBeUndefined();
   });
 });

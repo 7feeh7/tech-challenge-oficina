@@ -23,7 +23,7 @@ describe('PublicadorOutboxService', () => {
         { publicar: jest.fn() },
       );
       service.onModuleInit();
-      expect((service as { intervalo?: unknown }).intervalo).toBeUndefined();
+      expect((service as { agendador?: unknown }).agendador).toBeUndefined();
     }
   });
 
@@ -123,13 +123,13 @@ describe('PublicadorOutboxService', () => {
       prisma as never,
       config,
       { enviar: jest.fn() } as never,
-      notificacao as never,
+      notificacao,
     );
     await service.publicarLote();
     expect(notificacao.publicar).toHaveBeenCalled();
   });
 
-  it('agenda publicação quando habilitado === true', () => {
+  it('agenda publicação quando habilitado === true', async () => {
     const config = {
       get: jest.fn((k: string) => {
         if (k === 'OUTBOX_PUBLISHER_HABILITADO') return 'true';
@@ -142,11 +142,11 @@ describe('PublicadorOutboxService', () => {
       { $transaction: jest.fn() } as never,
       config,
       { enviar: jest.fn() } as never,
-      { publicar: jest.fn() } as never,
+      { publicar: jest.fn() },
     );
     service.onModuleInit();
-    expect((service as { intervalo?: unknown }).intervalo).toBeDefined();
-    service.onModuleDestroy();
+    expect((service as { agendador?: unknown }).agendador).toBeDefined();
+    await service.onModuleDestroy();
   });
 
   it('não confirma envio quando perde fencing', async () => {
@@ -168,7 +168,7 @@ describe('PublicadorOutboxService', () => {
       { outboxMensagem: { updateMany } } as never,
       config,
       fila as never,
-      { publicar: jest.fn() } as never,
+      { publicar: jest.fn() },
     );
     await service.publicarMensagemReivindicada(mensagem);
     expect(updateMany).toHaveBeenCalled();
@@ -196,7 +196,7 @@ describe('PublicadorOutboxService', () => {
       } as never,
       config,
       fila as never,
-      { publicar: jest.fn() } as never,
+      { publicar: jest.fn() },
     );
     await service.publicarMensagemReivindicada(mensagem);
     expect(fila.enviar).toHaveBeenCalledWith(
@@ -212,7 +212,7 @@ describe('PublicadorOutboxService', () => {
       { outboxMensagem: { updateMany: jest.fn() } } as never,
       { get: jest.fn(), getOrThrow: jest.fn() } as never,
       fila as never,
-      { publicar: jest.fn() } as never,
+      { publicar: jest.fn() },
     );
     await service.publicarMensagemReivindicada({
       id: 'm',
@@ -265,8 +265,49 @@ describe('PublicadorOutboxService', () => {
     await service.publicarLote();
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ tentativas: { increment: 1 } }),
+        data: expect.objectContaining({
+          tentativas: { increment: 1 },
+          bloqueadoAte: expect.any(Date),
+          tokenReivindicacao: null,
+        }),
       }),
     );
+  });
+
+  it('grava bloqueado_ate progressivo após falha conforme tentativas', async () => {
+    const config = {
+      get: jest.fn((k: string) => {
+        if (k === 'OUTBOX_RETRY_BASE_MS') return '1000';
+        if (k === 'OUTBOX_RETRY_TETO_MS') return '30000';
+        return undefined;
+      }),
+      getOrThrow: jest.fn().mockReturnValue('https://sqs/billing'),
+    } as unknown as ConfigService;
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const fila = {
+      enviar: jest.fn().mockRejectedValue(new Error('falha')),
+    };
+    const service = new PublicadorOutboxService(
+      { outboxMensagem: { updateMany } } as never,
+      config,
+      fila as never,
+      { publicar: jest.fn() },
+    );
+    await service.publicarMensagemReivindicada({
+      id: 'm1',
+      destino: DESTINO_FILA_BILLING,
+      envelope: {},
+      correlationId: 'c',
+      eventId: 'e1',
+      tokenReivindicacao: 'tok',
+      tentativas: 1,
+    });
+    const chamada = updateMany.mock.calls[0][0] as {
+      data: { bloqueadoAte: Date };
+    };
+    const esperadoMs = 2000;
+    const diff = chamada.data.bloqueadoAte.getTime() - Date.now();
+    expect(diff).toBeGreaterThanOrEqual(esperadoMs - 50);
+    expect(diff).toBeLessThanOrEqual(esperadoMs + 50);
   });
 });

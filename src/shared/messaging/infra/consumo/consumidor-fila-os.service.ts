@@ -12,15 +12,18 @@ import { EnvelopeMensagemInvalidoError } from '../../validar-envelope';
 import type { FilaMensagensGateway } from '../../application/ports/fila-mensagens.gateway';
 import { FILA_MENSAGENS } from '../../application/ports/tokens';
 import { ProcessarMensagemEntradaService } from '../../application/services/processar-mensagem-entrada.service';
+import { AgendadorCicloProcessador } from '../agendador-ciclo-processador';
 
 @Injectable()
 export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ConsumidorFilaOsService.name);
-  private intervalo?: NodeJS.Timeout;
+  private agendador?: AgendadorCicloProcessador;
+  private readonly sinalAbortamento = new AbortController();
   private readonly habilitado: boolean;
   private readonly filaUrl?: string;
   private readonly dlqUrl?: string;
   private readonly intervaloMs: number;
+  private readonly loteMaximo: number;
 
   constructor(
     private readonly config: ConfigService,
@@ -36,28 +39,50 @@ export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
     this.intervaloMs = Number(
       config.get<string>('SQS_CONSUMER_INTERVAL_MS') ?? '1000',
     );
+    this.loteMaximo = Number(config.get<string>('SQS_CONSUMER_LOTE') ?? '3');
   }
 
   onModuleInit(): void {
     if (!this.habilitado || !this.filaUrl) return;
 
-    this.intervalo = setInterval(() => {
-      void this.poller().catch((erro) =>
-        this.logger.error('Falha no consumidor SQS', erro),
-      );
-    }, this.intervaloMs);
+    this.agendador = new AgendadorCicloProcessador(
+      this.intervaloMs,
+      () => this.poller(),
+      this.logger,
+      'Falha no consumidor SQS',
+    );
+    this.agendador.iniciar();
   }
 
-  onModuleDestroy(): void {
-    if (this.intervalo) clearInterval(this.intervalo);
+  async onModuleDestroy(): Promise<void> {
+    this.sinalAbortamento.abort();
+    await this.agendador?.parar();
   }
 
   async poller(): Promise<void> {
     if (!this.filaUrl) return;
 
-    const mensagens = await this.fila.receber(this.filaUrl, 5);
+    let mensagens: Awaited<ReturnType<FilaMensagensGateway['receber']>>;
+    try {
+      mensagens = await this.fila.receber(this.filaUrl, this.loteMaximo, {
+        sinalAbortamento: this.sinalAbortamento.signal,
+      });
+    } catch (erro) {
+      if (this.sinalAbortamento.signal.aborted) {
+        return;
+      }
+      throw erro;
+    }
+
     for (const mensagem of mensagens) {
-      await this.processarUma(mensagem.corpo, mensagem.receiptHandle);
+      try {
+        await this.processarUma(mensagem.corpo, mensagem.receiptHandle);
+      } catch (erro) {
+        this.logger.error(
+          'Falha ao processar mensagem do lote; prosseguindo com as demais',
+          erro instanceof Error ? erro.message : erro,
+        );
+      }
     }
   }
 
@@ -76,8 +101,15 @@ export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(
           `Erro permanente no consumo; encaminhando à DLQ: ${mensagemErro}`,
         );
-        await this.encaminharDlq(corpo);
-        await this.fila.confirmar(this.filaUrl, receiptHandle);
+        try {
+          await this.encaminharDlq(corpo);
+          await this.fila.confirmar(this.filaUrl, receiptHandle);
+        } catch (falhaDlq) {
+          this.logger.error(
+            'Falha ao encaminhar à DLQ; mensagem original não confirmada',
+            falhaDlq instanceof Error ? falhaDlq.message : falhaDlq,
+          );
+        }
         return;
       }
 
@@ -106,6 +138,6 @@ export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
       /* corpo inválido: correlationId sintético */
     }
 
-    await this.fila.enviar(this.dlqUrl, corpo, correlationId);
+    await this.fila.enviarCorpoBruto(this.dlqUrl, corpo, correlationId);
   }
 }
