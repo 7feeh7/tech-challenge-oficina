@@ -12,6 +12,9 @@ import { EnvelopeMensagemInvalidoError } from '../../validar-envelope';
 import type { FilaMensagensGateway } from '../../application/ports/fila-mensagens.gateway';
 import { FILA_MENSAGENS } from '../../application/ports/tokens';
 import { ProcessarMensagemEntradaService } from '../../application/services/processar-mensagem-entrada.service';
+import { MessagingMetricsService } from '@/shared/observability/messaging-metrics.service';
+import { registrarFalhaTransicaoSeAplicavel } from '@/shared/observability/registrar-falha-transicao';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 import { AgendadorCicloProcessador } from '../agendador-ciclo-processador';
 
 @Injectable()
@@ -30,6 +33,8 @@ export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
     @Inject(FILA_MENSAGENS)
     private readonly fila: FilaMensagensGateway,
     private readonly processar: ProcessarMensagemEntradaService,
+    private readonly mensageriaMetrics: MessagingMetricsService,
+    private readonly osMetrics: OsMetricsService,
   ) {
     this.filaUrl = config.get<string>('SQS_OS_IN_URL');
     this.dlqUrl = config.get<string>('SQS_OS_IN_DLQ_URL');
@@ -93,9 +98,11 @@ export class ConsumidorFilaOsService implements OnModuleInit, OnModuleDestroy {
       await this.processar.executar(corpo);
       await this.fila.confirmar(this.filaUrl, receiptHandle);
     } catch (erro) {
+      registrarFalhaTransicaoSeAplicavel(erro, this.osMetrics);
       const classificacao = classificarErroConsumo(erro);
       const mensagemErro =
         erro instanceof Error ? erro.message : 'erro desconhecido';
+      this.mensageriaMetrics.recordErroConsumo(classificacao);
 
       if (classificacao === 'permanente') {
         this.logger.warn(

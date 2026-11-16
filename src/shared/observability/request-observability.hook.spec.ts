@@ -20,10 +20,14 @@ describe('registerRequestObservabilityHook', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/v1/recursos/10',
-      headers: { 'x-correlation-id': 'corr-hook' },
+      headers: {
+        'x-correlation-id': '550e8400-e29b-41d4-a716-446655440010',
+      },
     });
 
-    expect(res.headers['x-correlation-id']).toBe('corr-hook');
+    expect(res.headers['x-correlation-id']).toBe(
+      '550e8400-e29b-41d4-a716-446655440010',
+    );
     expect(logger.logWithMeta).toHaveBeenCalledWith(
       'info',
       'request.started',

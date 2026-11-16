@@ -2,7 +2,9 @@ import { FastifyInstance, FastifyRequest } from 'fastify';
 import {
   correlationIdStorage,
   extractCorrelationId,
+  extractRequestId,
 } from '@/shared/http/correlation-id.context';
+import { tagActiveSpanWithCorrelation } from './trace-context';
 import { JsonLoggerService } from './json-logger.service';
 import { normalizeRoute } from './normalize-route';
 
@@ -19,12 +21,16 @@ export function registerRequestObservabilityHook(
 ): void {
   app.addHook('onRequest', (request, reply, done) => {
     const correlationId = extractCorrelationId(request.headers);
+    const requestId = extractRequestId(request.headers);
     request.headers[CORRELATION_HEADER] = correlationId;
+    request.headers['x-request-id'] = requestId;
     reply.header('X-Correlation-Id', correlationId);
+    reply.header('X-Request-Id', requestId);
 
     (request as RequestWithTiming)[START_TIME] = process.hrtime.bigint();
 
-    correlationIdStorage.run({ correlationId }, () => {
+    correlationIdStorage.run({ correlationId, requestId }, () => {
+      tagActiveSpanWithCorrelation(correlationId);
       logger.logWithMeta(
         'info',
         'request.started',
@@ -45,7 +51,9 @@ export function registerRequestObservabilityHook(
       : 0;
 
     const correlationId = extractCorrelationId(request.headers);
-    correlationIdStorage.run({ correlationId }, () => {
+    const requestId = extractRequestId(request.headers);
+    correlationIdStorage.run({ correlationId, requestId }, () => {
+      tagActiveSpanWithCorrelation(correlationId);
       const level = reply.statusCode >= 500 ? 'error' : 'info';
       logger.logWithMeta(
         level,
@@ -69,7 +77,9 @@ export function registerRequestObservabilityHook(
       : 0;
 
     const correlationId = extractCorrelationId(request.headers);
-    correlationIdStorage.run({ correlationId }, () => {
+    const requestId = extractRequestId(request.headers);
+    correlationIdStorage.run({ correlationId, requestId }, () => {
+      tagActiveSpanWithCorrelation(correlationId);
       logger.logWithMeta(
         'error',
         'request.error',

@@ -35,6 +35,12 @@ export class MetricsService implements OnModuleInit {
     this.histogram(metric, valueMs, tags);
   }
 
+  gauge(metric: string, value: number, tags: string[] = []): void {
+    safeTelemetry(() => {
+      this.dogstatsd?.gauge(metric, value, this.withBaseTags(tags));
+    });
+  }
+
   private withBaseTags(tags: string[]): string[] {
     return [
       ...tags,

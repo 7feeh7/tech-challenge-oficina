@@ -17,8 +17,8 @@ import {
   DomainUnauthorizedError,
   DomainValidationError,
 } from '../exceptions/domain.error';
-import { TransicaoStatusInvalidaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
 import { OsMetricsService } from '@/shared/observability/os-metrics.service';
+import { registrarFalhaTransicaoSeAplicavel } from '@/shared/observability/registrar-falha-transicao';
 
 /**
  * Traduz erros de domínio em respostas HTTP. Mantém o núcleo da aplicação
@@ -32,9 +32,7 @@ export class DomainExceptionFilter implements ExceptionFilter<DomainError> {
   ) {}
 
   catch(error: DomainError, host: ArgumentsHost): void {
-    if (error instanceof TransicaoStatusInvalidaError) {
-      this.osMetrics.recordTransicaoFalha();
-    }
+    registrarFalhaTransicaoSeAplicavel(error, this.osMetrics);
 
     const excecao = DomainExceptionFilter.paraExcecaoHttp(error);
     const { httpAdapter } = this.httpAdapterHost;

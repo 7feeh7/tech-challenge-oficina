@@ -4,7 +4,14 @@ import {
   DESTINO_FILA_EXECUTION,
   DESTINO_TOPICO_NOTIFICACAO,
 } from '../../envelope';
+import {
+  criarJsonLoggerMensageriaFake,
+  criarMessagingMetricsFake,
+} from '../../testing/observabilidade-mensageria.test-doubles';
 import { PublicadorOutboxService } from './publicador-outbox.service';
+
+const jsonLogger = criarJsonLoggerMensageriaFake();
+const mensageriaMetrics = criarMessagingMetricsFake();
 
 describe('PublicadorOutboxService', () => {
   it('não agenda publicação quando habilitado ausente ou diferente de true', () => {
@@ -21,6 +28,8 @@ describe('PublicadorOutboxService', () => {
         config,
         { enviar: jest.fn() } as never,
         { publicar: jest.fn() },
+        jsonLogger,
+        mensageriaMetrics,
       );
       service.onModuleInit();
       expect((service as { agendador?: unknown }).agendador).toBeUndefined();
@@ -76,6 +85,8 @@ describe('PublicadorOutboxService', () => {
       config,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarLote();
 
@@ -124,6 +135,8 @@ describe('PublicadorOutboxService', () => {
       config,
       { enviar: jest.fn() } as never,
       notificacao,
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarLote();
     expect(notificacao.publicar).toHaveBeenCalled();
@@ -143,6 +156,8 @@ describe('PublicadorOutboxService', () => {
       config,
       { enviar: jest.fn() } as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     service.onModuleInit();
     expect((service as { agendador?: unknown }).agendador).toBeDefined();
@@ -169,6 +184,8 @@ describe('PublicadorOutboxService', () => {
       config,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarMensagemReivindicada(mensagem);
     expect(updateMany).toHaveBeenCalled();
@@ -197,6 +214,8 @@ describe('PublicadorOutboxService', () => {
       config,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarMensagemReivindicada(mensagem);
     expect(fila.enviar).toHaveBeenCalledWith(
@@ -213,6 +232,8 @@ describe('PublicadorOutboxService', () => {
       { get: jest.fn(), getOrThrow: jest.fn() } as never,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarMensagemReivindicada({
       id: 'm',
@@ -261,6 +282,8 @@ describe('PublicadorOutboxService', () => {
       config,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarLote();
     expect(updateMany).toHaveBeenCalledWith(
@@ -292,6 +315,8 @@ describe('PublicadorOutboxService', () => {
       config,
       fila as never,
       { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
     );
     await service.publicarMensagemReivindicada({
       id: 'm1',

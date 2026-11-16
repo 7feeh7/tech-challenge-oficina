@@ -84,9 +84,11 @@ describe('SnsNotificadorStatusGateway', () => {
       integrationMetrics,
     );
 
-    await expect(
-      gateway.notificarMudancaDeStatus(notificacao),
-    ).resolves.toBeUndefined();
+    await correlationIdStorage.run({ correlationId: 'corr-abc' }, async () => {
+      await expect(
+        gateway.notificarMudancaDeStatus(notificacao),
+      ).resolves.toBeUndefined();
+    });
   });
 
   it('skips publish when topic arn is missing', async () => {

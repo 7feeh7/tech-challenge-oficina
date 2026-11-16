@@ -6,7 +6,10 @@ jest.mock('./trace-context', () => ({
 }));
 
 jest.mock('@/shared/http/correlation-id.context', () => ({
-  getCorrelationId: jest.fn().mockReturnValue('corr-json'),
+  getObservabilityLogFields: jest.fn().mockReturnValue({
+    correlationId: 'corr-json',
+    requestId: 'req-json',
+  }),
 }));
 
 import { JsonLoggerService } from './json-logger.service';
@@ -35,6 +38,7 @@ describe('JsonLoggerService', () => {
     expect(payload.message).toBe('mensagem');
     expect(payload.context).toBe('Teste');
     expect(payload.correlationId).toBe('corr-json');
+    expect(payload.requestId).toBe('req-json');
     expect(payload.traceId).toBe('trace-json');
   });
 

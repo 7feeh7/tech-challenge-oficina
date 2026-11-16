@@ -4,7 +4,16 @@ import { EnvelopeMensagemInvalidoError } from '../../validar-envelope';
 import type { MensagemProcessadaGateway } from '../ports/mensagem-processada.gateway';
 import type { ProcessadorMensagem } from '../ports/processador-mensagem.port';
 import { RoteadorProcessadoresMensagemService } from './roteador-processadores-mensagem.service';
+import {
+  criarJsonLoggerMensageriaFake,
+  criarMessagingMetricsFake,
+  criarOsMetricsMensageriaFake,
+} from '../../testing/observabilidade-mensageria.test-doubles';
 import { ProcessarMensagemEntradaService } from './processar-mensagem-entrada.service';
+
+const logger = criarJsonLoggerMensageriaFake();
+const mensageriaMetrics = criarMessagingMetricsFake();
+const osMetrics = criarOsMetricsMensageriaFake();
 
 const envelope = {
   eventId: '550e8400-e29b-41d4-a716-446655440099',
@@ -31,6 +40,9 @@ describe('ProcessarMensagemEntradaService', () => {
         buscarHash: () => Promise.resolve(null),
       },
       roteador,
+      logger,
+      mensageriaMetrics,
+      osMetrics,
     );
     await expect(servico.executar('{invalido')).rejects.toThrow(
       EnvelopeMensagemInvalidoError,
@@ -60,6 +72,9 @@ describe('ProcessarMensagemEntradaService', () => {
       uow,
       mensagens,
       roteador,
+      logger,
+      mensageriaMetrics,
+      osMetrics,
     );
 
     await servico.executar(JSON.stringify(envelope));
@@ -84,6 +99,9 @@ describe('ProcessarMensagemEntradaService', () => {
       uow,
       mensagens,
       roteador,
+      logger,
+      mensageriaMetrics,
+      osMetrics,
     );
 
     await expect(servico.executar(JSON.stringify(envelope))).rejects.toThrow(

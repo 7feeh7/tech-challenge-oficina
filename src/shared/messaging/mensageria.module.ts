@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ObservabilityModule } from '@/shared/observability/observability.module';
 import {
   FILA_MENSAGENS,
   MENSAGEM_PROCESSADA_GATEWAY,
@@ -16,6 +17,7 @@ import { FilaSqsGateway } from './infra/sqs/fila-sqs.gateway';
 import { TopicoNotificacaoSnsGateway } from './infra/sns/topico-notificacao-sns.gateway';
 
 @Module({
+  imports: [ObservabilityModule],
   providers: [
     FilaSqsGateway,
     { provide: FILA_MENSAGENS, useExisting: FilaSqsGateway },

@@ -9,6 +9,10 @@ import { FILA_MENSAGENS } from '@/shared/messaging/application/ports/tokens';
 import { PublicadorOutboxService } from '@/shared/messaging/infra/outbox/publicador-outbox.service';
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
 import {
+  criarJsonLoggerMensageriaFake,
+  criarMessagingMetricsFake,
+} from '@/shared/messaging/testing/observabilidade-mensageria.test-doubles';
+import {
   exigirDatabaseUrl,
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
@@ -18,6 +22,8 @@ describe('Outbox — publicador (integração)', () => {
   let nestModule: TestingModule;
   let prisma: PrismaService;
   let enviados: string[];
+  const jsonLogger = criarJsonLoggerMensageriaFake();
+  const mensageriaMetrics = criarMessagingMetricsFake();
 
   class FilaMemoriaGateway implements FilaMensagensGateway {
     receber(): Promise<never[]> {
@@ -108,8 +114,22 @@ describe('Outbox — publicador (integração)', () => {
     const config = nestModule.get(ConfigService);
     const fila = nestModule.get<FilaMensagensGateway>(FILA_MENSAGENS);
     const notificacao = { publicar: jest.fn() };
-    const pubA = new PublicadorOutboxService(prisma, config, fila, notificacao);
-    const pubB = new PublicadorOutboxService(prisma, config, fila, notificacao);
+    const pubA = new PublicadorOutboxService(
+      prisma,
+      config,
+      fila,
+      notificacao,
+      jsonLogger,
+      mensageriaMetrics,
+    );
+    const pubB = new PublicadorOutboxService(
+      prisma,
+      config,
+      fila,
+      notificacao,
+      jsonLogger,
+      mensageriaMetrics,
+    );
 
     await Promise.all([pubA.publicarLote(), pubB.publicarLote()]);
 
@@ -173,9 +193,16 @@ describe('Outbox — publicador (integração)', () => {
       enviar: () => Promise.reject(new Error('indisponível')),
       enviarCorpoBruto: () => Promise.resolve(),
     };
-    const publicador = new PublicadorOutboxService(prisma, config, filaFalha, {
-      publicar: jest.fn(),
-    });
+    const publicador = new PublicadorOutboxService(
+      prisma,
+      config,
+      filaFalha,
+      {
+        publicar: jest.fn(),
+      },
+      jsonLogger,
+      mensageriaMetrics,
+    );
     await publicador.publicarLote();
 
     const atualizado = await prisma.outboxMensagem.findUnique({
