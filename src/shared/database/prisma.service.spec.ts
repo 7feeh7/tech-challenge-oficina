@@ -53,6 +53,35 @@ describe('PrismaService', () => {
     );
   });
 
+  it('habilita TLS no adapter quando DATABASE_SSL=true', () => {
+    const config = criarConfig({
+      DATABASE_URL: 'postgresql://u:p@localhost:5432/oficina?schema=public',
+      DATABASE_SSL: 'true',
+    });
+
+    new PrismaService(config);
+
+    expect(PrismaPgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ssl: { rejectUnauthorized: false },
+      }),
+    );
+  });
+
+  it('conecta e desconecta no ciclo de vida do módulo', async () => {
+    const config = criarConfig({
+      DATABASE_URL: 'postgresql://u:p@localhost:5432/oficina?schema=public',
+    });
+    const service = new PrismaService(config);
+    await service.onModuleInit();
+    await service.onModuleDestroy();
+
+    expect((service as { $connect: jest.Mock }).$connect).toHaveBeenCalled();
+    expect(
+      (service as { $disconnect: jest.Mock }).$disconnect,
+    ).toHaveBeenCalled();
+  });
+
   it('usa defaults do orçamento inicial quando variáveis de pool estão ausentes', () => {
     const config = criarConfig({
       DATABASE_URL: 'postgresql://u:p@localhost:5432/oficina?schema=public',

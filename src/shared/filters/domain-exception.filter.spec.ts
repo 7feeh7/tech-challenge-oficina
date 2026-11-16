@@ -1,5 +1,8 @@
 import { ArgumentsHost } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { ClienteJaExisteError } from '@/modules/clientes/domain/errors/cliente.errors';
+import { TransicaoStatusInvalidaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
+import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import {
   CredenciaisInvalidasError,
   EmailUsuarioJaExisteError,
@@ -15,9 +18,11 @@ describe('DomainExceptionFilter', () => {
     switchToHttp: () => ({ getResponse: () => response }),
   } as unknown as ArgumentsHost;
 
-  const filter = new DomainExceptionFilter({
-    httpAdapter: { reply },
-  } as unknown as HttpAdapterHost);
+  const osMetrics = { recordTransicaoFalha: jest.fn() };
+  const filter = new DomainExceptionFilter(
+    { httpAdapter: { reply } } as unknown as HttpAdapterHost,
+    osMetrics as never,
+  );
 
   const statusRespondido = () => reply.mock.calls[0][2] as number;
   const corpoRespondido = () => reply.mock.calls[0][1] as { message: string };
@@ -42,6 +47,22 @@ describe('DomainExceptionFilter', () => {
 
   it('traduz erro de conflito para 409', () => {
     filter.catch(new EmailUsuarioJaExisteError(), host);
+
+    expect(statusRespondido()).toBe(409);
+  });
+
+  it('registra métrica em transição inválida e responde 400', () => {
+    filter.catch(
+      new TransicaoStatusInvalidaError(StatusOS.RECEBIDA, StatusOS.EM_EXECUCAO),
+      host,
+    );
+
+    expect(osMetrics.recordTransicaoFalha).toHaveBeenCalled();
+    expect(statusRespondido()).toBe(400);
+  });
+
+  it('traduz conflito de domínio genérico para 409', () => {
+    filter.catch(new ClienteJaExisteError(), host);
 
     expect(statusRespondido()).toBe(409);
   });
