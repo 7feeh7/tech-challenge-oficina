@@ -38,6 +38,10 @@ import type {
   SaldoPecaEstoque,
 } from '../../application/ports/reserva-estoque.gateway';
 import { PrismaReservaEstoqueMapper } from './prisma-reserva-estoque.mapper';
+import {
+  NATUREZA_PENDENCIA_DIVERGENCIA_CONSUMO,
+  naturezaPendenciaInventario,
+} from '../../domain/natureza-pendencia-inventario';
 
 const TTL_HORAS = 24;
 
@@ -526,7 +530,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     const impedimentoInventario = divergenciasInventario.length > 0;
     let pendenciaInventarioId: string | null = null;
     if (impedimentoInventario) {
-      const jaExiste = await cliente.pendenciaOs.findFirst({
+      const abertas = await cliente.pendenciaOs.findMany({
         where: {
           ordemServicoId: input.ordemServicoId,
           rodada: input.rodada,
@@ -534,6 +538,11 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
           resolvida: false,
         },
       });
+      const jaExiste = abertas.find(
+        (p) =>
+          naturezaPendenciaInventario(p.detalhes as Record<string, unknown>) ===
+          NATUREZA_PENDENCIA_DIVERGENCIA_CONSUMO,
+      );
       if (!jaExiste) {
         const pendencia = await cliente.pendenciaOs.create({
           data: {
@@ -542,6 +551,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
             rodada: input.rodada,
             tipo: 'INVENTARIO',
             detalhes: {
+              natureza: NATUREZA_PENDENCIA_DIVERGENCIA_CONSUMO,
               divergencias: divergenciasInventario,
               divergenciasAuditoria,
               eventId: input.contextoFato?.eventId ?? null,
@@ -879,6 +889,33 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       pendencia.ordem_servico_id,
       pendencia.rodada,
     );
+
+    const pecasReservaAtiva = new Set(linhasAtivas.map((l) => l.peca_id));
+    for (const itemId of [
+      ...mapaConsumido.keys(),
+      ...mapaLiberado.keys(),
+      ...(input.ajustesFisicos?.map((a) => a.pecaId) ?? []),
+    ]) {
+      if (!pecasReservaAtiva.has(itemId)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Peça ${itemId} não possui reserva ativa nesta OS e rodada.`,
+        );
+      }
+    }
+    for (const [pecaId, qtd] of mapaConsumido) {
+      if (qtd < 0 || !Number.isInteger(qtd)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Quantidade consumida inválida para a peça ${pecaId}.`,
+        );
+      }
+    }
+    for (const [pecaId, qtd] of mapaLiberado) {
+      if (qtd < 0 || !Number.isInteger(qtd)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Quantidade liberada inválida para a peça ${pecaId}.`,
+        );
+      }
+    }
 
     for (const linha of linhasAtivas) {
       const consumir = mapaConsumido.get(linha.peca_id) ?? 0;

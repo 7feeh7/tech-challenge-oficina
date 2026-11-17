@@ -106,6 +106,8 @@ export const EVENTOS_TERMINAIS_E42 = {
   RESPOSTA: EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
 } as const;
 
+export const NATUREZA_DIVERGENCIA_CONSUMO = 'DIVERGENCIA_CONSUMO';
+
 export async function contarPendenciaNatureza(
   prisma: {
     pendenciaOs: {

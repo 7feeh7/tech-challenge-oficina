@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@/shared/generated/prisma/client';
 import { PrismaModule } from '@/shared/database/prisma.module';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { ReservasEstoqueModule } from '@/modules/reservas-estoque/reservas-estoque.module';
@@ -15,7 +13,10 @@ import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-sa
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
 import { ObservabilityModule } from '@/shared/observability/observability.module';
 import { IdempotencyModule } from '@/shared/idempotency/idempotency.module';
-import { ResolucaoConsumoManualComConsumoAplicadoError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import {
+  QuantidadeResolucaoManualInvalidaError,
+  ResolucaoConsumoManualComConsumoAplicadoError,
+} from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import { ProcessarMensagemEntradaService } from '@/shared/messaging/application/services/processar-mensagem-entrada.service';
 import {
   EVENTO_REPARO_FALHOU,
@@ -33,15 +34,7 @@ import {
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
 import { contextoFatoIntegracao } from './helpers/contexto-fato-estoque';
-
-function criarPrismaPool(databaseUrl: string): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString: databaseUrl,
-    max: 2,
-    connectionTimeoutMillis: 15_000,
-  });
-  return new PrismaClient({ adapter });
-}
+import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
 describe('Resolução manual de consumo (integração E42)', () => {
   let nestModule: TestingModule;
@@ -176,6 +169,76 @@ describe('Resolução manual de consumo (integração E42)', () => {
       await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
     ).quantidadeEstoque;
     expect(estoqueDepois).toBe(estoqueAntes - 1);
+  });
+
+  it('rejeita peça fora das reservas ativas sem efeito parcial', async () => {
+    const peca = await prisma.peca.create({
+      data: {
+        codigo: `RF-${randomUUID().slice(0, 6)}`,
+        nome: 'Reservada',
+        precoUnitario: 8,
+        quantidadeEstoque: 12,
+      },
+    });
+    const fora = await prisma.peca.create({
+      data: {
+        codigo: `FF-${randomUUID().slice(0, 6)}`,
+        nome: 'Fora',
+        precoUnitario: 5,
+        quantidadeEstoque: 30,
+      },
+    });
+    const os = await criarOs();
+    await reservar.execute({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itens: [{ pecaId: peca.id, quantidade: 2 }],
+    });
+    const pendencia = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
+    const estoqueReservadaAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
+    ).quantidadeEstoque;
+    const estoqueForaAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: fora.id } })
+    ).quantidadeEstoque;
+    await expect(
+      resolver.execute({
+        pendenciaId: pendencia.id,
+        itensConsumidos: [
+          { pecaId: peca.id, quantidade: 1 },
+          { pecaId: fora.id, quantidade: 1 },
+        ],
+        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+        motivo: 'mistura inválida',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:fora:${pendencia.id}`,
+      }),
+    ).rejects.toBeInstanceOf(QuantidadeResolucaoManualInvalidaError);
+    expect(
+      await prisma.resolucaoConsumoManual.count({
+        where: { ordemServicoId: os.id },
+      }),
+    ).toBe(0);
+    expect(
+      (
+        await prisma.pendenciaOs.findUniqueOrThrow({
+          where: { id: pendencia.id },
+        })
+      ).resolvida,
+    ).toBe(false);
+    expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueReservadaAntes);
+    expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: fora.id } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueForaAntes);
+    const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+      where: { ordemServicoId: os.id, pecaId: peca.id },
+    });
+    expect(reserva.situacao).toBe(SituacaoReservaEstoque.ATIVA);
+    expect(reserva.quantidadeConsumida ?? 0).toBe(0);
   });
 
   it('rejeita resolução após consumo automático', async () => {
@@ -474,7 +537,7 @@ describe('Resolução manual de consumo (integração E42)', () => {
     ).toBe(1);
   }, 60_000);
 
-  it('duas resoluções concorrentes não duplicam efeito', async () => {
+  it('duas resoluções concorrentes — exatamente uma vence com bloqueio disputado', async () => {
     const databaseUrl = exigirDatabaseUrl();
     const peca = await prisma.peca.create({
       data: {
@@ -491,41 +554,42 @@ describe('Resolução manual de consumo (integração E42)', () => {
       itens: [{ pecaId: peca.id, quantidade: 2 }],
     });
     const pendA = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
-    const prismaB = criarPrismaPool(databaseUrl);
-    const resolverB = nestModule.get(ResolverConsumoManualUseCase);
-    let go: () => void = () => undefined;
-    const trava = new Promise<void>((r) => {
-      go = r;
+    const estoqueAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
+    ).quantidadeEstoque;
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    await sessao.adquirir();
+    const pVencedor = resolver.execute({
+      pendenciaId: pendA.id,
+      itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+      itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+      motivo: 'após liberação do bloqueio',
+      responsavelId: randomUUID(),
+      idempotencyKey: `resolucao:conc:vence:${pendA.id}`,
     });
-    const p1 = (async () => {
-      await trava;
-      return resolver.execute({
-        pendenciaId: pendA.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'conc A',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:conc:a:${pendA.id}`,
-      });
-    })();
-    const p2 = (async () => {
-      await trava;
-      return resolverB.execute({
-        pendenciaId: pendA.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'conc B',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:conc:b:${pendA.id}`,
-      });
-    })();
-    setTimeout(go, 25);
-    await Promise.allSettled([p1, p2]);
-    await prismaB.$disconnect();
+    const pBloqueada = resolver.execute({
+      pendenciaId: pendA.id,
+      itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+      itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+      motivo: 'bloqueada na OS',
+      responsavelId: randomUUID(),
+      idempotencyKey: `resolucao:conc:perde:${pendA.id}`,
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    await sessao.liberar();
+    const resultados = await Promise.allSettled([pBloqueada, pVencedor]);
+    const sucesso = resultados.filter((r) => r.status === 'fulfilled').length;
+    const falha = resultados.filter((r) => r.status === 'rejected').length;
+    expect(sucesso).toBe(1);
+    expect(falha).toBe(1);
     expect(
       await prisma.resolucaoConsumoManual.count({
         where: { ordemServicoId: os.id, rodada: 1 },
       }),
-    ).toBeLessThanOrEqual(1);
+    ).toBe(1);
+    expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueAntes - 1);
   }, 60_000);
 });

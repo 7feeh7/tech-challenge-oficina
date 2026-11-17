@@ -26,10 +26,16 @@ import {
   UUID_RE_PECA_ID,
 } from '../../domain/compatibilidade-fato-tardio';
 import { validarRespostaCancelamento } from '../../domain/validar-resposta-cancelamento';
+import {
+  NATUREZA_PENDENCIA_CONFLITO_CONSUMO,
+  NATUREZA_PENDENCIA_INFORMACAO_INSUFICIENTE,
+  naturezaPendenciaInventario,
+} from '@/modules/reservas-estoque/domain/natureza-pendencia-inventario';
 
-export const NATUREZA_PENDENCIA_INFORMACAO_INSUFICIENTE =
-  'INFORMACAO_INSUFICIENTE';
-export const NATUREZA_PENDENCIA_CONFLITO_CONSUMO = 'CONFLITO_CONSUMO';
+export {
+  NATUREZA_PENDENCIA_CONFLITO_CONSUMO,
+  NATUREZA_PENDENCIA_INFORMACAO_INSUFICIENTE,
+} from '@/modules/reservas-estoque/domain/natureza-pendencia-inventario';
 
 export type ResultadoReconciliacaoConsumo =
   | 'nada'
@@ -123,6 +129,28 @@ export class ReconciliacaoConsumoSagaService {
       );
       return 'pendencia_informacao';
     }
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const resolucao = await cliente.resolucaoConsumoManual.findUnique({
+      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
+    });
+    if (resolucao) {
+      return this.tratarFatoTardioAposResolucaoManual(
+        contexto,
+        ordemServicoId,
+        rodada,
+        resolucao.id,
+        contextoFato,
+        payload.pecasUtilizadas ?? [],
+        payload.divergencias?.map((d) => ({
+          itemId: d.itemId,
+          tipo: d.tipo,
+          quantidadePrevista: d.quantidadePrevista,
+          quantidadeUtilizada: d.quantidadeUtilizada,
+          justificativa: d.justificativa,
+        })) ?? [],
+        payload.motivo,
+      );
+    }
     return this.aplicarOuConvergir(
       contexto,
       ordemServicoId,
@@ -190,13 +218,6 @@ export class ReconciliacaoConsumoSagaService {
     idempotencyKey: string,
   ): Promise<ResultadoReconciliacaoConsumo> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const resolucao = await cliente.resolucaoConsumoManual.findUnique({
-      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
-    });
-    if (resolucao) {
-      return 'reutilizado';
-    }
-
     const existente = await cliente.consumoAplicadoOs.findUnique({
       where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
     });
@@ -254,6 +275,11 @@ export class ReconciliacaoConsumoSagaService {
         contexto,
       );
       if (consumo.impedimentoInventario) {
+        await this.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
+          contexto,
+          ordemServicoId,
+          rodada,
+        );
         return 'impedimento_inventario';
       }
       return consumo.reutilizado ? 'reutilizado' : 'aplicado';
@@ -304,12 +330,10 @@ export class ReconciliacaoConsumoSagaService {
     if (!alvo) {
       return;
     }
-    const conciliado = await this.consumoConciliadoNaRodada(
-      contexto,
-      ordemServicoId,
-      rodada,
-    );
-    if (!conciliado) {
+    const consumo = await cliente.consumoAplicadoOs.findUnique({
+      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
+    });
+    if (!consumo) {
       return;
     }
     await cliente.pendenciaOs.update({
@@ -420,14 +444,14 @@ export class ReconciliacaoConsumoSagaService {
     return 'reutilizado';
   }
 
-  private async abrirPendenciaInformacaoInsuficiente(
+  private async pendenciaInventarioAbertaPorNatureza(
     contexto: ContextoTransacao,
     ordemServicoId: string,
     rodada: number,
-    detalhes: Record<string, unknown>,
-  ): Promise<void> {
+    natureza: string,
+  ) {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const duplicada = await cliente.pendenciaOs.findFirst({
+    const abertas = await cliente.pendenciaOs.findMany({
       where: {
         ordemServicoId,
         rodada,
@@ -435,11 +459,28 @@ export class ReconciliacaoConsumoSagaService {
         resolvida: false,
       },
     });
+    return abertas.find(
+      (p) =>
+        naturezaPendenciaInventario(p.detalhes as Record<string, unknown>) ===
+        natureza,
+    );
+  }
+
+  private async abrirPendenciaInformacaoInsuficiente(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    detalhes: Record<string, unknown>,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const duplicada = await this.pendenciaInventarioAbertaPorNatureza(
+      contexto,
+      ordemServicoId,
+      rodada,
+      NATUREZA_PENDENCIA_INFORMACAO_INSUFICIENTE,
+    );
     if (duplicada) {
-      const det = duplicada.detalhes as Record<string, unknown>;
-      if (det.natureza === NATUREZA_PENDENCIA_INFORMACAO_INSUFICIENTE) {
-        return;
-      }
+      return;
     }
     await cliente.pendenciaOs.create({
       data: {
@@ -462,19 +503,14 @@ export class ReconciliacaoConsumoSagaService {
     detalhes: Record<string, unknown>,
   ): Promise<void> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const duplicada = await cliente.pendenciaOs.findFirst({
-      where: {
-        ordemServicoId,
-        rodada,
-        tipo: TipoPendenciaOs.INVENTARIO,
-        resolvida: false,
-      },
-    });
+    const duplicada = await this.pendenciaInventarioAbertaPorNatureza(
+      contexto,
+      ordemServicoId,
+      rodada,
+      NATUREZA_PENDENCIA_CONFLITO_CONSUMO,
+    );
     if (duplicada) {
-      const det = duplicada.detalhes as Record<string, unknown>;
-      if (det.natureza === NATUREZA_PENDENCIA_CONFLITO_CONSUMO) {
-        return;
-      }
+      return;
     }
     await cliente.pendenciaOs.create({
       data: {

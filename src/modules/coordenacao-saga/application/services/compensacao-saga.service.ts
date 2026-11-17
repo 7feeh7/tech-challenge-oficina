@@ -185,8 +185,16 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
         causationId,
         payload,
       );
+    if (reconciliacao === 'impedimento_inventario') {
+      await this.reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
+        contexto,
+        ordemServicoId,
+        bloqueada.ordem.rodadaVigente,
+      );
+      await this.estado.salvar(contexto, snapshot);
+      return;
+    }
     if (
-      reconciliacao === 'impedimento_inventario' ||
       reconciliacao === 'pendencia_informacao' ||
       reconciliacao === 'pendencia_conflito'
     ) {

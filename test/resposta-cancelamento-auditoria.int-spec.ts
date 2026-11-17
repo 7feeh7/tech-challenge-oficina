@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@/shared/generated/prisma/client';
+import { ResolverConsumoManualUseCase } from '@/modules/reservas-estoque/application/use-cases/resolver-consumo-manual.use-case';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
 import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
@@ -44,15 +43,7 @@ import {
   payloadReparoEncerradoE42,
   QUANDO_ENCERRAMENTO_E42,
 } from './helpers/e42-envelope';
-
-function criarPrismaPool(databaseUrl: string): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString: databaseUrl,
-    max: 2,
-    connectionTimeoutMillis: 15_000,
-  });
-  return new PrismaClient({ adapter });
-}
+import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
 describe('E42 — resposta cancelamento e auditoria (integração)', () => {
   let nestModule: TestingModule;
@@ -62,6 +53,7 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
   let desistir: RegistrarDesistenciaUseCase;
   let concluirDiagnostico: ConcluirDiagnosticoInternoUseCase;
   let reservar: ReservarOsInternoUseCase;
+  let resolverManual: ResolverConsumoManualUseCase;
 
   const sufixo = randomUUID().slice(0, 8);
   let clienteId: string;
@@ -158,6 +150,7 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
     desistir = nestModule.get(RegistrarDesistenciaUseCase);
     concluirDiagnostico = nestModule.get(ConcluirDiagnosticoInternoUseCase);
     reservar = nestModule.get(ReservarOsInternoUseCase);
+    resolverManual = nestModule.get(ResolverConsumoManualUseCase);
 
     const cliente = await prisma.cliente.create({
       data: {
@@ -607,6 +600,396 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
       });
       expect(consumo.eventId).toBe(fatoId);
     });
+
+    it('fato com CONSUMO_ACIMA resolve informação insuficiente e abre divergência física', async () => {
+      const { os, correlationId } = await prepararEmCancelamentoReparo(2);
+      const estoqueAntes = (
+        await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+      ).quantidadeEstoque;
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          {
+            tipoTarefa: 'REPARO',
+            resultado: 'JA_ENCERRADA',
+            situacaoTarefa: 'FALHOU',
+            encerradaEm: QUANDO_ENCERRAMENTO_E42,
+            motivo: 'falha',
+            pecasUtilizadas: [],
+            servicosRealizados: [],
+            divergencias: [],
+          },
+        ),
+      );
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'INFORMACAO_INSUFICIENTE'),
+      ).toBe(1);
+      const fatoId = randomUUID();
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.REPARO_FALHOU,
+          os.id,
+          correlationId,
+          1,
+          {
+            pecasUtilizadas: [{ itemId: pecaId, quantidade: 3 }],
+            divergencias: [
+              {
+                itemId: pecaId,
+                tipo: 'CONSUMO_ACIMA',
+                quantidadePrevista: 2,
+                quantidadeUtilizada: 3,
+                justificativa: 'uso acima do reservado',
+              },
+            ],
+            falhouEm: QUANDO_ENCERRAMENTO_E42,
+          },
+          fatoId,
+          QUANDO_ENCERRAMENTO_E42,
+        ),
+      );
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'INFORMACAO_INSUFICIENTE'),
+      ).toBe(0);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'DIVERGENCIA_CONSUMO'),
+      ).toBe(1);
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(1);
+      const consumo = await prisma.consumoAplicadoOs.findUniqueOrThrow({
+        where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+      });
+      expect(consumo.situacaoReconciliacao).toBe('DIVERGENCIA_PENDENTE');
+      expect(consumo.eventId).toBe(fatoId);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+          .quantidadeEstoque,
+      ).toBe(estoqueAntes - 2);
+    });
+
+    it('fato com peça fora da reserva abre divergência sem baixa indevida', async () => {
+      const { os, correlationId } = await prepararEmCancelamentoReparo(1);
+      const outraPeca = await prisma.peca.create({
+        data: {
+          codigo: `FORA-${randomUUID().slice(0, 6)}`,
+          nome: 'Fora reserva',
+          precoUnitario: 10,
+          quantidadeEstoque: 50,
+        },
+      });
+      const estoqueOutraAntes = outraPeca.quantidadeEstoque;
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          {
+            tipoTarefa: 'REPARO',
+            resultado: 'JA_ENCERRADA',
+            situacaoTarefa: 'FALHOU',
+            encerradaEm: QUANDO_ENCERRAMENTO_E42,
+            motivo: 'falha',
+            pecasUtilizadas: [],
+            servicosRealizados: [],
+            divergencias: [],
+          },
+        ),
+      );
+      const fatoId = randomUUID();
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.REPARO_FALHOU,
+          os.id,
+          correlationId,
+          1,
+          {
+            pecasUtilizadas: [
+              { itemId: pecaId, quantidade: 1 },
+              { itemId: outraPeca.id, quantidade: 1 },
+            ],
+            divergencias: [
+              {
+                itemId: outraPeca.id,
+                tipo: 'FORA_DA_LISTA',
+                quantidadePrevista: 0,
+                quantidadeUtilizada: 1,
+                justificativa: 'peça não reservada',
+              },
+            ],
+            falhouEm: QUANDO_ENCERRAMENTO_E42,
+          },
+          fatoId,
+          QUANDO_ENCERRAMENTO_E42,
+        ),
+      );
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'INFORMACAO_INSUFICIENTE'),
+      ).toBe(0);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'DIVERGENCIA_CONSUMO'),
+      ).toBe(1);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: outraPeca.id } }))
+          .quantidadeEstoque,
+      ).toBe(estoqueOutraAntes);
+    });
+
+    it('cenário D — naturezas distintas coexistem; só a causa eliminada resolve', async () => {
+      const { os, correlationId } = await prepararEmCancelamentoReparo(2);
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          {
+            tipoTarefa: 'REPARO',
+            resultado: 'JA_ENCERRADA',
+            situacaoTarefa: 'FALHOU',
+            encerradaEm: QUANDO_ENCERRAMENTO_E42,
+            motivo: 'falha',
+            pecasUtilizadas: [],
+            servicosRealizados: [],
+            divergencias: [],
+          },
+        ),
+      );
+      const pendRodada2 = await prisma.pendenciaOs.create({
+        data: {
+          id: randomUUID(),
+          ordemServicoId: os.id,
+          rodada: 2,
+          tipo: TipoPendenciaOs.INVENTARIO,
+          detalhes: { natureza: 'INFORMACAO_INSUFICIENTE', conteudo: {} },
+        },
+      });
+      const fatoId = randomUUID();
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.REPARO_FALHOU,
+          os.id,
+          correlationId,
+          1,
+          {
+            pecasUtilizadas: [{ itemId: pecaId, quantidade: 3 }],
+            divergencias: [
+              {
+                itemId: pecaId,
+                tipo: 'CONSUMO_ACIMA',
+                quantidadePrevista: 2,
+                quantidadeUtilizada: 3,
+                justificativa: 'acima',
+              },
+            ],
+            falhouEm: QUANDO_ENCERRAMENTO_E42,
+          },
+          fatoId,
+        ),
+      );
+      expect(
+        await prisma.pendenciaOs.count({
+          where: {
+            ordemServicoId: os.id,
+            rodada: 1,
+            resolvida: false,
+            tipo: TipoPendenciaOs.INVENTARIO,
+            detalhes: { path: ['natureza'], equals: 'INFORMACAO_INSUFICIENTE' },
+          },
+        }),
+      ).toBe(0);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'DIVERGENCIA_CONSUMO'),
+      ).toBe(1);
+      expect(
+        await prisma.pendenciaOs.count({
+          where: {
+            ordemServicoId: os.id,
+            rodada: 2,
+            resolvida: false,
+            tipo: TipoPendenciaOs.INVENTARIO,
+            detalhes: { path: ['natureza'], equals: 'INFORMACAO_INSUFICIENTE' },
+          },
+        }),
+      ).toBe(1);
+      const divergencia = await prisma.pendenciaOs.findFirstOrThrow({
+        where: {
+          ordemServicoId: os.id,
+          rodada: 1,
+          resolvida: false,
+          tipo: TipoPendenciaOs.INVENTARIO,
+        },
+      });
+      expect((divergencia.detalhes as { natureza?: string }).natureza).toBe(
+        'DIVERGENCIA_CONSUMO',
+      );
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          payloadReparoEncerradoE42(pecaId, 2, 'FALHOU', randomUUID()),
+        ),
+      );
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'CONFLITO_CONSUMO'),
+      ).toBe(1);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'DIVERGENCIA_CONSUMO'),
+      ).toBe(1);
+      expect(
+        (
+          await prisma.pendenciaOs.findUniqueOrThrow({
+            where: { id: pendRodada2.id },
+          })
+        ).resolvida,
+      ).toBe(false);
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          payloadReparoEncerradoE42(pecaId, 9, 'FALHOU', randomUUID()),
+        ),
+      );
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'CONFLITO_CONSUMO'),
+      ).toBe(1);
+    });
+  });
+
+  describe('resposta após resolução manual (cenário F)', () => {
+    async function pendenciaInformacaoRodada1(osId: string) {
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          osId,
+          (await prisma.ordemServico.findUniqueOrThrow({ where: { id: osId } }))
+            .correlationId,
+          1,
+          {
+            tipoTarefa: 'REPARO',
+            resultado: 'JA_ENCERRADA',
+            situacaoTarefa: 'FALHOU',
+            encerradaEm: QUANDO_ENCERRAMENTO_E42,
+            motivo: 'sem fato',
+            pecasUtilizadas: [],
+            servicosRealizados: [],
+            divergencias: [],
+          },
+        ),
+      );
+      return prisma.pendenciaOs.findFirstOrThrow({
+        where: {
+          ordemServicoId: osId,
+          rodada: 1,
+          tipo: TipoPendenciaOs.INVENTARIO,
+          resolvida: false,
+        },
+      });
+    }
+
+    it('resposta compatível grava fato tardio sem nova baixa nem conflito', async () => {
+      const { os, correlationId } = await prepararEmCancelamentoReparo(2);
+      const pendencia = await pendenciaInformacaoRodada1(os.id);
+      await resolverManual.execute({
+        pendenciaId: pendencia.id,
+        itensConsumidos: [{ pecaId, quantidade: 1 }],
+        itensLiberados: [{ pecaId, quantidade: 1 }],
+        motivo: 'manual antes da resposta',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:f:${pendencia.id}`,
+      });
+      const estoqueAposManual = (
+        await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+      ).quantidadeEstoque;
+      const fatoId = randomUUID();
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          payloadReparoEncerradoE42(pecaId, 1, 'FALHOU', fatoId),
+        ),
+      );
+      const resolucao = await prisma.resolucaoConsumoManual.findUniqueOrThrow({
+        where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+      });
+      expect(resolucao.fatoTardioEventId).toBe(fatoId);
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(0);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+          .quantidadeEstoque,
+      ).toBe(estoqueAposManual);
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          payloadReparoEncerradoE42(pecaId, 1, 'FALHOU', fatoId),
+        ),
+      );
+      expect(
+        (
+          await prisma.resolucaoConsumoManual.findUniqueOrThrow({
+            where: { id: resolucao.id },
+          })
+        ).fatoTardioEventId,
+      ).toBe(fatoId);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'CONFLITO_CONSUMO'),
+      ).toBe(0);
+    });
+
+    it('resposta incompatível abre CONFLITO_CONSUMO sem duplicar na reentrega', async () => {
+      const { os, correlationId } = await prepararEmCancelamentoReparo(2);
+      const pendencia = await pendenciaInformacaoRodada1(os.id);
+      await resolverManual.execute({
+        pendenciaId: pendencia.id,
+        itensConsumidos: [{ pecaId, quantidade: 1 }],
+        itensLiberados: [{ pecaId, quantidade: 1 }],
+        motivo: 'manual',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:f2:${pendencia.id}`,
+      });
+      const fatoId = randomUUID();
+      const incompativel = montarEnvelopeE42(
+        EVENTOS_TERMINAIS_E42.RESPOSTA,
+        os.id,
+        correlationId,
+        1,
+        payloadReparoEncerradoE42(pecaId, 2, 'FALHOU', fatoId),
+      );
+      await processar.executar(incompativel);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'CONFLITO_CONSUMO'),
+      ).toBe(1);
+      const fisico = (
+        await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+      ).quantidadeEstoque;
+      await processar.executar(incompativel);
+      expect(
+        await contarPendenciaNatureza(prisma, os.id, 'CONFLITO_CONSUMO'),
+      ).toBe(1);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+          .quantidadeEstoque,
+      ).toBe(fisico);
+    });
   });
 
   describe('contratos aditivos', () => {
@@ -674,51 +1057,49 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
   });
 
   describe('concorrência', () => {
-    it('fato e resposta concorrentes convergem para um consumo', async () => {
+    it('fato e resposta concorrentes — exatamente um consumo após disputa de bloqueio', async () => {
       const databaseUrl = exigirDatabaseUrl();
       const { os, correlationId } = await prepararEmCancelamentoReparo(3);
       const fatoId = randomUUID();
-      const prismaB = criarPrismaPool(databaseUrl);
-      let liberar: () => void = () => undefined;
-      const trava = new Promise<void>((r) => {
-        liberar = r;
-      });
-      const p1 = (async () => {
-        await trava;
-        return processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
-            os.id,
-            correlationId,
-            1,
-            {
-              pecasUtilizadas: [{ itemId: pecaId, quantidade: 2 }],
-              concluidoEm: QUANDO_ENCERRAMENTO_E42,
-            },
-            fatoId,
-          ),
-        );
-      })();
-      const p2 = (async () => {
-        await trava;
-        return processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.RESPOSTA,
-            os.id,
-            correlationId,
-            1,
-            payloadReparoConcluidoE42(pecaId, 2, fatoId),
-          ),
-        );
-      })();
-      setTimeout(liberar, 20);
-      await Promise.allSettled([p1, p2]);
-      await prismaB.$disconnect();
+      const estoqueAntes = (
+        await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+      ).quantidadeEstoque;
+      const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+      await sessao.adquirir();
+      const pFato = processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
+          os.id,
+          correlationId,
+          1,
+          {
+            pecasUtilizadas: [{ itemId: pecaId, quantidade: 2 }],
+            concluidoEm: QUANDO_ENCERRAMENTO_E42,
+          },
+          fatoId,
+        ),
+      );
+      const pResposta = processar.executar(
+        montarEnvelopeE42(
+          EVENTOS_TERMINAIS_E42.RESPOSTA,
+          os.id,
+          correlationId,
+          1,
+          payloadReparoConcluidoE42(pecaId, 2, fatoId),
+        ),
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      await sessao.liberar();
+      await Promise.allSettled([pFato, pResposta]);
       expect(
         await prisma.consumoAplicadoOs.count({
           where: { ordemServicoId: os.id, rodada: 1 },
         }),
       ).toBe(1);
+      const estoqueDepois = (
+        await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+      ).quantidadeEstoque;
+      expect(estoqueDepois).toBe(estoqueAntes - 2);
     }, 60_000);
   });
 
