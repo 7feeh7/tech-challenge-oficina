@@ -14,4 +14,18 @@ export interface PedidoEmitidoGateway {
     contexto: ContextoTransacao,
     input: RegistrarPedidoEmitidoInput,
   ): Promise<void>;
+
+  existeEmitido(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    tipo: TipoPedidoSaga,
+  ): Promise<boolean>;
+
+  marcarConcluidoPorTipo(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    tipo: TipoPedidoSaga,
+  ): Promise<void>;
 }

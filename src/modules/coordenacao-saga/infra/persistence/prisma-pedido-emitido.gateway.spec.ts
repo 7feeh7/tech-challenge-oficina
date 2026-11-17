@@ -19,4 +19,27 @@ describe('PrismaPedidoEmitidoGateway', () => {
     });
     expect(create).toHaveBeenCalled();
   });
+
+  it('detecta e conclui pedido emitido', async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'p1' });
+    const updateMany = jest.fn();
+    const prisma = {
+      pedidoEmitido: { findFirst, updateMany },
+    };
+    const gateway = new PrismaPedidoEmitidoGateway(prisma as never);
+    const existe = await gateway.existeEmitido(
+      {} as never,
+      'os',
+      1,
+      TipoPedidoSaga.CANCELAR_TAREFA,
+    );
+    expect(existe).toBe(true);
+    await gateway.marcarConcluidoPorTipo(
+      {} as never,
+      'os',
+      1,
+      TipoPedidoSaga.CANCELAR_TAREFA,
+    );
+    expect(updateMany).toHaveBeenCalled();
+  });
 });

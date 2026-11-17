@@ -1,12 +1,20 @@
 export const EVENTO_STATUS_CHANGED = 'ordem-servico.status-changed.v1';
 export const COMANDO_INICIAR_DIAGNOSTICO = 'execution.iniciar-diagnostico.v1';
 export const COMANDO_INICIAR_REPARO = 'execution.iniciar-reparo.v1';
+export const COMANDO_CANCELAR_TAREFA = 'execution.cancelar-tarefa.v1';
+export const EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO =
+  'execution.resposta-cancelamento.v1';
+export const EVENTO_REPARO_FALHOU = 'execution.reparo-falhou.v1';
+export const EVENTO_REPARO_INTERROMPIDO = 'execution.reparo-interrompido.v1';
 export const EVENTO_DIAGNOSTICO_INICIADO = 'execution.diagnostico-iniciado.v1';
 export const EVENTO_TAREFA_DEVOLVIDA_A_FILA =
   'execution.tarefa-devolvida-a-fila.v1';
 export const EVENTO_REPARO_INICIADO = 'execution.reparo-iniciado.v1';
 export const EVENTO_REPARO_CONCLUIDO = 'execution.reparo-concluido.v1';
 export const COMANDO_GERAR_ORCAMENTO = 'billing.gerar-orcamento.v1';
+export const COMANDO_CANCELAR_FINANCEIRO = 'billing.cancelar-financeiro.v1';
+export const COMANDO_CONSULTAR_SITUACAO_FINANCEIRA =
+  'billing.consultar-situacao-financeira.v1';
 export const EVENTO_PAGAMENTO_DISPONIVEL =
   'ordem-servico.pagamento-disponivel.v1';
 

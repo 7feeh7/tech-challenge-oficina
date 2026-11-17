@@ -68,6 +68,20 @@ enum SituacaoPedidoSaga {
   CANCELADO
 }
 
+enum PassoCompensacaoSaga {
+  EXECUCAO
+  CONSULTA_E10
+  FINANCEIRO
+  ESTOQUE
+  ENCERRAMENTO
+  CONCLUIDO
+}
+
+enum ResultadoExecucaoCompensacao {
+  REPARO_NAO_INICIADO
+  REPARO_INICIADO
+}
+
 enum PerfilUsuario {
   ADMINISTRADOR
   ATENDENTE
@@ -243,6 +257,26 @@ model ProjecaoFinanceiraOs {
   @@map("projecoes_financeiras_os")
 }
 
+model EstadoCompensacaoOs {
+  ordemServicoId                    String                        @id @map("ordem_servico_id") @db.Uuid
+  ordemServico                      OrdemServico                  @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  rodada                            Int
+  passo                             PassoCompensacaoSaga          @default(EXECUCAO)
+  resultadoExecucao                 ResultadoExecucaoCompensacao? @map("resultado_execucao")
+  consultaIdVigente                 String?                       @map("consulta_id_vigente") @db.VarChar(256)
+  aguardandoResposta                Boolean                       @default(false) @map("aguardando_resposta")
+  reparoIniciadoDuranteCancelamento Boolean                       @default(false) @map("reparo_iniciado_durante_cancelamento")
+  fatoTerminalExecucao              Boolean                       @default(false) @map("fato_terminal_execucao")
+  pecasUtilizadas                   Json?                         @map("pecas_utilizadas")
+  servicosRealizados                Json?                         @map("servicos_realizados")
+  divergenciasExecucao              Json?                         @map("divergencias_execucao")
+  condicoesE10                      Json?                         @map("condicoes_e10")
+  criadoEm                          DateTime                      @default(now()) @map("criado_em")
+  atualizadoEm                      DateTime                      @updatedAt @map("atualizado_em")
+
+  @@map("estados_compensacao_os")
+}
+
 model AjusteEstoqueAdministrativo {
   id                      String       @id @default(uuid()) @db.Uuid
   pecaId                  String       @map("peca_id") @db.Uuid
@@ -291,6 +325,7 @@ model OrdemServico {
   pendencias               PendenciaOs[]
   pedidosEmitidos          PedidoEmitido[]
   projecoesFinanceiras     ProjecaoFinanceiraOs[]
+  estadoCompensacao        EstadoCompensacaoOs?
   iniciadaEm               DateTime?             @map("iniciada_em")
   finalizadaEm             DateTime?             @map("finalizada_em")
   entregueEm               DateTime?             @map("entregue_em")

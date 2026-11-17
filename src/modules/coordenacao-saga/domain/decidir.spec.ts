@@ -13,6 +13,9 @@ function ordem(
     orderIdFato: null,
     orderIdJaRegistrado: null,
     mesmoOrderId: false,
+    consultaIdVigente: null,
+    consultaIdFato: null,
+    emCompensacaoConsultaE10: false,
     ...parcial,
   };
 }
@@ -190,6 +193,101 @@ describe('decidir (fluxo principal E29)', () => {
     for (const [fato, status] of casos) {
       expect(decidir(fato, ordem({ status }))).toBe(AcaoDecisao.APLICAR);
     }
+  });
+
+  it('aplica CobrancaExpirada em AGUARDANDO_PAGAMENTO', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.COBRANCA_EXPIRADA,
+        ordem({ status: StatusOS.AGUARDANDO_PAGAMENTO }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('JA_CONCLUIDA de diagnostico nunca vira aplicacao E10', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.SITUACAO_FINANCEIRA,
+        ordem({
+          status: StatusOS.EM_DIAGNOSTICO,
+          emCompensacaoConsultaE10: true,
+        }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
+  });
+
+  it('aplica SituacaoFinanceira vigente em compensacao E10', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.SITUACAO_FINANCEIRA,
+        ordem({
+          status: StatusOS.EM_CANCELAMENTO,
+          emCompensacaoConsultaE10: true,
+          consultaIdVigente: 'c1',
+          consultaIdFato: 'c1',
+        }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('concilia PagamentoConfirmado em EM_CANCELAMENTO', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+        ordem({ status: StatusOS.EM_CANCELAMENTO }),
+      ),
+    ).toBe(AcaoDecisao.CONCILIAR);
+  });
+
+  it('ignora SituacaoFinanceira com consultaId diferente da vigente', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.SITUACAO_FINANCEIRA,
+        ordem({
+          status: StatusOS.EM_CANCELAMENTO,
+          consultaIdVigente: 'vig',
+          consultaIdFato: 'outra',
+        }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
+  });
+
+  it('aplica fatos de compensação em EM_CANCELAMENTO', () => {
+    const fatos: TipoFatoSaga[] = [
+      TipoFatoSaga.RESPOSTA_CANCELAMENTO,
+      TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO,
+      TipoFatoSaga.REPARO_FALHOU,
+      TipoFatoSaga.REPARO_INTERROMPIDO,
+    ];
+    for (const fato of fatos) {
+      expect(decidir(fato, ordem({ status: StatusOS.EM_CANCELAMENTO }))).toBe(
+        AcaoDecisao.APLICAR,
+      );
+    }
+  });
+
+  it('aplica ReparoIniciado em EM_CANCELAMENTO', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_INICIADO,
+        ordem({ status: StatusOS.EM_CANCELAMENTO }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('aplica estorno e pendência resolvida pós-encerramento', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.ESTORNO_CONCLUIDO,
+        ordem({ status: StatusOS.CANCELADA }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+    expect(
+      decidir(
+        TipoFatoSaga.PENDENCIA_RESOLVIDA,
+        ordem({ status: StatusOS.FINALIZADA }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
   });
 
   it('concilia fato financeiro fora do estado esperado sem regressão', () => {

@@ -68,6 +68,64 @@ export function decidir(
   }
 
   if (
+    fato === TipoFatoSaga.SITUACAO_FINANCEIRA &&
+    ordem.consultaIdFato &&
+    ordem.consultaIdVigente &&
+    ordem.consultaIdFato !== ordem.consultaIdVigente
+  ) {
+    return AcaoDecisao.IGNORAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.SITUACAO_FINANCEIRA &&
+    ordem.status === StatusOS.EM_CANCELAMENTO &&
+    ordem.emCompensacaoConsultaE10
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    (fato === TipoFatoSaga.RESPOSTA_CANCELAMENTO ||
+      fato === TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO ||
+      fato === TipoFatoSaga.REPARO_FALHOU ||
+      fato === TipoFatoSaga.REPARO_INTERROMPIDO) &&
+    ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.COBRANCA_EXPIRADA &&
+    ordem.status === StatusOS.AGUARDANDO_PAGAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.REPARO_INICIADO &&
+    ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    (fato === TipoFatoSaga.ESTORNO_CONCLUIDO ||
+      fato === TipoFatoSaga.PENDENCIA_RESOLVIDA) &&
+    [StatusOS.CANCELADA, StatusOS.ENTREGUE, StatusOS.FINALIZADA].includes(
+      ordem.status,
+    )
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
+    ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.CONCILIAR;
+  }
+
+  if (
     fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
     ordem.orderIdFato &&
     ordem.orderIdJaRegistrado &&
