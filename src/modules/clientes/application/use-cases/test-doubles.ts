@@ -16,6 +16,7 @@ export const criarClienteFake = (overrides: Partial<ClienteProps> = {}) =>
   });
 
 export const criarGatewayMock = (): jest.Mocked<ClienteGateway> => ({
+  buscarPorCpf: jest.fn(),
   buscarPorId: jest.fn(),
   buscarComVeiculosPorId: jest.fn(),
   existeComEmailOuDocumento: jest.fn(),

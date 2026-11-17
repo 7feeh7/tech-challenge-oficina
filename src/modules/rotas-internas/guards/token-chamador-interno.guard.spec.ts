@@ -5,6 +5,7 @@ import { JwtService } from '@nestjs/jwt';
 import { TokenChamadorInternoGuard } from './token-chamador-interno.guard';
 import { RelacaoChamadorInterno } from '../relacao-chamador-interno';
 import { CHAMADOR_INTERNO_KEY } from '../decorators/chamador-interno.decorator';
+import { ROTA_INTERNA_KEY } from '../decorators/rota-interna.decorator';
 
 describe('TokenChamadorInternoGuard', () => {
   const reflector = {
@@ -38,7 +39,36 @@ describe('TokenChamadorInternoGuard', () => {
     });
   });
 
-  it('ignora rotas sem metadado de chamador', () => {
+  it('detecta caminho interno via raw.url', () => {
+    reflector.getAllAndOverride = jest.fn().mockReturnValue(undefined);
+    const interno = {
+      getHandler: () => ({}),
+      getClass: () => ({}),
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: {},
+          raw: { url: '/internal/clientes?cpf=1' },
+        }),
+      }),
+    } as never;
+    expect(() => guard.canActivate(interno)).toThrow(UnauthorizedException);
+  });
+
+  it('rejeita /internal sem metadado de chamador', () => {
+    reflector.getAllAndOverride = jest.fn().mockReturnValue(undefined);
+    const interno = {
+      ...context('Bearer x'),
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: { authorization: 'Bearer x' },
+          url: '/internal/x',
+        }),
+      }),
+    } as never;
+    expect(() => guard.canActivate(interno)).toThrow(UnauthorizedException);
+  });
+
+  it('ignora rotas públicas fora de /internal sem metadado', () => {
     reflector.getAllAndOverride = jest.fn().mockReturnValue(undefined);
     expect(guard.canActivate(context('Bearer x'))).toBe(true);
   });
@@ -49,6 +79,14 @@ describe('TokenChamadorInternoGuard', () => {
       return undefined;
     });
     expect(guard.canActivate(context('Bearer token-billing'))).toBe(true);
+  });
+
+  it('rejeita bearer ausente em rota interna marcada', () => {
+    reflector.getAllAndOverride = jest.fn((key: string) => {
+      if (key === ROTA_INTERNA_KEY) return true;
+      return RelacaoChamadorInterno.BILLING;
+    });
+    expect(() => guard.canActivate(context())).toThrow(UnauthorizedException);
   });
 
   it('rejeita token de outro chamador', () => {

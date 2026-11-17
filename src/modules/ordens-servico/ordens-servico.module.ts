@@ -117,6 +117,10 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
       inject: [ORDEM_SERVICO_GATEWAY],
     },
   ],
-  exports: [ORDEM_SERVICO_GATEWAY, TransicaoOrdemServicoService],
+  exports: [
+    ORDEM_SERVICO_GATEWAY,
+    CATALOGO_GATEWAY,
+    TransicaoOrdemServicoService,
+  ],
 })
 export class OrdensServicoModule {}

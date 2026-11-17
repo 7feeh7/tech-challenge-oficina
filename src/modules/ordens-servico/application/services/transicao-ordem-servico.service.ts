@@ -3,7 +3,9 @@ import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { enrichObservabilityContext } from '@/shared/http/correlation-id.context';
 import type { OutboxGateway } from '@/shared/messaging/application/ports/outbox.gateway';
 import {
+  COMANDO_GERAR_ORCAMENTO,
   COMANDO_INICIAR_DIAGNOSTICO,
+  DESTINO_FILA_BILLING,
   DESTINO_FILA_EXECUTION,
   DESTINO_TOPICO_NOTIFICACAO,
   type EnvelopeMensagem,
@@ -291,6 +293,45 @@ export class TransicaoOrdemServicoService {
       envelope,
       correlationId: bloqueada.ordem.correlationId,
       destino: DESTINO_FILA_EXECUTION,
+    });
+  }
+
+  async registrarGerarOrcamentoNaOutbox(
+    contexto: ContextoTransacao,
+    bloqueada: OrdemServicoBloqueada,
+    causationId: string | null,
+    itens: {
+      tipo: 'PECA' | 'SERVICO';
+      itemId: string;
+      nome: string;
+      quantidade: number;
+      precoUnitarioCentavos: number;
+    }[],
+  ): Promise<void> {
+    const eventId = randomUUID();
+    const ocorridoEm = new Date();
+    const envelope: EnvelopeMensagem = {
+      eventId,
+      eventType: COMANDO_GERAR_ORCAMENTO,
+      version: 1,
+      occurredAt: ocorridoEm.toISOString(),
+      source: ORIGEM_OS,
+      correlationId: bloqueada.ordem.correlationId,
+      causationId,
+      ordemServicoId: bloqueada.ordem.id!,
+      rodada: bloqueada.ordem.rodadaVigente,
+      payload: {
+        clienteId: bloqueada.ordem.clienteId,
+        itens,
+      },
+    };
+
+    await this.outbox.registrar(contexto, {
+      eventId,
+      eventType: COMANDO_GERAR_ORCAMENTO,
+      envelope,
+      correlationId: bloqueada.ordem.correlationId,
+      destino: DESTINO_FILA_BILLING,
     });
   }
 

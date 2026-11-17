@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
+import { ConteudoDivergenteInternoError } from '@/modules/rotas-internas/domain/erros-internos';
 import { IdempotencyService } from './idempotency.service';
 
 const prismaMock = {
@@ -90,5 +91,47 @@ describe('IdempotencyService', () => {
     await expect(
       service.findReplay('key-1', 'scope', 'abc'),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('buscarNaTransacao devolve null se ausente', async () => {
+    const cliente = {
+      idempotencyRecord: { findUnique: jest.fn().mockResolvedValue(null) },
+    };
+    const contexto = new PrismaContextoTransacao(cliente as never);
+    await expect(
+      service.buscarNaTransacao(contexto, 'k', 'scope', 'h1'),
+    ).resolves.toBeNull();
+  });
+
+  it('buscarNaTransacao devolve replay', async () => {
+    const cliente = {
+      idempotencyRecord: {
+        findUnique: jest.fn().mockResolvedValue({
+          requestHash: 'h1',
+          responseStatus: 200,
+          responseBody: { ok: true },
+        }),
+      },
+    };
+    const contexto = new PrismaContextoTransacao(cliente as never);
+    await expect(
+      service.buscarNaTransacao(contexto, 'k', 'scope', 'h1'),
+    ).resolves.toEqual({ statusCode: 200, body: { ok: true } });
+  });
+
+  it('buscarNaTransacao recusa conteúdo divergente', async () => {
+    const cliente = {
+      idempotencyRecord: {
+        findUnique: jest.fn().mockResolvedValue({
+          requestHash: 'outro',
+          responseStatus: 200,
+          responseBody: {},
+        }),
+      },
+    };
+    const contexto = new PrismaContextoTransacao(cliente as never);
+    await expect(
+      service.buscarNaTransacao(contexto, 'k', 'scope', 'h1'),
+    ).rejects.toBeInstanceOf(ConteudoDivergenteInternoError);
   });
 });

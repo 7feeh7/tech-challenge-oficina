@@ -60,4 +60,24 @@ describe('PrismaCatalogoGateway', () => {
     peca.mockResolvedValue(null);
     await expect(gateway.pecaExiste('x')).resolves.toBe(false);
   });
+
+  it('buscarServicoParaDiagnostico mapeia preço do catálogo', async () => {
+    servico.mockResolvedValue({
+      id: 's1',
+      nome: 'Serv',
+      precoBase: 42,
+      ativo: true,
+    });
+    await expect(gateway.buscarServicoParaDiagnostico('s1')).resolves.toEqual({
+      id: 's1',
+      nome: 'Serv',
+      precoUnitario: 42,
+      ativo: true,
+    });
+  });
+
+  it('buscarPecaParaDiagnostico devolve null se ausente', async () => {
+    peca.mockResolvedValue(null);
+    await expect(gateway.buscarPecaParaDiagnostico('x')).resolves.toBeNull();
+  });
 });

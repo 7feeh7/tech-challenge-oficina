@@ -25,6 +25,7 @@ export interface DocumentoDeContato {
 }
 
 export interface ClienteGateway {
+  buscarPorCpf(cpf: string): Promise<Cliente | null>;
   buscarPorId(id: string): Promise<Cliente | null>;
   buscarComVeiculosPorId(id: string): Promise<ClienteComVeiculos | null>;
   existeComEmailOuDocumento(email: string, cpfCnpj: string): Promise<boolean>;
