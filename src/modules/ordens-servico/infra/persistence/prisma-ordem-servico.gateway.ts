@@ -13,6 +13,7 @@ import {
   PaginaOrdensServico,
   RegistroDeStatus,
 } from '../../application/ports/ordem-servico.gateway';
+import { montarResumoFinanceiro } from '../../application/mappers/resumo-financeiro-os.mapper';
 import {
   ItemPecaPrisma,
   ItemServicoPrisma,
@@ -70,7 +71,7 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
       where: { id },
       include: {
         ...INCLUDE_COMPLETO,
-        orcamentos: true,
+        projecoesFinanceiras: true,
         historicoStatus: { orderBy: { criadoEm: 'asc' } },
       },
     });
@@ -91,9 +92,24 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
       }),
     );
 
+    const ordem = PrismaOrdemServicoMapper.toDomain(raw);
+    const resumoFinanceiro = montarResumoFinanceiro(
+      ordem.rodadaVigente,
+      raw.projecoesFinanceiras.map((p) => ({
+        rodada: p.rodada,
+        natureza: p.natureza,
+        orcamentoId: p.orcamentoId,
+        cobrancaId: p.cobrancaId,
+        orderId: p.orderId,
+        valorCentavos: p.valorCentavos,
+        linkPagamento: p.linkPagamento,
+        criadoEm: p.criadoEm,
+      })),
+    );
+
     return {
       ...this.montarDetalhe(raw),
-      orcamentos: raw.orcamentos,
+      resumoFinanceiro,
       historicoStatus,
     };
   }
@@ -369,7 +385,7 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
       sugestoes: (sugestoesItens ?? []).map((item) =>
         PrismaOrdemServicoMapper.sugestaoToDomain(item),
       ),
-      orcamentos: [],
+      resumoFinanceiro: { orcamento: null, pagamento: null },
       historicoStatus: [],
     };
   }

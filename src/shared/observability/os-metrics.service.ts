@@ -7,7 +7,11 @@ import { safeTelemetryAsync } from './safe-telemetry';
 
 const STATUS_COM_DURACAO: StatusOS[] = [
   StatusOS.EM_DIAGNOSTICO,
+  StatusOS.AGUARDANDO_APROVACAO,
+  StatusOS.AGUARDANDO_PAGAMENTO,
+  StatusOS.AGUARDANDO_EXECUCAO,
   StatusOS.EM_EXECUCAO,
+  StatusOS.EM_CANCELAMENTO,
   StatusOS.FINALIZADA,
 ];
 

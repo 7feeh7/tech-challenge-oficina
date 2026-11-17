@@ -14,16 +14,12 @@ import {
   exigirDatabaseUrl,
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
-import {
-  PerfilUsuario,
-  StatusOS,
-  StatusOrcamento,
-} from '../src/shared/generated/prisma/enums';
+import { PerfilUsuario, StatusOS } from '../src/shared/generated/prisma/enums';
 
 /**
  * E2E completo do fluxo principal da oficina:
  *   login → criar cliente → criar veículo → catálogo (serviço/peça)
- *   → criar OS → criar orçamento → aprovar → consultar
+ *   → criar OS → simular pagamento pendente → desistência → consultar
  *
  * Requer PostgreSQL real acessível em DATABASE_URL e par RS256 (JWT_*_KEY).
  */
@@ -42,7 +38,6 @@ describe('Fluxo completo da oficina (e2e)', () => {
     servicoId?: string;
     pecaId?: string;
     ordemServicoId?: string;
-    orcamentoId?: string;
   } = {};
 
   let token: string;
@@ -96,9 +91,6 @@ describe('Fluxo completo da oficina (e2e)', () => {
   });
 
   afterAll(async () => {
-    if (created.orcamentoId) {
-      await prisma.orcamento.deleteMany({ where: { id: created.orcamentoId } });
-    }
     if (created.ordemServicoId) {
       await prisma.outboxMensagem.deleteMany({
         where: {
@@ -300,12 +292,23 @@ describe('Fluxo completo da oficina (e2e)', () => {
       .expect(404);
   });
 
-  it('5d. POST /orcamentos com a OS ainda em RECEBIDA → 400 (diagnóstico é pré-requisito)', async () => {
+  it('5d. rotas legadas /v1/orcamentos removidas', async () => {
     await request(httpServer)
       .post('/v1/orcamentos')
       .set('Authorization', `Bearer ${token}`)
       .send({ ordemServicoId: created.ordemServicoId, valorTotal: 250 })
-      .expect(400);
+      .expect(404);
+
+    await request(httpServer)
+      .patch('/v1/orcamentos/00000000-0000-4000-8000-000000000001')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'APROVADO' })
+      .expect(404);
+
+    await request(httpServer)
+      .get('/v1/orcamentos')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
   });
 
   it('5e. diagnóstico concluído (simulado) → OS em EM_DIAGNOSTICO com itens oficiais', async () => {
@@ -324,27 +327,16 @@ describe('Fluxo completo da oficina (e2e)', () => {
     });
   });
 
-  it('6. POST /orcamentos → deve criar orçamento e mover OS para AGUARDANDO_APROVACAO', async () => {
-    // Act
-    const res = await request(httpServer)
-      .post('/v1/orcamentos')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        ordemServicoId: created.ordemServicoId,
-        valorTotal: 250,
-        observacoes: 'Orçamento E2E',
-      })
-      .expect(201);
-
-    // Assert
-    expect(res.body.id).toBeDefined();
-    expect(res.body.status).toBe(StatusOrcamento.AGUARDANDO_APROVACAO);
-    created.orcamentoId = res.body.id;
-
-    const os = await prisma.ordemServico.findUnique({
+  it('6. prepara AGUARDANDO_PAGAMENTO sem rota pública de orçamento', async () => {
+    const prazo = new Date(Date.now() + 86_400_000);
+    await prisma.ordemServico.update({
       where: { id: created.ordemServicoId! },
+      data: {
+        status: StatusOS.AGUARDANDO_PAGAMENTO,
+        prioridadeFila: 3,
+        prazoReferenciaReserva: prazo,
+      },
     });
-    expect(os?.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
   });
 
   it('7. token de cliente → consulta OS própria e bloqueia acesso cruzado', async () => {
@@ -398,36 +390,6 @@ describe('Fluxo completo da oficina (e2e)', () => {
       .expect(403);
 
     await prisma.cliente.deleteMany({ where: { id: outroCliente.body.id } });
-  });
-
-  it('8. PATCH /orcamentos/:id → APROVADO deve reservar o estoque e mover OS para AGUARDANDO_PAGAMENTO', async () => {
-    // Arrange
-    const pecaAntes = await prisma.peca.findUnique({
-      where: { id: created.pecaId! },
-    });
-
-    // Act
-    await request(httpServer)
-      .patch(`/v1/orcamentos/${created.orcamentoId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ status: StatusOrcamento.APROVADO })
-      .expect(200);
-
-    // Assert: a aprovação reserva (D2.14); a baixa só acontece na execução
-    const pecaDepois = await prisma.peca.findUnique({
-      where: { id: created.pecaId! },
-    });
-    expect(pecaDepois!.quantidadeEstoque).toBe(pecaAntes!.quantidadeEstoque);
-    expect(pecaDepois!.quantidadeReservada).toBe(
-      pecaAntes!.quantidadeReservada + 2,
-    );
-
-    const os = await prisma.ordemServico.findUnique({
-      where: { id: created.ordemServicoId! },
-    });
-    expect(os?.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
-    expect(os?.prioridadeFila).toBe(3);
-    expect(os?.iniciadaEm).toBeNull();
   });
 
   it('9. GET /ordens-servico/:id → deve refletir o estado atual', async () => {

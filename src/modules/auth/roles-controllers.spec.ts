@@ -5,7 +5,6 @@ import { ClientesController } from '@/modules/clientes/infra/http/controllers/cl
 import { VeiculosController } from '@/modules/veiculos/infra/http/controllers/veiculos.controller';
 import { UsuariosController } from '@/modules/usuarios/infra/http/controllers/usuarios.controller';
 import { OrdensServicoController } from '@/modules/ordens-servico/infra/http/controllers/ordens-servico.controller';
-import { OrcamentosController } from '@/modules/orcamentos/infra/http/controllers/orcamentos.controller';
 import { MovimentacoesEstoqueController } from '@/modules/movimentacoes-estoque/infra/http/controllers/movimentacoes-estoque.controller';
 import { ServicosController } from '@/modules/servicos/infra/http/controllers/servicos.controller';
 import { PecasController } from '@/modules/pecas/infra/http/controllers/pecas.controller';
@@ -43,17 +42,6 @@ describe('Controle de acesso por perfil (@Roles)', () => {
       PerfilUsuario.ADMINISTRADOR,
       PerfilUsuario.ATENDENTE,
       PerfilUsuario.MECANICO,
-    ]);
-  });
-
-  it('OrcamentosController deve aceitar ADMIN e ATENDENTE', () => {
-    const roles = reflector.get<PerfilUsuario[]>(
-      ROLES_KEY,
-      OrcamentosController,
-    );
-    expect(roles).toEqual([
-      PerfilUsuario.ADMINISTRADOR,
-      PerfilUsuario.ATENDENTE,
     ]);
   });
 

@@ -51,19 +51,16 @@ export class OwnershipGuard implements CanActivate {
     resource: OwnershipResource,
     resourceId: string,
   ): Promise<string | null> {
-    if (resource === OwnershipResource.ORDEM_SERVICO) {
-      const ordem = await this.prisma.ordemServico.findUnique({
-        where: { id: resourceId },
-        select: { clienteId: true },
-      });
-      return ordem?.clienteId ?? null;
+    if (resource !== OwnershipResource.ORDEM_SERVICO) {
+      throw new ForbiddenException(
+        'Recurso não suportado para verificação de posse.',
+      );
     }
 
-    const orcamento = await this.prisma.orcamento.findUnique({
+    const ordem = await this.prisma.ordemServico.findUnique({
       where: { id: resourceId },
-      select: { ordemServico: { select: { clienteId: true } } },
+      select: { clienteId: true },
     });
-
-    return orcamento?.ordemServico.clienteId ?? null;
+    return ordem?.clienteId ?? null;
   }
 }

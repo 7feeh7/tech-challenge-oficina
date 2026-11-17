@@ -1,10 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { AtualizarOrcamentoUseCase } from '@/modules/orcamentos/application/use-cases/atualizar-orcamento.use-case';
-import { CriarOrcamentoUseCase } from '@/modules/orcamentos/application/use-cases/criar-orcamento.use-case';
-import { EstoqueInsuficienteParaAprovacaoError } from '@/modules/orcamentos/domain/errors/orcamento.errors';
-import { OrcamentosModule } from '@/modules/orcamentos/orcamentos.module';
 import { AtualizarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/atualizar-ordem-servico.use-case';
 import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { ListarOrdensServicoUseCase } from '@/modules/ordens-servico/application/use-cases/listar-ordens-servico.use-case';
@@ -26,7 +22,7 @@ import {
   EVENTO_STATUS_CHANGED,
 } from '@/shared/messaging/envelope';
 import { ObservabilityModule } from '@/shared/observability/observability.module';
-import { StatusOrcamento, StatusOS } from '@/shared/generated/prisma/enums';
+import { StatusOS } from '@/shared/generated/prisma/enums';
 import {
   exigirDatabaseUrl,
   verificarConexaoPostgres,
@@ -42,9 +38,6 @@ describe('OS — domínio da ordem (integração)', () => {
   let atualizar: AtualizarOrdemServicoUseCase;
   let desistir: RegistrarDesistenciaUseCase;
   let listar: ListarOrdensServicoUseCase;
-  let criarOrcamento: CriarOrcamentoUseCase;
-  let atualizarOrcamento: AtualizarOrcamentoUseCase;
-
   const sufixo = randomUUID().slice(0, 8);
   let clienteId: string;
   let veiculoId: string;
@@ -68,7 +61,6 @@ describe('OS — domínio da ordem (integração)', () => {
         ObservabilityModule,
         PrismaModule,
         OrdensServicoModule,
-        OrcamentosModule,
       ],
     }).compile();
 
@@ -81,8 +73,6 @@ describe('OS — domínio da ordem (integração)', () => {
     atualizar = nestModule.get(AtualizarOrdemServicoUseCase);
     desistir = nestModule.get(RegistrarDesistenciaUseCase);
     listar = nestModule.get(ListarOrdensServicoUseCase);
-    criarOrcamento = nestModule.get(CriarOrcamentoUseCase);
-    atualizarOrcamento = nestModule.get(AtualizarOrcamentoUseCase);
 
     const cliente = await prisma.cliente.create({
       data: {
@@ -460,143 +450,6 @@ describe('OS — domínio da ordem (integração)', () => {
       expect(primeira.data).toHaveLength(1);
       expect(segunda.data).toHaveLength(1);
       expect(primeira.data[0].id).not.toBe(segunda.data[0].id);
-    });
-  });
-
-  describe('orçamento', () => {
-    async function osEmDiagnostico(quantidadePeca: number): Promise<string> {
-      const { id } = await abrirOs({ clienteId, veiculoId });
-      await prisma.ordemServico.update({
-        where: { id },
-        data: { status: StatusOS.EM_DIAGNOSTICO, prioridadeFila: 5 },
-      });
-      await prisma.ordemServicoPeca.create({
-        data: {
-          ordemServicoId: id,
-          pecaId,
-          quantidade: quantidadePeca,
-          precoUnitario: 10,
-        },
-      });
-      return id;
-    }
-
-    it('duas requisições simultâneas geram um único orçamento vivo', async () => {
-      const id = await osEmDiagnostico(1);
-
-      const resultados = await Promise.allSettled([
-        criarOrcamento.execute({ ordemServicoId: id, valorTotal: 100 }),
-        criarOrcamento.execute({ ordemServicoId: id, valorTotal: 200 }),
-      ]);
-
-      expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(
-        1,
-      );
-      expect(
-        await prisma.orcamento.count({ where: { ordemServicoId: id } }),
-      ).toBe(1);
-      const ordem = await prisma.ordemServico.findUniqueOrThrow({
-        where: { id },
-      });
-      expect(ordem.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
-    });
-
-    it('aprovar reserva o estoque e move a OS para AGUARDANDO_PAGAMENTO na mesma transação', async () => {
-      const id = await osEmDiagnostico(3);
-      const pecaAntes = await prisma.peca.findUniqueOrThrow({
-        where: { id: pecaId },
-      });
-      const orcamento = await criarOrcamento.execute({
-        ordemServicoId: id,
-        valorTotal: 100,
-      });
-
-      await atualizarOrcamento.execute(orcamento.id!, {
-        status: StatusOrcamento.APROVADO,
-      });
-
-      const pecaDepois = await prisma.peca.findUniqueOrThrow({
-        where: { id: pecaId },
-      });
-      const ordem = await prisma.ordemServico.findUniqueOrThrow({
-        where: { id },
-      });
-      expect(ordem.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
-      expect(ordem.prioridadeFila).toBe(3);
-      expect(pecaDepois.quantidadeEstoque).toBe(pecaAntes.quantidadeEstoque);
-      expect(pecaDepois.quantidadeReservada).toBe(
-        pecaAntes.quantidadeReservada + 3,
-      );
-      expect(
-        await prisma.reservaEstoque.count({
-          where: { ordemServicoId: id, rodada: 1, situacao: 'ATIVA' },
-        }),
-      ).toBe(1);
-    });
-
-    it('estoque insuficiente na aprovação desfaz orçamento, status e reserva', async () => {
-      const id = await osEmDiagnostico(10_000);
-      const orcamento = await criarOrcamento.execute({
-        ordemServicoId: id,
-        valorTotal: 100,
-      });
-      const mensagensAntes = await mensagensDaOs(id);
-
-      await expect(
-        atualizarOrcamento.execute(orcamento.id!, {
-          status: StatusOrcamento.APROVADO,
-        }),
-      ).rejects.toThrow(EstoqueInsuficienteParaAprovacaoError);
-
-      const ordem = await prisma.ordemServico.findUniqueOrThrow({
-        where: { id },
-      });
-      const salvo = await prisma.orcamento.findUniqueOrThrow({
-        where: { id: orcamento.id! },
-      });
-      expect(ordem.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
-      expect(salvo.status).toBe(StatusOrcamento.AGUARDANDO_APROVACAO);
-      expect(
-        await prisma.reservaEstoque.count({ where: { ordemServicoId: id } }),
-      ).toBe(0);
-      expect(await mensagensDaOs(id)).toHaveLength(mensagensAntes.length);
-    });
-
-    it('recusar abre a rodada 2 e pede novo diagnóstico com os itens da rodada anterior', async () => {
-      const id = await osEmDiagnostico(2);
-      const orcamento = await criarOrcamento.execute({
-        ordemServicoId: id,
-        valorTotal: 100,
-      });
-
-      await atualizarOrcamento.execute(orcamento.id!, {
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-
-      const ordem = await prisma.ordemServico.findUniqueOrThrow({
-        where: { id },
-        include: { historicoStatus: { orderBy: { ocorridoEm: 'asc' } } },
-      });
-      expect(ordem.status).toBe(StatusOS.EM_DIAGNOSTICO);
-      expect(ordem.rodadaVigente).toBe(2);
-      expect(ordem.historicoStatus.at(-1)).toMatchObject({
-        statusAnterior: StatusOS.AGUARDANDO_APROVACAO,
-        statusNovo: StatusOS.EM_DIAGNOSTICO,
-        rodada: 2,
-      });
-
-      const comandos = (await mensagensDaOs(id)).filter(
-        (m) => m.eventType === COMANDO_INICIAR_DIAGNOSTICO,
-      );
-      expect(comandos).toHaveLength(2);
-      expect(comandos[1].envelope).toMatchObject({
-        rodada: 2,
-        causationId: ordem.historicoStatus.at(-1)?.eventId,
-        payload: {
-          sugestoes: [{ tipo: 'PECA', itemId: pecaId, quantidade: 2 }],
-        },
-      });
     });
   });
 });

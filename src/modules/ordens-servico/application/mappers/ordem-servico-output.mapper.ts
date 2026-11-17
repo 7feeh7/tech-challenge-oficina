@@ -1,5 +1,6 @@
 import { SugestaoItemOrdem } from '../../domain/entities/ordem-servico.entity';
 import { StatusOS } from '../../domain/status-os';
+import type { ResumoFinanceiroOs } from './resumo-financeiro-os.mapper';
 import {
   ClienteDaOrdem,
   HistoricoStatusDetalhe,
@@ -29,7 +30,7 @@ export interface OrdemServicoOutput extends OrdemServicoResumoOutput {
   pecas: ItemPecaDetalhe[];
   sugestoes: SugestaoItemOrdem[];
   valorTotal: number;
-  orcamentos: unknown[];
+  resumoFinanceiro: ResumoFinanceiroOs;
   historicoStatus: HistoricoStatusDetalhe[];
   etapaOrigemCancelamento: StatusOS | null;
   motivoEncerramento: string | null;
@@ -58,8 +59,14 @@ export class OrdemServicoOutputMapper {
   }
 
   static toOutput(detalhe: OrdemServicoDetalhe): OrdemServicoOutput {
-    const { ordem, servicos, pecas, sugestoes, orcamentos, historicoStatus } =
-      detalhe;
+    const {
+      ordem,
+      servicos,
+      pecas,
+      sugestoes,
+      resumoFinanceiro,
+      historicoStatus,
+    } = detalhe;
 
     return {
       ...OrdemServicoOutputMapper.toResumo(detalhe),
@@ -70,7 +77,7 @@ export class OrdemServicoOutputMapper {
       pecas,
       sugestoes: sugestoes.map((sugestao) => ({ ...sugestao })),
       valorTotal: ordem.valorTotal(),
-      orcamentos,
+      resumoFinanceiro,
       historicoStatus,
       etapaOrigemCancelamento: ordem.etapaOrigemCancelamento,
       motivoEncerramento: ordem.motivoEncerramento,

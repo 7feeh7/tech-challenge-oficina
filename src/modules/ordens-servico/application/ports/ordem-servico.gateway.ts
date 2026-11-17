@@ -4,6 +4,7 @@ import {
   SugestaoItemOrdem,
 } from '../../domain/entities/ordem-servico.entity';
 import { StatusOS } from '../../domain/status-os';
+import type { ResumoFinanceiroOs } from '../mappers/resumo-financeiro-os.mapper';
 
 export interface ClienteDaOrdem {
   id: string;
@@ -55,7 +56,7 @@ export interface OrdemServicoDetalhe {
   servicos: ItemServicoDetalhe[];
   pecas: ItemPecaDetalhe[];
   sugestoes: readonly SugestaoItemOrdem[];
-  orcamentos: unknown[];
+  resumoFinanceiro: ResumoFinanceiroOs;
   historicoStatus: HistoricoStatusDetalhe[];
 }
 

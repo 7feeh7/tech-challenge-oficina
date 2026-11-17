@@ -10,7 +10,6 @@ import { ConfigModule } from '@nestjs/config';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
 import { PecasModule } from './modules/pecas/pecas.module';
 import { OrdensServicoModule } from './modules/ordens-servico/ordens-servico.module';
-import { OrcamentosModule } from './modules/orcamentos/orcamentos.module';
 import { MovimentacoesEstoqueModule } from './modules/movimentacoes-estoque/movimentacoes-estoque.module';
 import { ReservasEstoqueModule } from './modules/reservas-estoque/reservas-estoque.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -48,7 +47,6 @@ import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idem
     UsuariosModule,
     PecasModule,
     OrdensServicoModule,
-    OrcamentosModule,
     MovimentacoesEstoqueModule,
     ReservasEstoqueModule,
   ],

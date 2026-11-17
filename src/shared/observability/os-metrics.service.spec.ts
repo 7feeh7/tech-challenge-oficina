@@ -68,6 +68,24 @@ describe('OsMetricsService', () => {
     );
   });
 
+  it('calcula duracao ao sair de AGUARDANDO_PAGAMENTO', async () => {
+    prisma.historicoStatusOS.findFirst.mockResolvedValue({
+      ocorridoEm: new Date('2026-09-13T12:00:00.000Z'),
+    });
+
+    await service.recordTransicao(
+      'os-id-interno',
+      StatusOS.AGUARDANDO_PAGAMENTO,
+      new Date('2026-09-13T13:00:00.000Z'),
+    );
+
+    expect(mockDistribution).toHaveBeenCalledWith(
+      METRIC_NAMES.osTempoPorStatus,
+      3600,
+      expect.arrayContaining(['status:AGUARDANDO_PAGAMENTO']),
+    );
+  });
+
   it('ignora status fora do catalogo de duracao', async () => {
     await service.recordTransicao(
       'os-id-interno',
