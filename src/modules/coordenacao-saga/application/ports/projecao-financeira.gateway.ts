@@ -7,6 +7,15 @@ export interface RegistrarPagamentoInput {
   orderId: string;
   valorCentavos: number | null;
   eventId: string;
+  linkPagamento?: string | null;
+}
+
+export interface RegistrarOrcamentoInput {
+  ordemServicoId: string;
+  rodada: number;
+  orcamentoId: string;
+  valorTotalCentavos: number;
+  eventId: string;
 }
 
 export interface ProjecaoFinanceiraGateway {
@@ -21,7 +30,19 @@ export interface ProjecaoFinanceiraGateway {
     input: RegistrarPagamentoInput,
   ): Promise<'criado' | 'duplicado'>;
 
+  registrarOrcamento(
+    contexto: ContextoTransacao,
+    input: RegistrarOrcamentoInput,
+  ): Promise<'criado' | 'duplicado'>;
+
   possuiOrderId(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    orderId: string,
+  ): Promise<boolean>;
+
+  jaNotificouPagamentoDisponivel(
     contexto: ContextoTransacao,
     ordemServicoId: string,
     rodada: number,

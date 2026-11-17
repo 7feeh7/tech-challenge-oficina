@@ -28,6 +28,10 @@ export class OsMetricsService {
     this.metrics.increment(METRIC_NAMES.osTransicaoFalha, 1);
   }
 
+  recordSituacaoFinanceiraIndeterminada(): void {
+    this.metrics.increment(METRIC_NAMES.situacaoFinanceiraIndeterminada, 1);
+  }
+
   async recordTransicao(
     ordemServicoId: string,
     statusAnterior: StatusOS,

@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
-import { consultaIdExcecaoE10 } from '@/modules/coordenacao-saga/domain/consulta-financeira';
+import {
+  consultaIdExcecaoE10,
+  consultaIdPrazoReferencia,
+} from '@/modules/coordenacao-saga/domain/consulta-financeira';
+import { SolicitarConsultaFinanceiraUseCase } from '@/modules/coordenacao-saga/application/use-cases/solicitar-consulta-financeira.use-case';
 import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
 import { OrdensServicoModule } from '@/modules/ordens-servico/ordens-servico.module';
@@ -25,6 +29,7 @@ import {
   EVENTO_RESPOSTA_CANCELAMENTO,
   EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
   EVENTO_SITUACAO_FINANCEIRA,
+  EVENTO_PENDENCIA_RESOLVIDA,
 } from '@/shared/messaging/envelope';
 import { ProcessarMensagemEntradaService } from '@/shared/messaging/application/services/processar-mensagem-entrada.service';
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
@@ -50,6 +55,7 @@ describe('Saga — compensação (integração)', () => {
   let concluirDiagnostico: ConcluirDiagnosticoInternoUseCase;
   let reservar: ReservarOsInternoUseCase;
   let processar: ProcessarMensagemEntradaService;
+  let solicitarConsulta: SolicitarConsultaFinanceiraUseCase;
 
   const sufixo = randomUUID().slice(0, 8);
   let clienteId: string;
@@ -254,6 +260,7 @@ describe('Saga — compensação (integração)', () => {
     concluirDiagnostico = nestModule.get(ConcluirDiagnosticoInternoUseCase);
     reservar = nestModule.get(ReservarOsInternoUseCase);
     processar = nestModule.get(ProcessarMensagemEntradaService);
+    solicitarConsulta = nestModule.get(SolicitarConsultaFinanceiraUseCase);
 
     const cliente = await prisma.cliente.create({
       data: {
@@ -648,6 +655,122 @@ describe('Saga — compensação (integração)', () => {
     expect(
       await prisma.historicoStatusOS.count({
         where: { ordemServicoId: os.id, statusNovo: StatusOS.CANCELADA },
+      }),
+    ).toBe(1);
+  });
+
+  it('SEM_PAGAMENTO após consulta de prazo percorre compensação até CANCELADA', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { prazoReferenciaReserva: new Date(Date.now() - 60_000) },
+    });
+    await solicitarConsulta.execute(os.id);
+    const consultaId = consultaIdPrazoReferencia(os.id, 1, 1);
+    await processar.executar(
+      montarEnvelope(EVENTO_SITUACAO_FINANCEIRA, os.id, correlationId, 1, {
+        consultaId,
+        situacaoPagamento: 'SEM_PAGAMENTO',
+        situacaoEstorno: 'NENHUM',
+      }),
+    );
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    const ordem = await prisma.ordemServico.findUnique({
+      where: { id: os.id },
+    });
+    expect(ordem?.status).toBe(StatusOS.CANCELADA);
+    const reservas = await prisma.reservaEstoque.findMany({
+      where: { ordemServicoId: os.id },
+    });
+    expect(
+      reservas.every((r) => r.situacao === SituacaoReservaEstoque.LIBERADA),
+    ).toBe(true);
+  });
+
+  it('PendenciaResolvida resolve somente a pendência financeira correspondente', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await desistir.execute(os.id, { motivo: 'Duas pendências' });
+    const cobrancaA = randomUUID();
+    const cobrancaB = randomUUID();
+    await prisma.pendenciaOs.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          ordemServicoId: os.id,
+          rodada: 1,
+          tipo: TipoPendenciaOs.FINANCEIRA,
+          detalhes: { cobrancaId: cobrancaA, motivo: 'A' },
+        },
+        {
+          id: randomUUID(),
+          ordemServicoId: os.id,
+          rodada: 1,
+          tipo: TipoPendenciaOs.FINANCEIRA,
+          detalhes: { cobrancaId: cobrancaB, motivo: 'B' },
+        },
+      ],
+    });
+    await processar.executar(
+      montarEnvelope(EVENTO_PENDENCIA_RESOLVIDA, os.id, correlationId, 1, {
+        cobrancaId: cobrancaA,
+      }),
+    );
+    const abertas = await prisma.pendenciaOs.findMany({
+      where: {
+        ordemServicoId: os.id,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+      },
+    });
+    expect(abertas).toHaveLength(1);
+    expect((abertas[0].detalhes as { cobrancaId: string }).cobrancaId).toBe(
+      cobrancaB,
+    );
+  });
+
+  it('retoma compensação após PendenciaResolvida em EM_CANCELAMENTO', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await desistir.execute(os.id, { motivo: 'Retomada pendência' });
+    await processar.executar(
+      montarEnvelope(EVENTO_RESPOSTA_CANCELAMENTO, os.id, correlationId, 1, {
+        resultado: 'PENDENCIA_MANUAL_ABERTA',
+        pendenciaId: `pend-${sufixo}`,
+      }),
+    );
+    await processar.executar(
+      montarEnvelope(EVENTO_PENDENCIA_RESOLVIDA, os.id, correlationId, 1, {
+        pendenciaId: `pend-${sufixo}`,
+      }),
+    );
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('mesmo orderId com eventId diferente não duplica pendência financeira pós-encerramento', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await desistir.execute(os.id, { motivo: 'Encerrada' });
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    const orderId = `ORD-DUP-${sufixo}`;
+    const corpo = (eventId: string) =>
+      montarEnvelope(
+        EVENTO_PAGAMENTO_CONFIRMADO,
+        os.id,
+        correlationId,
+        1,
+        { orderId, valorCentavos: 1000 },
+        eventId,
+      );
+    await processar.executar(corpo(randomUUID()));
+    await processar.executar(corpo(randomUUID()));
+    expect(
+      await prisma.pendenciaOs.count({
+        where: {
+          ordemServicoId: os.id,
+          tipo: TipoPendenciaOs.FINANCEIRA,
+          resolvida: false,
+        },
       }),
     ).toBe(1);
   });

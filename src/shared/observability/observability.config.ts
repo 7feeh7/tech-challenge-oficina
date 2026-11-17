@@ -15,4 +15,5 @@ export const METRIC_NAMES = {
   outboxPublicacaoFalha: 'oficina.outbox.publicacao_falha',
   mensagemProcessada: 'oficina.mensagem.processada',
   mensagemErroConsumo: 'oficina.mensagem.erro_consumo',
+  situacaoFinanceiraIndeterminada: 'oficina.situacao_financeira.indeterminada',
 } as const;

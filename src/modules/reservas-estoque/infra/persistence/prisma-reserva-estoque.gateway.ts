@@ -496,7 +496,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       motivo: string;
       responsavelId: string;
     },
-  ): Promise<void> {
+  ): Promise<{ ordemServicoId: string }> {
     const motivoNormalizado = input.motivo.trim();
     if (!motivoNormalizado) {
       throw new MotivoAjusteAdministrativoInvalidoError();
@@ -585,6 +585,8 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       quantidadeFisicaNova: input.quantidadeFisicaNova,
       responsavelId: input.responsavelId,
     });
+
+    return { ordemServicoId: pendencia.ordem_servico_id };
   }
 
   private async bloquearReservasAtivas(

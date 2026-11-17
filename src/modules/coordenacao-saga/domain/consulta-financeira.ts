@@ -30,3 +30,11 @@ export function consultaIdExcecaoE10(
 ): string {
   return `${ordemServicoId}#${rodada}#excecao-e10#${tentativa}`;
 }
+
+export function consultaIdPrazoReferencia(
+  ordemServicoId: string,
+  rodada: number,
+  tentativa: number,
+): string {
+  return `${ordemServicoId}#${rodada}#consulta#${tentativa}`;
+}

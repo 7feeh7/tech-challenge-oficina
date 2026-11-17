@@ -2,15 +2,23 @@ import { criarOrdemFake } from '@/modules/ordens-servico/application/use-cases/t
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ReservaJaProcessadaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import {
+  EVENTO_COBRANCA_CRIADA,
   EVENTO_COBRANCA_EXPIRADA,
   EVENTO_DIAGNOSTICO_INICIADO,
+  EVENTO_ORCAMENTO_GERADO,
   EVENTO_PAGAMENTO_CONFIRMADO,
+  EVENTO_SITUACAO_FINANCEIRA,
+  EVENTO_PENDENCIA_RESOLVIDA,
   EVENTO_REPARO_CONCLUIDO,
   EVENTO_REPARO_INICIADO,
   EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
 } from '@/shared/messaging/envelope';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { ReagirFatoSagaUseCase } from './reagir-fato-saga.use-case';
+
+jest.mock('@/shared/database/obter-cliente-transacao', () => ({
+  obterClienteTransacao: (_ctx: unknown, prisma: unknown) => prisma,
+}));
 
 const contexto = { __contextoTransacao: Symbol() } as ContextoTransacao;
 
@@ -44,12 +52,25 @@ describe('ReagirFatoSagaUseCase', () => {
     };
     const consumirReserva = { execute: jest.fn() };
     const reservas = { possuiConsumoAplicado: jest.fn() };
-    const pedidos = { registrar: jest.fn() };
+    const pedidos = {
+      registrar: jest.fn(),
+      marcarConcluidoPorTipo: jest.fn(),
+    };
     const projecao = {
       buscarOrderIdPrincipal: jest.fn().mockResolvedValue(null),
       registrarPagamento: jest.fn().mockResolvedValue('criado'),
+      registrarOrcamento: jest.fn().mockResolvedValue('criado'),
+      jaNotificouPagamentoDisponivel: jest.fn().mockResolvedValue(false),
     };
-    const prisma = { pendenciaOs: { create: jest.fn() } };
+    const prisma = {
+      pendenciaOs: {
+        create: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+      },
+      projecaoFinanceiraOs: { updateMany: jest.fn() },
+    };
     const compensacao = {
       avancarAposEntradaEmCancelamento: jest.fn(),
       avancarSeEmCancelamento: jest.fn(),
@@ -64,7 +85,11 @@ describe('ReagirFatoSagaUseCase', () => {
         consultaIdVigente: null,
         passo: 'EXECUCAO',
       }),
+      salvar: jest.fn(),
     };
+    const outbox = { registrar: jest.fn() };
+    const consultaPrazo = { agendarProximaReconsulta: jest.fn() };
+    const osMetrics = { recordSituacaoFinanceiraIndeterminada: jest.fn() };
     const useCase = new ReagirFatoSagaUseCase(
       ordens as never,
       transicoes as never,
@@ -75,7 +100,10 @@ describe('ReagirFatoSagaUseCase', () => {
       logger as never,
       prisma as never,
       compensacao as never,
-      estadoCompensacao as never,
+      estadoCompensacao,
+      outbox,
+      consultaPrazo as never,
+      osMetrics as never,
     );
     return {
       useCase,
@@ -86,6 +114,11 @@ describe('ReagirFatoSagaUseCase', () => {
       ordens,
       pedidos,
       compensacao,
+      consultaPrazo,
+      osMetrics,
+      outbox,
+      estadoCompensacao,
+      prisma,
     };
   };
 
@@ -312,6 +345,147 @@ describe('ReagirFatoSagaUseCase', () => {
       compensacao.registrarReparoIniciadoDuranteCancelamento,
     ).toHaveBeenCalled();
     expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  it('PAGO_NO_PRAZO na consulta de prazo confirma pagamento', async () => {
+    const { useCase, transicoes, estadoCompensacao } = montarUseCase(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+    );
+    estadoCompensacao.obterOuCriar = jest.fn().mockResolvedValue({
+      consultaIdVigente: 'c1',
+      passo: 'EXECUCAO',
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-sit',
+      eventType: EVENTO_SITUACAO_FINANCEIRA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        consultaId: 'c1',
+        situacaoPagamento: 'PAGO_NO_PRAZO',
+        orderId: 'ORD',
+      },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('INDETERMINADA na consulta de prazo agenda reconsulta e métrica', async () => {
+    const { useCase, consultaPrazo, osMetrics, estadoCompensacao } =
+      montarUseCase(StatusOS.AGUARDANDO_PAGAMENTO);
+    estadoCompensacao.obterOuCriar = jest.fn().mockResolvedValue({
+      consultaIdVigente: 'c1',
+      passo: 'EXECUCAO',
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-sit',
+      eventType: EVENTO_SITUACAO_FINANCEIRA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { consultaId: 'c1', situacaoPagamento: 'INDETERMINADA' },
+    });
+    expect(consultaPrazo.agendarProximaReconsulta).toHaveBeenCalled();
+    expect(osMetrics.recordSituacaoFinanceiraIndeterminada).toHaveBeenCalled();
+  });
+
+  it('SEM_PAGAMENTO na consulta de prazo inicia compensação', async () => {
+    const { useCase, compensacao, estadoCompensacao } = montarUseCase(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+    );
+    estadoCompensacao.obterOuCriar = jest.fn().mockResolvedValue({
+      consultaIdVigente: 'c1',
+      passo: 'EXECUCAO',
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-sit',
+      eventType: EVENTO_SITUACAO_FINANCEIRA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { consultaId: 'c1', situacaoPagamento: 'SEM_PAGAMENTO' },
+    });
+    expect(compensacao.avancarAposEntradaEmCancelamento).toHaveBeenCalled();
+  });
+
+  it('CobrancaCriada não republica pagamento disponível se já notificado', async () => {
+    const { useCase, projecao, outbox } = montarUseCase(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+    );
+    projecao.registrarPagamento = jest.fn().mockResolvedValue('duplicado');
+    projecao.jaNotificouPagamentoDisponivel = jest.fn().mockResolvedValue(true);
+    await useCase.executar(contexto, {
+      eventId: 'e-cob',
+      eventType: EVENTO_COBRANCA_CRIADA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { orderId: 'ORD', linkPagamento: 'https://x' },
+    });
+    expect(outbox.registrar).not.toHaveBeenCalled();
+  });
+
+  it('resolve pendência financeira correspondente em EM_CANCELAMENTO', async () => {
+    const { useCase, prisma, compensacao } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    prisma.pendenciaOs.findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'p1',
+        detalhes: { cobrancaId: 'cob-a' },
+      },
+      {
+        id: 'p2',
+        detalhes: { cobrancaId: 'cob-b' },
+      },
+    ]);
+    await useCase.executar(contexto, {
+      eventId: 'e-pend',
+      eventType: EVENTO_PENDENCIA_RESOLVIDA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { cobrancaId: 'cob-a' },
+    });
+    expect(prisma.pendenciaOs.update).toHaveBeenCalledTimes(1);
+    expect(compensacao.avancarSeEmCancelamento).toHaveBeenCalled();
+  });
+
+  it('registra projeção ao receber OrcamentoGerado', async () => {
+    const { useCase, projecao } = montarUseCase(StatusOS.EM_DIAGNOSTICO);
+    await useCase.executar(contexto, {
+      eventId: 'e-orc',
+      eventType: EVENTO_ORCAMENTO_GERADO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { orcamentoId: 'orc-1', valorTotalCentavos: 1000 },
+    });
+    expect(projecao.registrarOrcamento).toHaveBeenCalled();
   });
 
   it('não trata ReservaJaProcessadaError como sucesso sem CONSUMIDA', async () => {

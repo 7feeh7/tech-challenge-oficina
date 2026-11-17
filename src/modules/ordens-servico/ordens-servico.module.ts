@@ -99,7 +99,7 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
         ordens: OrdemServicoGateway,
         unitOfWork: UnitOfWork,
         transicoes: TransicaoOrdemServicoService,
-        compensacao?: CompensacaoAvancoPort,
+        compensacao: CompensacaoAvancoPort,
       ) =>
         new RegistrarDesistenciaUseCase(
           ordens,
@@ -111,7 +111,7 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
         ORDEM_SERVICO_GATEWAY,
         UNIT_OF_WORK,
         TransicaoOrdemServicoService,
-        { token: COMPENSACAO_AVANCO, optional: true },
+        COMPENSACAO_AVANCO,
       ],
     },
     {

@@ -98,3 +98,11 @@ export class DevolucaoTarefaFilaNaoPermitidaError extends DomainConflictError {
     );
   }
 }
+
+export class ConsultaFinanceiraIndisponivelError extends DomainConflictError {
+  constructor() {
+    super(
+      'Não há consulta financeira pendente elegível para esta ordem de serviço.',
+    );
+  }
+}
