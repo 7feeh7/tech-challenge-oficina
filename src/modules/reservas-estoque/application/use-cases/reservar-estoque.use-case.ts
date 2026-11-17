@@ -1,5 +1,8 @@
 import { randomUUID, createHash } from 'crypto';
-import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
+import type {
+  ContextoTransacao,
+  UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import {
   SCOPE_ESTOQUE_RESERVAR,
   hashCorpoEstoque,
@@ -29,12 +32,19 @@ export class ReservarEstoqueUseCase {
     private readonly unitOfWork: UnitOfWork,
   ) {}
 
-  async execute(input: ReservarEstoqueInput): Promise<ReservarEstoqueOutput> {
+  /**
+   * Com `contextoExterno`, a reserva participa da transação do chamador (ex.:
+   * reservar e mover a OS para `AGUARDANDO_PAGAMENTO` atomicamente, D2.14).
+   */
+  async execute(
+    input: ReservarEstoqueInput,
+    contextoExterno?: ContextoTransacao,
+  ): Promise<ReservarEstoqueOutput> {
     const requestHash = createHash('sha256')
       .update(hashCorpoEstoque(input))
       .digest('hex');
 
-    return this.unitOfWork.executar(async (contexto) => {
+    const trabalho = async (contexto: ContextoTransacao) => {
       if (input.idempotencyKey) {
         const replay =
           await this.reservas.buscarIdempotencia<ReservarEstoqueOutput>(
@@ -74,6 +84,10 @@ export class ReservarEstoqueUseCase {
       }
 
       return output;
-    });
+    };
+
+    return contextoExterno
+      ? trabalho(contextoExterno)
+      : this.unitOfWork.executar(trabalho);
   }
 }

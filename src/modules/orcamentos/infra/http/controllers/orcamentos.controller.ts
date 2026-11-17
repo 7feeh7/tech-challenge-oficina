@@ -108,7 +108,7 @@ export class OrcamentosController {
   @RequireOwnership(OwnershipResource.ORCAMENTO)
   @ApiOperation({
     summary:
-      'Aprovar ou recusar o orçamento (aprovar move a OS para EM_EXECUCAO e baixa o estoque)',
+      'Aprovar ou recusar o orçamento (aprovar reserva o estoque e move a OS para AGUARDANDO_PAGAMENTO)',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'Orçamento atualizado.' })

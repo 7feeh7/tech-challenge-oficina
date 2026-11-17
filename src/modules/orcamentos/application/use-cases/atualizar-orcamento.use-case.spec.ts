@@ -1,253 +1,132 @@
+import { UnitOfWorkFake } from '@/shared/database/unit-of-work-fake';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
+import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
+import { EstoqueInsuficienteReservaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { ReservarEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/reservar-estoque.use-case';
 import {
   EstoqueInsuficienteParaAprovacaoError,
-  MotivoRejeicaoObrigatorioError,
   OrcamentoNaoEncontradoError,
 } from '../../domain/errors/orcamento.errors';
 import { StatusOrcamento } from '../../domain/status-orcamento';
 import { AtualizarOrcamentoUseCase } from './atualizar-orcamento.use-case';
-import {
-  clienteFake,
-  comTransicao,
-  criarGatewayMock,
-  criarNotificadorMock,
-  criarOrcamentoFake,
-  semTransicao,
-} from './test-doubles';
+import { criarGatewayMock, criarOrcamentoFake } from './test-doubles';
 
 describe('AtualizarOrcamentoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
-  let notificador: ReturnType<typeof criarNotificadorMock>;
+  let transicoes: jest.Mocked<TransicaoOrdemServicoService>;
+  let reservarEstoque: jest.Mocked<ReservarEstoqueUseCase>;
   let useCase: AtualizarOrcamentoUseCase;
 
   beforeEach(() => {
     gateway = criarGatewayMock();
-    notificador = criarNotificadorMock();
-    useCase = new AtualizarOrcamentoUseCase(gateway, notificador);
-    gateway.atualizar.mockImplementation((_id, orcamento) =>
+    transicoes = {
+      aplicar: jest.fn().mockResolvedValue({ mudouStatus: true }),
+    } as unknown as jest.Mocked<TransicaoOrdemServicoService>;
+    reservarEstoque = {
+      execute: jest.fn().mockResolvedValue({
+        grupoReservaId: 'grp-1',
+        prazoReferencia: null,
+        linhas: [],
+        reutilizado: false,
+      }),
+    } as unknown as jest.Mocked<ReservarEstoqueUseCase>;
+    useCase = new AtualizarOrcamentoUseCase(
+      gateway,
+      new UnitOfWorkFake(),
+      transicoes,
+      reservarEstoque,
+    );
+    gateway.buscarPorId.mockResolvedValue(
+      criarOrcamentoFake({ status: StatusOrcamento.AGUARDANDO_APROVACAO }),
+    );
+    gateway.atualizar.mockImplementation((_, orcamento) =>
       Promise.resolve(orcamento),
     );
-    gateway.aprovarComBaixaDeEstoque.mockImplementation((orcamento) =>
-      Promise.resolve(
-        comTransicao(
-          orcamento,
-          StatusOS.AGUARDANDO_APROVACAO,
-          StatusOS.EM_EXECUCAO,
-        ),
-      ),
+  });
+
+  it('aprova com reserva e move a OS para AGUARDANDO_PAGAMENTO', async () => {
+    const result = await useCase.execute('uuid-orc1', {
+      status: StatusOrcamento.APROVADO,
+    });
+
+    expect(result.status).toBe(StatusOrcamento.APROVADO);
+    expect(reservarEstoque.execute).toHaveBeenCalled();
+    expect(transicoes.aplicar).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        observacao: expect.stringContaining('reserva'),
+      }),
     );
-    gateway.rejeitarEDevolverParaDiagnostico.mockImplementation((orcamento) =>
-      Promise.resolve(
-        comTransicao(
-          orcamento,
-          StatusOS.AGUARDANDO_APROVACAO,
-          StatusOS.EM_DIAGNOSTICO,
-        ),
-      ),
+  });
+
+  it('rejeita e devolve a OS ao diagnóstico', async () => {
+    await useCase.execute('uuid-orc1', {
+      status: StatusOrcamento.REJEITADO,
+      motivoRejeicao: 'Caro',
+    });
+
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('mapeia falta de estoque na reserva para erro de aprovação', async () => {
+    reservarEstoque.execute.mockRejectedValue(
+      new EstoqueInsuficienteReservaError([
+        { pecaId: 'p1', disponivelAtual: 1, solicitado: 3 },
+      ]),
     );
+
+    await expect(
+      useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO }),
+    ).rejects.toThrow(EstoqueInsuficienteParaAprovacaoError);
   });
 
   it('falha quando o orçamento não existe', async () => {
     gateway.buscarPorId.mockResolvedValue(null);
 
     await expect(
-      useCase.execute('inexistente', { valorTotal: 100 }),
+      useCase.execute('ausente', { status: StatusOrcamento.APROVADO }),
     ).rejects.toThrow(OrcamentoNaoEncontradoError);
   });
 
-  it('edita valor e observações sem mexer no status', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-
+  it('atualiza campos sem mudar status do orçamento', async () => {
     const result = await useCase.execute('uuid-orc1', {
       valorTotal: 500,
       observacoes: 'Revisado',
     });
 
-    expect(result).toMatchObject({
-      valorTotal: 500,
-      observacoes: 'Revisado',
-      status: StatusOrcamento.AGUARDANDO_APROVACAO,
-    });
-    expect(gateway.aprovarComBaixaDeEstoque).not.toHaveBeenCalled();
+    expect(result.valorTotal).toBe(500);
+    expect(reservarEstoque.execute).not.toHaveBeenCalled();
   });
 
-  it('recusa rejeição sem motivo', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
+  it('não reaprova idempotentemente', async () => {
+    gateway.buscarPorId.mockResolvedValue(
+      criarOrcamentoFake({ status: StatusOrcamento.APROVADO }),
+    );
 
-    await expect(
-      useCase.execute('uuid-orc1', { status: StatusOrcamento.REJEITADO }),
-    ).rejects.toThrow(MotivoRejeicaoObrigatorioError);
-    expect(gateway.atualizar).not.toHaveBeenCalled();
+    await useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO });
+
+    expect(reservarEstoque.execute).not.toHaveBeenCalled();
   });
 
-  describe('recusa', () => {
-    it('rejeita o orçamento e devolve a OS ao diagnóstico', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-
-      const result = await useCase.execute('uuid-orc1', {
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-
-      expect(result).toMatchObject({
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-      expect(gateway.rejeitarEDevolverParaDiagnostico).toHaveBeenCalled();
-      // a recusa é uma rodada de negociação: não é uma edição simples
-      expect(gateway.atualizar).not.toHaveBeenCalled();
+  it('não devolve ao diagnóstico quando a OS não está aguardando aprovação', async () => {
+    gateway.buscarOrdemParaOrcamento.mockResolvedValue({
+      id: 'uuid-os1',
+      status: StatusOS.EM_DIAGNOSTICO,
+      rodadaVigente: 2,
+      pecas: [],
     });
 
-    it('não devolve a OS ao diagnóstico de novo ao reenviar a recusa', async () => {
-      gateway.buscarPorId.mockResolvedValue(
-        criarOrcamentoFake({
-          status: StatusOrcamento.REJEITADO,
-          motivoRejeicao: 'Cliente achou caro',
-        }),
-      );
-
-      await useCase.execute('uuid-orc1', {
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-
-      expect(gateway.rejeitarEDevolverParaDiagnostico).not.toHaveBeenCalled();
-      expect(gateway.atualizar).toHaveBeenCalled();
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
+    await useCase.execute('uuid-orc1', {
+      status: StatusOrcamento.REJEITADO,
+      motivoRejeicao: 'Tarde',
     });
 
-    it('avisa o cliente de que a OS voltou ao diagnóstico', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-
-      await useCase.execute('uuid-orc1', {
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-
-      expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
-        ordemServicoId: 'uuid-os1',
-        destinatario: clienteFake,
-        numeroOS: 42,
-        statusAnterior: StatusOS.AGUARDANDO_APROVACAO,
-        statusNovo: StatusOS.EM_DIAGNOSTICO,
-      });
-    });
-
-    it('não avisa o cliente quando a OS já tinha seguido outro caminho', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.rejeitarEDevolverParaDiagnostico.mockImplementation((orcamento) =>
-        Promise.resolve(semTransicao(orcamento)),
-      );
-
-      await useCase.execute('uuid-orc1', {
-        status: StatusOrcamento.REJEITADO,
-        motivoRejeicao: 'Cliente achou caro',
-      });
-
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('aprovação', () => {
-    it('aprova e baixa o estoque das peças da OS', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.buscarOrdemComPecas.mockResolvedValue({
-        id: 'uuid-os1',
-        pecas: [
-          { pecaId: 'uuid-p1', quantidade: 2, saldoDisponivel: 10 },
-          { pecaId: 'uuid-p2', quantidade: 5, saldoDisponivel: 5 },
-        ],
-      });
-
-      const result = await useCase.execute('uuid-orc1', {
-        status: StatusOrcamento.APROVADO,
-      });
-
-      expect(result.status).toBe(StatusOrcamento.APROVADO);
-      expect(gateway.aprovarComBaixaDeEstoque).toHaveBeenCalledWith(
-        expect.anything(),
-        [
-          { pecaId: 'uuid-p1', quantidade: 2, novoSaldo: 8 },
-          { pecaId: 'uuid-p2', quantidade: 5, novoSaldo: 0 },
-        ],
-      );
-    });
-
-    it('recusa a aprovação quando falta estoque para qualquer peça', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.buscarOrdemComPecas.mockResolvedValue({
-        id: 'uuid-os1',
-        pecas: [
-          { pecaId: 'uuid-p1', quantidade: 2, saldoDisponivel: 10 },
-          { pecaId: 'uuid-p2', quantidade: 5, saldoDisponivel: 3 },
-        ],
-      });
-
-      await expect(
-        useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO }),
-      ).rejects.toThrow(EstoqueInsuficienteParaAprovacaoError);
-
-      // nenhuma baixa é aplicada: ou todas cabem, ou nenhuma
-      expect(gateway.aprovarComBaixaDeEstoque).not.toHaveBeenCalled();
-      expect(gateway.atualizar).not.toHaveBeenCalled();
-    });
-
-    it('aprova OS sem peças sem gerar nenhuma baixa', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.buscarOrdemComPecas.mockResolvedValue({
-        id: 'uuid-os1',
-        pecas: [],
-      });
-
-      await useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO });
-
-      expect(gateway.aprovarComBaixaDeEstoque).toHaveBeenCalledWith(
-        expect.anything(),
-        [],
-      );
-    });
-
-    it('não baixa estoque de novo ao reenviar aprovação de orçamento já aprovado', async () => {
-      gateway.buscarPorId.mockResolvedValue(
-        criarOrcamentoFake({ status: StatusOrcamento.APROVADO }),
-      );
-
-      await useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO });
-
-      expect(gateway.aprovarComBaixaDeEstoque).not.toHaveBeenCalled();
-      expect(gateway.atualizar).toHaveBeenCalled();
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
-    });
-
-    it('avisa o cliente de que o carro entrou em execução', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.buscarOrdemComPecas.mockResolvedValue({
-        id: 'uuid-os1',
-        pecas: [],
-      });
-
-      await useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO });
-
-      expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
-        ordemServicoId: 'uuid-os1',
-        destinatario: clienteFake,
-        numeroOS: 42,
-        statusAnterior: StatusOS.AGUARDANDO_APROVACAO,
-        statusNovo: StatusOS.EM_EXECUCAO,
-      });
-    });
-
-    it('não avisa o cliente quando a aprovação é recusada por falta de estoque', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrcamentoFake());
-      gateway.buscarOrdemComPecas.mockResolvedValue({
-        id: 'uuid-os1',
-        pecas: [{ pecaId: 'uuid-p1', quantidade: 5, saldoDisponivel: 3 }],
-      });
-
-      await expect(
-        useCase.execute('uuid-orc1', { status: StatusOrcamento.APROVADO }),
-      ).rejects.toThrow(EstoqueInsuficienteParaAprovacaoError);
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
-    });
+    const aplicar = transicoes.aplicar.mock.calls[0][1];
+    const ordemFake = {
+      status: StatusOS.EM_DIAGNOSTICO,
+      registrarOrcamentoRejeitado: jest.fn(),
+    } as never;
+    aplicar.aplicar(ordemFake, new Date());
+    expect(ordemFake.registrarOrcamentoRejeitado).not.toHaveBeenCalled();
   });
 });

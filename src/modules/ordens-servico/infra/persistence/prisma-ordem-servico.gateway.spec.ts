@@ -1,4 +1,9 @@
+import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
 import { StatusOS } from '../../domain/status-os';
+import {
+  ItemPecaOrdem,
+  ItemServicoOrdem,
+} from '../../domain/entities/item-ordem';
 import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
 import { PrismaOrdemServicoGateway } from './prisma-ordem-servico.gateway';
 
@@ -8,31 +13,43 @@ describe('PrismaOrdemServicoGateway', () => {
       findUnique: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
-      delete: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
-    $transaction: jest.fn(),
+    historicoStatusOS: {
+      create: jest.fn(),
+    },
+    ordemServicoServico: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    ordemServicoPeca: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
   };
 
-  const osMetrics = {
-    recordOsCriada: jest.fn(),
-    recordTransicao: jest.fn(),
-  };
-
-  const gateway = new PrismaOrdemServicoGateway(
-    prisma as never,
-    osMetrics as never,
-  );
+  const gateway = new PrismaOrdemServicoGateway(prisma as never);
+  const contexto = new PrismaContextoTransacao(prisma as never);
 
   const ordemPrisma = {
     id: 'os-1',
     numero: 1,
     status: 'RECEBIDA',
+    rodadaVigente: 1,
+    prioridadeFila: 6,
+    correlationId: 'corr-1',
     clienteId: 'cliente-1',
     veiculoId: 'veiculo-1',
     descricaoProblema: 'problema',
     diagnostico: null,
+    diagnosticoConcluidoEm: null,
+    etapaOrigemCancelamento: null,
+    motivoEncerramento: null,
+    veiculoLiberadoRetirada: false,
+    devolvidaEm: null,
+    prazoReferenciaReserva: null,
     iniciadaEm: null,
     finalizadaEm: null,
     entregueEm: null,
@@ -40,6 +57,7 @@ describe('PrismaOrdemServicoGateway', () => {
     atualizadoEm: new Date('2026-01-01T10:00:00Z'),
     servicos: [],
     pecas: [],
+    sugestoesItens: [],
     cliente: {
       id: 'cliente-1',
       nome: 'Cliente',
@@ -63,92 +81,174 @@ describe('PrismaOrdemServicoGateway', () => {
     await expect(gateway.buscarPorId('ausente')).resolves.toBeNull();
   });
 
-  it('lista fila aberta sem filtro de status', async () => {
-    prisma.ordemServico.findMany.mockResolvedValue([
-      {
-        ...ordemPrisma,
-        cliente: { id: 'cliente-1', nome: 'Cliente' },
-        veiculo: { id: 'veiculo-1', placa: 'ABC1D23', modelo: 'Modelo' },
-      },
-    ]);
-    prisma.ordemServico.count.mockResolvedValue(1);
+  it('filtra listagem por status específico', async () => {
+    prisma.ordemServico.findMany.mockResolvedValue([]);
+    prisma.ordemServico.count.mockResolvedValue(0);
 
-    const pagina = await gateway.listar(1, 10);
+    await gateway.listar(1, 5, StatusOS.FINALIZADA);
 
-    expect(pagina.total).toBe(1);
     expect(prisma.ordemServico.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: expect.any(Object) }),
+        where: { status: StatusOS.FINALIZADA },
       }),
     );
   });
 
-  it('lista com status específico', async () => {
+  it('ordena a fila por prioridade persistida', async () => {
     prisma.ordemServico.findMany.mockResolvedValue([]);
     prisma.ordemServico.count.mockResolvedValue(0);
 
-    await gateway.listar(2, 5, StatusOS.EM_DIAGNOSTICO);
+    await gateway.listar(1, 10);
 
     expect(prisma.ordemServico.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 5, take: 5 }),
+      expect.objectContaining({
+        orderBy: [{ prioridadeFila: 'asc' }, { criadoEm: 'asc' }],
+      }),
     );
   });
 
-  it('consulta marcos de tempo com janela opcional', async () => {
-    prisma.ordemServico.findMany.mockResolvedValue([]);
-
-    await gateway.buscarMarcosDeTempo(
-      new Date('2026-01-01'),
-      new Date('2026-02-01'),
-    );
-
-    expect(prisma.ordemServico.findMany).toHaveBeenCalledWith({
-      where: {
-        criadoEm: {
-          gte: new Date('2026-01-01'),
-          lte: new Date('2026-02-01'),
-        },
-      },
-      select: {
-        criadoEm: true,
-        iniciadaEm: true,
-        finalizadaEm: true,
-        entregueEm: true,
-      },
-    });
-  });
-
-  it('cria OS e registra métrica', async () => {
+  it('cria OS, sugestões e histórico na transação', async () => {
     const ordem = new OrdemServico({
       clienteId: 'cliente-1',
       veiculoId: 'veiculo-1',
-      descricaoProblema: 'falha',
+      correlationId: 'corr-1',
+    });
+    ordem.adicionarSugestao({
+      tipo: 'SERVICO',
+      itemId: 'serv-1',
+      quantidade: 1,
     });
 
-    prisma.$transaction.mockImplementation(
-      (fn: (tx: typeof prisma) => unknown) =>
-        Promise.resolve(
-          fn({
-            ordemServico: {
-              create: jest.fn().mockResolvedValue(ordemPrisma),
-            },
-            historicoStatusOS: {
-              create: jest.fn().mockResolvedValue({}),
-            },
-          } as never),
-        ),
-    );
+    prisma.ordemServico.create.mockResolvedValue(ordemPrisma);
+    prisma.historicoStatusOS.create.mockResolvedValue({});
 
-    const detalhe = await gateway.criar(ordem, {
+    const bloqueada = await gateway.criar(contexto, ordem, {
+      statusAnterior: null,
       statusNovo: StatusOS.RECEBIDA,
-      observacao: 'abertura',
+      rodada: 1,
+      eventId: 'evt-1',
+      ocorridoEm: new Date(),
     });
 
-    expect(detalhe.ordem.id).toBe('os-1');
-    expect(osMetrics.recordOsCriada).toHaveBeenCalled();
+    expect(prisma.ordemServico.create).toHaveBeenCalled();
+    expect(prisma.historicoStatusOS.create).toHaveBeenCalled();
+    expect(bloqueada.ordem.id).toBe('os-1');
   });
 
-  it('atualiza OS e registra transição quando houver status anterior', async () => {
+  it('bloqueia a linha com FOR UPDATE antes de ler', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ id: 'os-1' }]);
+    prisma.ordemServico.findUnique.mockResolvedValue(ordemPrisma);
+
+    const bloqueada = await gateway.bloquearParaAtualizacao(contexto, 'os-1');
+
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(bloqueada?.ordem.id).toBe('os-1');
+  });
+
+  it('substitui itens oficiais quando sinalizado na entidade', async () => {
+    const ordem = new OrdemServico({
+      id: 'os-1',
+      clienteId: 'cliente-1',
+      veiculoId: 'veiculo-1',
+      status: StatusOS.EM_DIAGNOSTICO,
+    });
+    ordem.substituirItensOficiais(
+      [
+        new ItemServicoOrdem({
+          servicoId: 's1',
+          quantidade: 1,
+          precoUnitario: 20,
+        }),
+      ],
+      [
+        new ItemPecaOrdem({
+          pecaId: 'p1',
+          quantidade: 1,
+          precoUnitario: 10,
+        }),
+      ],
+    );
+
+    await gateway.salvar(contexto, ordem);
+
+    expect(prisma.ordemServicoServico.deleteMany).toHaveBeenCalled();
+    expect(prisma.ordemServicoPeca.deleteMany).toHaveBeenCalled();
+  });
+
+  it('retorna null ao bloquear OS inexistente', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await expect(
+      gateway.bloquearParaAtualizacao(contexto, 'ausente'),
+    ).resolves.toBeNull();
+  });
+
+  it('monta detalhe com histórico quando solicitado', async () => {
+    prisma.ordemServico.findUnique.mockResolvedValue({
+      ...ordemPrisma,
+      historicoStatus: [
+        {
+          id: 'h1',
+          statusAnterior: 'RECEBIDA',
+          statusNovo: 'EM_DIAGNOSTICO',
+          rodada: 1,
+          eventId: 'e1',
+          motivo: null,
+          observacao: 'Diag',
+          alteradoPor: null,
+          ocorridoEm: new Date(),
+          criadoEm: new Date(),
+        },
+      ],
+      orcamentos: [],
+    });
+
+    const detalhe = await gateway.buscarDetalhePorId('os-1');
+
+    expect(detalhe?.historicoStatus).toHaveLength(1);
+    expect(detalhe?.historicoStatus[0].statusNovo).toBe(
+      StatusOS.EM_DIAGNOSTICO,
+    );
+  });
+
+  it('acrescenta serviços oficiais incrementalmente', async () => {
+    const ordem = new OrdemServico({
+      id: 'os-1',
+      clienteId: 'cliente-1',
+      veiculoId: 'veiculo-1',
+      status: StatusOS.EM_DIAGNOSTICO,
+    });
+    ordem.adicionarServicoOficial(
+      new ItemServicoOrdem({
+        servicoId: 's2',
+        quantidade: 1,
+        precoUnitario: 99,
+      }),
+    );
+
+    await gateway.salvar(contexto, ordem);
+
+    expect(prisma.ordemServicoServico.createMany).toHaveBeenCalled();
+  });
+
+  it('acrescenta itens sem substituir quando não há flag', async () => {
+    const ordem = new OrdemServico({
+      id: 'os-1',
+      clienteId: 'cliente-1',
+      veiculoId: 'veiculo-1',
+      status: StatusOS.EM_DIAGNOSTICO,
+    });
+    ordem.adicionarPecaOficial(
+      new ItemPecaOrdem({ pecaId: 'p2', quantidade: 1, precoUnitario: 5 }),
+    );
+
+    await gateway.salvar(contexto, ordem);
+
+    expect(prisma.ordemServicoPeca.createMany).toHaveBeenCalled();
+    expect(prisma.ordemServicoPeca.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('salva alterações e histórico opcional', async () => {
     const ordem = new OrdemServico({
       id: 'os-1',
       clienteId: 'cliente-1',
@@ -156,86 +256,15 @@ describe('PrismaOrdemServicoGateway', () => {
       status: StatusOS.EM_DIAGNOSTICO,
     });
 
-    prisma.$transaction.mockImplementation(
-      (fn: (tx: typeof prisma) => unknown) =>
-        Promise.resolve(
-          fn({
-            ordemServico: {
-              update: jest.fn().mockResolvedValue({
-                ...ordemPrisma,
-                status: 'EM_DIAGNOSTICO',
-              }),
-            },
-            historicoStatusOS: {
-              create: jest.fn().mockResolvedValue({}),
-            },
-          } as never),
-        ),
-    );
-
-    await gateway.atualizar('os-1', ordem, {
+    await gateway.salvar(contexto, ordem, {
       statusAnterior: StatusOS.RECEBIDA,
       statusNovo: StatusOS.EM_DIAGNOSTICO,
-      observacao: 'diagnóstico',
+      rodada: 1,
+      eventId: 'evt-2',
+      ocorridoEm: new Date(),
     });
 
-    expect(osMetrics.recordTransicao).toHaveBeenCalledWith(
-      'os-1',
-      StatusOS.RECEBIDA,
-    );
-  });
-
-  it('retorna null no detalhe quando OS não existe', async () => {
-    prisma.ordemServico.findUnique.mockResolvedValue(null);
-
-    await expect(gateway.buscarDetalhePorId('ausente')).resolves.toBeNull();
-  });
-
-  it('atualiza sem histórico quando registro não é informado', async () => {
-    const ordem = new OrdemServico({
-      id: 'os-1',
-      clienteId: 'cliente-1',
-      veiculoId: 'veiculo-1',
-      descricaoProblema: 'ajuste',
-    });
-
-    prisma.$transaction.mockImplementation(
-      (fn: (tx: typeof prisma) => unknown) =>
-        Promise.resolve(
-          fn({
-            ordemServico: {
-              update: jest.fn().mockResolvedValue(ordemPrisma),
-            },
-            historicoStatusOS: {
-              create: jest.fn(),
-            },
-          } as never),
-        ),
-    );
-
-    await gateway.atualizar('os-1', ordem);
-
-    expect(osMetrics.recordTransicao).not.toHaveBeenCalled();
-  });
-
-  it('busca marcos sem filtro de datas', async () => {
-    prisma.ordemServico.findMany.mockResolvedValue([]);
-
-    await gateway.buscarMarcosDeTempo();
-
-    expect(prisma.ordemServico.findMany).toHaveBeenCalledWith({
-      where: {},
-      select: expect.any(Object),
-    });
-  });
-
-  it('remove OS por id', async () => {
-    prisma.ordemServico.delete.mockResolvedValue({});
-
-    await gateway.remover('os-1');
-
-    expect(prisma.ordemServico.delete).toHaveBeenCalledWith({
-      where: { id: 'os-1' },
-    });
+    expect(prisma.ordemServico.update).toHaveBeenCalled();
+    expect(prisma.historicoStatusOS.create).toHaveBeenCalled();
   });
 });

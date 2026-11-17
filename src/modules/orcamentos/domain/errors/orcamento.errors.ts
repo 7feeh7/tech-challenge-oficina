@@ -30,6 +30,12 @@ export class EstoqueInsuficienteParaAprovacaoError extends DomainValidationError
  * há como saber qual é a proposta vigente. Para propor outro valor, rejeite o
  * atual — a OS volta ao diagnóstico e um novo orçamento pode ser gerado.
  */
+export class OrcamentoForaDeDiagnosticoError extends DomainValidationError {
+  constructor() {
+    super('Orçamento só pode ser gerado com a OS em diagnóstico.');
+  }
+}
+
 export class OrcamentoEmAbertoError extends DomainConflictError {
   constructor(ordemServicoId: string) {
     super(

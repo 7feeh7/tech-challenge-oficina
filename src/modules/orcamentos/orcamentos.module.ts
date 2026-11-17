@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import { PrismaModule } from '@/shared/database/prisma.module';
-import { NotificadorDeStatusGateway } from '@/modules/ordens-servico/application/ports/notificador-status.gateway';
-import { NOTIFICADOR_STATUS_GATEWAY } from '@/modules/ordens-servico/application/ports/tokens';
 import { OrdensServicoModule } from '@/modules/ordens-servico/ordens-servico.module';
+import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
+import { ReservasEstoqueModule } from '@/modules/reservas-estoque/reservas-estoque.module';
+import { ReservarEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/reservar-estoque.use-case';
 import { OrcamentoGateway } from './application/ports/orcamento.gateway';
 import { ORCAMENTO_GATEWAY } from './application/ports/tokens';
 import { AtualizarOrcamentoUseCase } from './application/use-cases/atualizar-orcamento.use-case';
@@ -13,17 +18,8 @@ import { RemoverOrcamentoUseCase } from './application/use-cases/remover-orcamen
 import { OrcamentosController } from './infra/http/controllers/orcamentos.controller';
 import { PrismaOrcamentoGateway } from './infra/persistence/prisma-orcamento.gateway';
 
-/**
- * Wiring do módulo: liga a porta da camada de aplicação ao adaptador de
- * persistência. Os casos de uso são classes puras, por isso são instanciados
- * por factory em vez de resolvidos por decorator.
- *
- * Importa `OrdensServicoModule` porque gerar, aprovar e recusar um orçamento
- * movem a OS pelo fluxo — e o cliente é avisado pelo mesmo notificador. A
- * dependência é de mão única: o módulo de OS não conhece orçamentos.
- */
 @Module({
-  imports: [PrismaModule, OrdensServicoModule],
+  imports: [PrismaModule, OrdensServicoModule, ReservasEstoqueModule],
   controllers: [OrcamentosController],
   providers: [
     PrismaOrcamentoGateway,
@@ -32,9 +28,10 @@ import { PrismaOrcamentoGateway } from './infra/persistence/prisma-orcamento.gat
       provide: CriarOrcamentoUseCase,
       useFactory: (
         gateway: OrcamentoGateway,
-        notificador: NotificadorDeStatusGateway,
-      ) => new CriarOrcamentoUseCase(gateway, notificador),
-      inject: [ORCAMENTO_GATEWAY, NOTIFICADOR_STATUS_GATEWAY],
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+      ) => new CriarOrcamentoUseCase(gateway, unitOfWork, transicoes),
+      inject: [ORCAMENTO_GATEWAY, UNIT_OF_WORK, TransicaoOrdemServicoService],
     },
     {
       provide: ListarOrcamentosUseCase,
@@ -52,9 +49,22 @@ import { PrismaOrcamentoGateway } from './infra/persistence/prisma-orcamento.gat
       provide: AtualizarOrcamentoUseCase,
       useFactory: (
         gateway: OrcamentoGateway,
-        notificador: NotificadorDeStatusGateway,
-      ) => new AtualizarOrcamentoUseCase(gateway, notificador),
-      inject: [ORCAMENTO_GATEWAY, NOTIFICADOR_STATUS_GATEWAY],
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+        reservarEstoque: ReservarEstoqueUseCase,
+      ) =>
+        new AtualizarOrcamentoUseCase(
+          gateway,
+          unitOfWork,
+          transicoes,
+          reservarEstoque,
+        ),
+      inject: [
+        ORCAMENTO_GATEWAY,
+        UNIT_OF_WORK,
+        TransicaoOrdemServicoService,
+        ReservarEstoqueUseCase,
+      ],
     },
     {
       provide: RemoverOrcamentoUseCase,

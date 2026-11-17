@@ -15,6 +15,7 @@ import {
   ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
 } from '../../domain/errors/reserva-estoque.errors';
+import type { Prisma } from '@/shared/generated/prisma/client';
 import { SituacaoReservaEstoque } from '@/shared/generated/prisma/enums';
 import type {
   ItemReservaEstoque,
@@ -434,7 +435,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
           ordemServicoId: input.ordemServicoId,
           rodada: input.rodada,
           tipo: 'INVENTARIO',
-          detalhes: { divergencias } as object,
+          detalhes: { divergencias } as unknown as Prisma.InputJsonValue,
         },
       });
       pendenciaInventarioId = pendencia.id;

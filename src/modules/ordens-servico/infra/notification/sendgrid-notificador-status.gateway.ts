@@ -11,8 +11,12 @@ const DESCRICAO_DO_STATUS: Record<StatusOS, string> = {
   [StatusOS.RECEBIDA]: 'Recebida',
   [StatusOS.EM_DIAGNOSTICO]: 'Em diagnóstico',
   [StatusOS.AGUARDANDO_APROVACAO]: 'Aguardando aprovação do orçamento',
+  [StatusOS.AGUARDANDO_PAGAMENTO]: 'Aguardando pagamento',
+  [StatusOS.AGUARDANDO_EXECUCAO]: 'Aguardando execução',
   [StatusOS.EM_EXECUCAO]: 'Em execução',
+  [StatusOS.EM_CANCELAMENTO]: 'Em cancelamento',
   [StatusOS.FINALIZADA]: 'Finalizada',
+  [StatusOS.CANCELADA]: 'Cancelada',
   [StatusOS.ENTREGUE]: 'Entregue',
 };
 

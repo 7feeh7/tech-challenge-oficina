@@ -10,6 +10,14 @@ describe('ListarOrcamentosUseCase', () => {
     useCase = new ListarOrcamentosUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ orcamentos: [], total: 0 });
+
+    await useCase.execute();
+
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de orçamentos', async () => {
     gateway.listar.mockResolvedValue({
       orcamentos: [criarOrcamentoFake()],

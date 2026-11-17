@@ -1,4 +1,5 @@
 import {
+  DomainConflictError,
   DomainNotFoundError,
   DomainValidationError,
 } from '@/shared/exceptions/domain.error';
@@ -55,5 +56,45 @@ export class ServicoDaOrdemNaoEncontradoError extends DomainNotFoundError {
 export class PecaDaOrdemNaoEncontradaError extends DomainNotFoundError {
   constructor(pecaId: string) {
     super(`Peça "${pecaId}" não encontrada.`);
+  }
+}
+
+export class PatchOrdemServicoNaoPermitidoError extends DomainConflictError {
+  constructor(mensagem: string) {
+    super(mensagem);
+  }
+}
+
+export class ItensOficiaisNaoEditaveisError extends DomainConflictError {
+  constructor() {
+    super(
+      'Os itens oficiais só podem ser alterados durante o diagnóstico da rodada vigente.',
+    );
+  }
+}
+
+export class DesistenciaNaoPermitidaError extends DomainConflictError {
+  constructor(status: StatusOS) {
+    super(`Desistência não permitida no status ${status}.`);
+  }
+}
+
+export class MotivoDesistenciaObrigatorioError extends DomainValidationError {
+  constructor() {
+    super('O motivo da desistência é obrigatório.');
+  }
+}
+
+export class RetiradaNaoPermitidaError extends DomainConflictError {
+  constructor(mensagem: string) {
+    super(mensagem);
+  }
+}
+
+export class DevolucaoTarefaFilaNaoPermitidaError extends DomainConflictError {
+  constructor() {
+    super(
+      'Devolução à fila só é permitida na rodada 1, antes da conclusão do diagnóstico.',
+    );
   }
 }

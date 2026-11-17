@@ -1,4 +1,5 @@
 import { UnitOfWorkFake } from '@/shared/database/unit-of-work-fake';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { EstoqueInsuficienteReservaError } from '../../domain/errors/reserva-estoque.errors';
 import type { ReservaEstoqueGateway } from '../ports/reserva-estoque.gateway';
 import { ReservarEstoqueUseCase } from './reservar-estoque.use-case';
@@ -31,6 +32,28 @@ describe('ReservarEstoqueUseCase', () => {
     });
 
     expect(gateway.reservar).toHaveBeenCalled();
+  });
+
+  it('participa da transação do chamador sem abrir outra unidade de trabalho', async () => {
+    const gateway = criarGateway();
+    const unitOfWork = { executar: jest.fn() };
+    const contextoExterno = {} as ContextoTransacao;
+    const useCase = new ReservarEstoqueUseCase(gateway, unitOfWork);
+
+    await useCase.execute(
+      {
+        ordemServicoId: 'os-1',
+        rodada: 1,
+        itens: [{ pecaId: 'p1', quantidade: 2 }],
+      },
+      contextoExterno,
+    );
+
+    expect(unitOfWork.executar).not.toHaveBeenCalled();
+    expect(gateway.reservar).toHaveBeenCalledWith(
+      contextoExterno,
+      expect.objectContaining({ ordemServicoId: 'os-1' }),
+    );
   });
 
   it('repete idempotente sem chamar reservar de novo', async () => {

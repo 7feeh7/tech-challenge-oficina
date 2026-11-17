@@ -41,27 +41,23 @@ describe('PrismaCatalogoGateway', () => {
     await expect(gateway.buscarVeiculo('x')).resolves.toBeNull();
   });
 
-  it('buscarPrecoDoServico converte o Decimal para number', async () => {
-    servico.mockResolvedValue({ precoBase: '150.00' });
+  it('servicoExiste confirma pelo id sem ler o preço', async () => {
+    servico.mockResolvedValue({ id: 's1' });
+    await expect(gateway.servicoExiste('s1')).resolves.toBe(true);
+    expect(servico).toHaveBeenCalledWith({
+      where: { id: 's1' },
+      select: { id: true },
+    });
 
-    await expect(gateway.buscarPrecoDoServico('s1')).resolves.toBe(150);
-  });
-
-  it('buscarPrecoDoServico devolve null quando o serviço não existe', async () => {
     servico.mockResolvedValue(null);
-
-    await expect(gateway.buscarPrecoDoServico('x')).resolves.toBeNull();
+    await expect(gateway.servicoExiste('x')).resolves.toBe(false);
   });
 
-  it('buscarPrecoDaPeca converte o Decimal para number', async () => {
-    peca.mockResolvedValue({ precoUnitario: '29.90' });
+  it('pecaExiste confirma pelo id sem ler o preço', async () => {
+    peca.mockResolvedValue({ id: 'p1' });
+    await expect(gateway.pecaExiste('p1')).resolves.toBe(true);
 
-    await expect(gateway.buscarPrecoDaPeca('p1')).resolves.toBe(29.9);
-  });
-
-  it('buscarPrecoDaPeca devolve null quando a peça não existe', async () => {
     peca.mockResolvedValue(null);
-
-    await expect(gateway.buscarPrecoDaPeca('x')).resolves.toBeNull();
+    await expect(gateway.pecaExiste('x')).resolves.toBe(false);
   });
 });

@@ -1,17 +1,18 @@
 import { Injectable } from '@nestjs/common';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
-import { OsMetricsService } from '@/shared/observability/os-metrics.service';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
+import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
+import { STATUS_ENCERRADOS, StatusOS } from '../../domain/status-os';
 import {
-  ClienteDaOrdem,
+  HistoricoStatusDetalhe,
   MarcosDeTempo,
+  OrdemServicoBloqueada,
   OrdemServicoDetalhe,
   OrdemServicoGateway,
   PaginaOrdensServico,
   RegistroDeStatus,
-  VeiculoDaOrdem,
 } from '../../application/ports/ordem-servico.gateway';
-import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
-import { STATUS_ENCERRADOS, StatusOS } from '../../domain/status-os';
 import {
   ItemPecaPrisma,
   ItemServicoPrisma,
@@ -19,20 +20,28 @@ import {
   PrismaOrdemServicoMapper,
 } from './prisma-ordem-servico.mapper';
 
-/** OS crua do Prisma já com cliente, veículo e itens resolvidos pelo include. */
-type OrdemServicoComRelacoes = Omit<
-  OrdemServicoPrisma,
-  'servicos' | 'pecas'
-> & {
-  cliente: ClienteDaOrdem;
-  veiculo: VeiculoDaOrdem;
-  servicos: (ItemServicoPrisma & { servico: { id: string; nome: string } })[];
-  pecas: (ItemPecaPrisma & {
-    peca: { id: string; codigo: string; nome: string };
-  })[];
+type ItemServicoRelacionado = ItemServicoPrisma & {
+  servico: { id: string; nome: string };
 };
 
-const INCLUDE_DETALHE = {
+type ItemPecaRelacionado = ItemPecaPrisma & {
+  peca: { id: string; codigo: string; nome: string };
+};
+
+type OrdemServicoComRelacoes = OrdemServicoPrisma & {
+  cliente: { id: string; nome: string; email: string; telefone?: string };
+  veiculo: {
+    id: string;
+    placa: string;
+    modelo: string;
+    marca?: string;
+    ano?: number;
+  };
+  servicos: ItemServicoRelacionado[];
+  pecas: ItemPecaRelacionado[];
+};
+
+const INCLUDE_COMPLETO = {
   cliente: { select: { id: true, nome: true, email: true, telefone: true } },
   veiculo: {
     select: { id: true, placa: true, marca: true, modelo: true, ano: true },
@@ -41,19 +50,17 @@ const INCLUDE_DETALHE = {
   pecas: {
     include: { peca: { select: { id: true, codigo: true, nome: true } } },
   },
+  sugestoesItens: true,
 } as const;
 
 @Injectable()
 export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly osMetrics: OsMetricsService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async buscarPorId(id: string): Promise<OrdemServico | null> {
     const raw = await this.prisma.ordemServico.findUnique({
       where: { id },
-      include: { servicos: true, pecas: true },
+      include: { servicos: true, pecas: true, sugestoesItens: true },
     });
     return raw ? PrismaOrdemServicoMapper.toDomain(raw) : null;
   }
@@ -62,30 +69,35 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
     const raw = await this.prisma.ordemServico.findUnique({
       where: { id },
       include: {
-        ...INCLUDE_DETALHE,
+        ...INCLUDE_COMPLETO,
         orcamentos: true,
         historicoStatus: { orderBy: { criadoEm: 'asc' } },
       },
     });
     if (!raw) return null;
 
+    const historicoStatus: HistoricoStatusDetalhe[] = raw.historicoStatus.map(
+      (item) => ({
+        id: item.id,
+        statusAnterior: item.statusAnterior as StatusOS | null,
+        statusNovo: item.statusNovo as StatusOS,
+        rodada: item.rodada,
+        eventId: item.eventId,
+        motivo: item.motivo,
+        observacao: item.observacao,
+        alteradoPor: item.alteradoPor,
+        ocorridoEm: item.ocorridoEm,
+        criadoEm: item.criadoEm,
+      }),
+    );
+
     return {
       ...this.montarDetalhe(raw),
       orcamentos: raw.orcamentos,
-      historicoStatus: raw.historicoStatus,
+      historicoStatus,
     };
   }
 
-  /**
-   * Fila de trabalho: sem as OS encerradas, priorizando Em Execução >
-   * Aguardando Aprovação > Diagnóstico > Recebida e, dentro de cada status,
-   * as mais antigas primeiro.
-   *
-   * O Postgres ordena enums pela ordem de DECLARAÇÃO no schema, que aqui é a
-   * cronológica (RECEBIDA → … → ENTREGUE). Invertê-la (`desc`) produz
-   * exatamente a prioridade da fila. O spec de `status-os` trava essa ordem de
-   * declaração para que ninguém a mude sem perceber que a listagem depende dela.
-   */
   async listar(
     page: number,
     limit: number,
@@ -104,11 +116,11 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
     const [raw, total] = await Promise.all([
       this.prisma.ordemServico.findMany({
         where,
-        orderBy: [{ status: 'desc' }, { criadoEm: 'asc' }],
+        orderBy: [{ prioridadeFila: 'asc' }, { criadoEm: 'asc' }],
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          cliente: { select: { id: true, nome: true } },
+          cliente: { select: { id: true, nome: true, email: true } },
           veiculo: { select: { id: true, placa: true, modelo: true } },
         },
       }),
@@ -125,75 +137,153 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
     };
   }
 
-  /** OS, itens e primeira entrada do histórico na mesma transação. */
   async criar(
+    contexto: ContextoTransacao,
     ordem: OrdemServico,
     registro: RegistroDeStatus,
-  ): Promise<OrdemServicoDetalhe> {
-    const raw = await this.prisma.$transaction(async (tx) => {
-      const criada = await tx.ordemServico.create({
-        data: {
-          clienteId: ordem.clienteId,
-          veiculoId: ordem.veiculoId,
-          descricaoProblema: ordem.descricaoProblema,
-          diagnostico: ordem.diagnostico,
-          servicos: { create: this.itensServico(ordem.servicosAdicionados) },
-          pecas: { create: this.itensPeca(ordem.pecasAdicionadas) },
+  ): Promise<OrdemServicoBloqueada> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+
+    const criada = await cliente.ordemServico.create({
+      data: {
+        clienteId: ordem.clienteId,
+        veiculoId: ordem.veiculoId,
+        status: PrismaOrdemServicoMapper.toStatusPrisma(ordem.status),
+        rodadaVigente: ordem.rodadaVigente,
+        prioridadeFila: ordem.prioridadeFila,
+        correlationId: ordem.correlationId,
+        descricaoProblema: ordem.descricaoProblema,
+        sugestoesItens: {
+          create: ordem.sugestoes.map((item) => ({
+            tipo: PrismaOrdemServicoMapper.toTipoSugestaoPrisma(item.tipo),
+            itemId: item.itemId,
+            quantidade: item.quantidade,
+          })),
         },
-        include: INCLUDE_DETALHE,
-      });
-
-      await tx.historicoStatusOS.create({
-        data: this.dadosDoHistorico(criada.id, registro),
-      });
-
-      return criada;
+      },
+      include: INCLUDE_COMPLETO,
     });
 
-    this.osMetrics.recordOsCriada();
-    return this.montarDetalhe(raw);
+    await cliente.historicoStatusOS.create({
+      data: this.dadosHistorico(criada.id, registro),
+    });
+
+    return this.paraBloqueada(criada);
   }
 
-  /** Atualização, novos itens e histórico da mudança de status na mesma transação. */
-  async atualizar(
+  async bloquearParaAtualizacao(
+    contexto: ContextoTransacao,
     id: string,
-    ordem: OrdemServico,
-    registro?: RegistroDeStatus,
-  ): Promise<OrdemServicoDetalhe> {
-    const raw = await this.prisma.$transaction(async (tx) => {
-      const atualizada = await tx.ordemServico.update({
-        where: { id },
-        data: {
-          status: PrismaOrdemServicoMapper.toStatusPrisma(ordem.status),
-          descricaoProblema: ordem.descricaoProblema,
-          diagnostico: ordem.diagnostico,
-          iniciadaEm: ordem.iniciadaEm,
-          finalizadaEm: ordem.finalizadaEm,
-          entregueEm: ordem.entregueEm,
-          servicos: { create: this.itensServico(ordem.servicosAdicionados) },
-          pecas: { create: this.itensPeca(ordem.pecasAdicionadas) },
-        },
-        include: INCLUDE_DETALHE,
-      });
+  ): Promise<OrdemServicoBloqueada | null> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
 
-      if (registro) {
-        await tx.historicoStatusOS.create({
-          data: this.dadosDoHistorico(id, registro),
-        });
-      }
-
-      return { atualizada, registro };
-    });
-
-    if (raw.registro?.statusAnterior) {
-      await this.osMetrics.recordTransicao(id, raw.registro.statusAnterior);
+    const bloqueada = await cliente.$queryRaw<{ id: string }[]>`
+      SELECT id FROM ordens_servico
+      WHERE id = ${id}::uuid
+      FOR UPDATE
+    `;
+    if (bloqueada.length === 0) {
+      return null;
     }
 
-    return this.montarDetalhe(raw.atualizada);
+    const raw = await cliente.ordemServico.findUnique({
+      where: { id },
+      include: INCLUDE_COMPLETO,
+    });
+    if (!raw) {
+      return null;
+    }
+
+    return this.paraBloqueada(raw);
   }
 
-  async remover(id: string): Promise<void> {
-    await this.prisma.ordemServico.delete({ where: { id } });
+  async salvar(
+    contexto: ContextoTransacao,
+    ordem: OrdemServico,
+    registro?: RegistroDeStatus,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const id = ordem.id!;
+
+    await cliente.ordemServico.update({
+      where: { id },
+      data: {
+        status: PrismaOrdemServicoMapper.toStatusPrisma(ordem.status),
+        rodadaVigente: ordem.rodadaVigente,
+        prioridadeFila: ordem.prioridadeFila,
+        descricaoProblema: ordem.descricaoProblema,
+        diagnostico: ordem.diagnostico,
+        diagnosticoConcluidoEm: ordem.diagnosticoConcluidoEm,
+        etapaOrigemCancelamento: ordem.etapaOrigemCancelamento
+          ? PrismaOrdemServicoMapper.toStatusPrisma(
+              ordem.etapaOrigemCancelamento,
+            )
+          : null,
+        motivoEncerramento: ordem.motivoEncerramento,
+        veiculoLiberadoRetirada: ordem.veiculoLiberadoRetirada,
+        devolvidaEm: ordem.devolvidaEm,
+        prazoReferenciaReserva: ordem.prazoReferenciaReserva,
+        iniciadaEm: ordem.iniciadaEm,
+        finalizadaEm: ordem.finalizadaEm,
+        entregueEm: ordem.entregueEm,
+      },
+    });
+
+    if (ordem.itensOficiaisSubstituidos) {
+      await cliente.ordemServicoServico.deleteMany({
+        where: { ordemServicoId: id },
+      });
+      await cliente.ordemServicoPeca.deleteMany({
+        where: { ordemServicoId: id },
+      });
+      if (ordem.servicos.length > 0) {
+        await cliente.ordemServicoServico.createMany({
+          data: ordem.servicos.map((item) => ({
+            ordemServicoId: id,
+            servicoId: item.servicoId,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+          })),
+        });
+      }
+      if (ordem.pecas.length > 0) {
+        await cliente.ordemServicoPeca.createMany({
+          data: ordem.pecas.map((item) => ({
+            ordemServicoId: id,
+            pecaId: item.pecaId,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+          })),
+        });
+      }
+    } else {
+      if (ordem.servicosAdicionados.length > 0) {
+        await cliente.ordemServicoServico.createMany({
+          data: ordem.servicosAdicionados.map((item) => ({
+            ordemServicoId: id,
+            servicoId: item.servicoId,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+          })),
+        });
+      }
+      if (ordem.pecasAdicionadas.length > 0) {
+        await cliente.ordemServicoPeca.createMany({
+          data: ordem.pecasAdicionadas.map((item) => ({
+            ordemServicoId: id,
+            pecaId: item.pecaId,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+          })),
+        });
+      }
+    }
+
+    if (registro) {
+      await cliente.historicoStatusOS.create({
+        data: this.dadosHistorico(id, registro),
+      });
+    }
   }
 
   async buscarMarcosDeTempo(
@@ -219,68 +309,66 @@ export class PrismaOrdemServicoGateway implements OrdemServicoGateway {
     });
   }
 
-  private itensServico(
-    itens: readonly {
-      servicoId: string;
-      quantidade: number;
-      precoUnitario: number;
-    }[],
-  ) {
-    return itens.map((item) => ({
-      servicoId: item.servicoId,
-      quantidade: item.quantidade,
-      precoUnitario: item.precoUnitario,
-    }));
-  }
-
-  private itensPeca(
-    itens: readonly {
-      pecaId: string;
-      quantidade: number;
-      precoUnitario: number;
-    }[],
-  ) {
-    return itens.map((item) => ({
-      pecaId: item.pecaId,
-      quantidade: item.quantidade,
-      precoUnitario: item.precoUnitario,
-    }));
-  }
-
-  private dadosDoHistorico(ordemServicoId: string, registro: RegistroDeStatus) {
+  private dadosHistorico(ordemServicoId: string, registro: RegistroDeStatus) {
     return {
       ordemServicoId,
       statusAnterior: registro.statusAnterior
         ? PrismaOrdemServicoMapper.toStatusPrisma(registro.statusAnterior)
         : null,
       statusNovo: PrismaOrdemServicoMapper.toStatusPrisma(registro.statusNovo),
+      rodada: registro.rodada,
+      eventId: registro.eventId,
+      ocorridoEm: registro.ocorridoEm,
+      motivo: registro.motivo,
       observacao: registro.observacao,
+      alteradoPor: registro.alteradoPor,
+    };
+  }
+
+  private paraBloqueada(raw: OrdemServicoComRelacoes): OrdemServicoBloqueada {
+    return {
+      ordem: PrismaOrdemServicoMapper.toDomain(raw),
+      cliente: {
+        id: raw.cliente.id,
+        nome: raw.cliente.nome,
+        email: raw.cliente.email ?? '',
+      },
+      veiculo: {
+        placa: raw.veiculo.placa,
+        modelo: raw.veiculo.modelo,
+      },
     };
   }
 
   private montarDetalhe(raw: OrdemServicoComRelacoes): OrdemServicoDetalhe {
-    const { cliente, veiculo, servicos, pecas, ...ordem } = raw;
+    const { cliente, veiculo, servicos, pecas, sugestoesItens, ...ordem } = raw;
+    const servicosRel = servicos as ItemServicoRelacionado[];
+    const pecasRel = pecas as ItemPecaRelacionado[];
 
     return {
       ordem: PrismaOrdemServicoMapper.toDomain({
         ...ordem,
         servicos,
         pecas,
+        sugestoesItens: sugestoesItens ?? [],
       }),
       cliente,
       veiculo,
-      servicos: servicos.map((item) => ({
+      servicos: servicosRel.map((item) => ({
         id: item.id,
         servico: item.servico,
         quantidade: item.quantidade,
         precoUnitario: Number(item.precoUnitario),
       })),
-      pecas: pecas.map((item) => ({
+      pecas: pecasRel.map((item) => ({
         id: item.id,
         peca: item.peca,
         quantidade: item.quantidade,
         precoUnitario: Number(item.precoUnitario),
       })),
+      sugestoes: (sugestoesItens ?? []).map((item) =>
+        PrismaOrdemServicoMapper.sugestaoToDomain(item),
+      ),
       orcamentos: [],
       historicoStatus: [],
     };

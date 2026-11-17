@@ -44,7 +44,7 @@ describe('OsMetricsService', () => {
 
   it('calcula duracao ao sair de EM_DIAGNOSTICO', async () => {
     prisma.historicoStatusOS.findFirst.mockResolvedValue({
-      criadoEm: new Date('2026-09-13T10:00:00.000Z'),
+      ocorridoEm: new Date('2026-09-13T10:00:00.000Z'),
     });
 
     await service.recordTransicao(

@@ -16,6 +16,14 @@ describe('ListarOrdensServicoUseCase', () => {
     useCase = new ListarOrdensServicoUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ ordens: [], total: 0 });
+
+    await useCase.execute();
+
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de OS', async () => {
     gateway.listar.mockResolvedValue({
       ordens: [

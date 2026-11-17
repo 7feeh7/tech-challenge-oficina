@@ -17,9 +17,18 @@ enum StatusOS {
   RECEBIDA
   EM_DIAGNOSTICO
   AGUARDANDO_APROVACAO
+  AGUARDANDO_PAGAMENTO
+  AGUARDANDO_EXECUCAO
   EM_EXECUCAO
+  EM_CANCELAMENTO
   FINALIZADA
+  CANCELADA
   ENTREGUE
+}
+
+enum TipoSugestaoItemOs {
+  PECA
+  SERVICO
 }
 
 enum StatusOrcamento {
@@ -207,34 +216,58 @@ model AjusteEstoqueAdministrativo {
 // ===================== ORDEM DE SERVIÇO =====================
 
 model OrdemServico {
-  id                String               @id @default(uuid()) @db.Uuid
-  numero            Int                  @unique @default(autoincrement())
-  status            StatusOS             @default(RECEBIDA)
-  clienteId         String               @map("cliente_id") @db.Uuid
-  cliente           Cliente              @relation(fields: [clienteId], references: [id])
-  veiculoId         String               @map("veiculo_id") @db.Uuid
-  veiculo           Veiculo              @relation(fields: [veiculoId], references: [id])
-  descricaoProblema String?              @map("descricao_problema")
-  diagnostico       String?
-  servicos          OrdemServicoServico[]
-  pecas             OrdemServicoPeca[]
-  orcamentos        Orcamento[]
-  historicoStatus    HistoricoStatusOS[]
-  movimentacoesEstoque MovimentacaoEstoque[]
-  reservasEstoque      ReservaEstoque[]
-  pendencias           PendenciaOs[]
-  iniciadaEm         DateTime?            @map("iniciada_em")
-  finalizadaEm       DateTime?            @map("finalizada_em")
-  entregueEm         DateTime?            @map("entregue_em")
-  criadoEm           DateTime             @default(now()) @map("criado_em")
-  atualizadoEm       DateTime             @updatedAt @map("atualizado_em")
+  id                       String                @id @default(uuid()) @db.Uuid
+  numero                   Int                   @unique @default(autoincrement())
+  status                   StatusOS              @default(RECEBIDA)
+  rodadaVigente            Int                   @default(1) @map("rodada_vigente")
+  prioridadeFila           Int                   @default(6) @map("prioridade_fila")
+  correlationId            String                @map("correlation_id") @db.Uuid
+  clienteId                String                @map("cliente_id") @db.Uuid
+  cliente                  Cliente               @relation(fields: [clienteId], references: [id])
+  veiculoId                String                @map("veiculo_id") @db.Uuid
+  veiculo                  Veiculo               @relation(fields: [veiculoId], references: [id])
+  descricaoProblema        String?               @map("descricao_problema")
+  diagnostico              String?
+  diagnosticoConcluidoEm   DateTime?             @map("diagnostico_concluido_em")
+  etapaOrigemCancelamento  StatusOS?             @map("etapa_origem_cancelamento")
+  motivoEncerramento       String?               @map("motivo_encerramento")
+  veiculoLiberadoRetirada  Boolean               @default(false) @map("veiculo_liberado_retirada")
+  devolvidaEm              DateTime?             @map("devolvida_em")
+  prazoReferenciaReserva   DateTime?             @map("prazo_referencia_reserva")
+  servicos                 OrdemServicoServico[]
+  pecas                    OrdemServicoPeca[]
+  sugestoesItens           SugestaoItemOs[]
+  orcamentos               Orcamento[]
+  historicoStatus          HistoricoStatusOS[]
+  movimentacoesEstoque     MovimentacaoEstoque[]
+  reservasEstoque          ReservaEstoque[]
+  pendencias               PendenciaOs[]
+  iniciadaEm               DateTime?             @map("iniciada_em")
+  finalizadaEm             DateTime?             @map("finalizada_em")
+  entregueEm               DateTime?             @map("entregue_em")
+  criadoEm                 DateTime              @default(now()) @map("criado_em")
+  atualizadoEm             DateTime              @updatedAt @map("atualizado_em")
 
   @@index([clienteId])
   @@index([veiculoId])
   @@index([status])
-  @@index([status, criadoEm])
+  @@index([prioridadeFila, criadoEm])
   @@index([criadoEm])
   @@map("ordens_servico")
+}
+
+model SugestaoItemOs {
+  id             String               @id @default(uuid()) @db.Uuid
+  ordemServicoId String               @map("ordem_servico_id") @db.Uuid
+  ordemServico   OrdemServico         @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  tipo           TipoSugestaoItemOs
+  itemId         String               @map("item_id") @db.Uuid
+  quantidade     Int
+  criadoEm       DateTime             @default(now()) @map("criado_em")
+
+  @@unique([ordemServicoId, tipo, itemId])
+  @@index([ordemServicoId])
+  @@map("sugestoes_itens_os")
 }
 
 model OrdemServicoServico {
@@ -296,6 +329,10 @@ model HistoricoStatusOS {
   ordemServico   OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
   statusAnterior StatusOS?    @map("status_anterior")
   statusNovo     StatusOS     @map("status_novo")
+  eventId        String?      @map("event_id") @db.Uuid
+  rodada         Int?
+  ocorridoEm     DateTime     @default(now()) @map("ocorrido_em")
+  motivo         String?
   alteradoPor    String?      @map("alterado_por")
   observacao     String?
   criadoEm       DateTime     @default(now()) @map("criado_em")

@@ -125,34 +125,59 @@ ON CONFLICT (codigo) DO UPDATE SET
   ativo = true,
   atualizado_em = NOW();
 
--- OS em diagnóstico — mudança de status dispara notificação na demo
+-- OS em diagnóstico — sem laudo preenchido (E27 / E9)
 INSERT INTO ordens_servico (
-  id, status, cliente_id, veiculo_id, descricao_problema, diagnostico, criado_em, atualizado_em
+  id,
+  status,
+  rodada_vigente,
+  prioridade_fila,
+  correlation_id,
+  cliente_id,
+  veiculo_id,
+  descricao_problema,
+  criado_em,
+  atualizado_em
 )
 VALUES (
   '55555555-5555-4555-8555-555555555001',
   'EM_DIAGNOSTICO',
+  1,
+  5,
+  '77777777-7777-4777-8777-777777777001',
   '11111111-1111-4111-8111-111111111001',
   '22222222-2222-4222-8222-222222222001',
   'Rangido ao frear e veículo puxando à direita (dados fictícios para demo).',
-  'Pastilhas dianteiras gastas; alinhamento desregulado.',
   NOW() - INTERVAL '2 hours',
   NOW()
 )
 ON CONFLICT (id) DO UPDATE SET
   status = EXCLUDED.status,
+  rodada_vigente = EXCLUDED.rodada_vigente,
+  prioridade_fila = EXCLUDED.prioridade_fila,
+  correlation_id = EXCLUDED.correlation_id,
   descricao_problema = EXCLUDED.descricao_problema,
-  diagnostico = EXCLUDED.diagnostico,
+  diagnostico = NULL,
   atualizado_em = NOW();
 
 -- Histórico mínimo (métricas de tempo por status)
-INSERT INTO historico_status_os (id, ordem_servico_id, status_anterior, status_novo, alterado_por, criado_em)
+INSERT INTO historico_status_os (
+  id,
+  ordem_servico_id,
+  status_anterior,
+  status_novo,
+  rodada,
+  ocorrido_em,
+  alterado_por,
+  criado_em
+)
 VALUES
   (
     '66666666-6666-4666-8666-666666666001',
     '55555555-5555-4555-8555-555555555001',
     NULL,
     'RECEBIDA',
+    1,
+    NOW() - INTERVAL '2 hours',
     'seed-demo',
     NOW() - INTERVAL '2 hours'
   ),
@@ -161,6 +186,8 @@ VALUES
     '55555555-5555-4555-8555-555555555001',
     'RECEBIDA',
     'EM_DIAGNOSTICO',
+    1,
+    NOW() - INTERVAL '90 minutes',
     'seed-demo',
     NOW() - INTERVAL '90 minutes'
   )

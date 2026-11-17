@@ -3,13 +3,10 @@ import {
   OrdemServicoProps,
 } from '../../domain/entities/ordem-servico.entity';
 import { CatalogoGateway } from '../ports/catalogo.gateway';
-import { NotificadorDeStatusGateway } from '../ports/notificador-status.gateway';
 import {
   OrdemServicoDetalhe,
   OrdemServicoGateway,
 } from '../ports/ordem-servico.gateway';
-
-/** Dublês compartilhados pelos specs dos casos de uso. */
 
 export const clienteFake = {
   id: 'uuid-c1',
@@ -40,6 +37,7 @@ export const criarDetalheFake = (
   veiculo: veiculoFake,
   servicos: [],
   pecas: [],
+  sugestoes: [],
   orcamentos: [],
   historicoStatus: [],
 });
@@ -49,21 +47,16 @@ export const criarGatewayMock = (): jest.Mocked<OrdemServicoGateway> => ({
   buscarDetalhePorId: jest.fn(),
   listar: jest.fn(),
   criar: jest.fn(),
-  atualizar: jest.fn(),
-  remover: jest.fn(),
+  bloquearParaAtualizacao: jest.fn(),
+  salvar: jest.fn(),
   buscarMarcosDeTempo: jest.fn(),
 });
-
-export const criarNotificadorMock =
-  (): jest.Mocked<NotificadorDeStatusGateway> => ({
-    notificarMudancaDeStatus: jest.fn().mockResolvedValue(undefined),
-  });
 
 export const criarCatalogoMock = (): jest.Mocked<CatalogoGateway> => ({
   clienteExiste: jest.fn().mockResolvedValue(true),
   buscarVeiculo: jest
     .fn()
     .mockResolvedValue({ id: 'uuid-v1', clienteId: 'uuid-c1' }),
-  buscarPrecoDoServico: jest.fn().mockResolvedValue(150),
-  buscarPrecoDaPeca: jest.fn().mockResolvedValue(29.9),
+  servicoExiste: jest.fn().mockResolvedValue(true),
+  pecaExiste: jest.fn().mockResolvedValue(true),
 });
