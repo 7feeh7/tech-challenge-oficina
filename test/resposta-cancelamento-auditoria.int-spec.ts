@@ -1057,50 +1057,107 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
   });
 
   describe('concorrência', () => {
-    it('fato e resposta concorrentes — exatamente um consumo após disputa de bloqueio', async () => {
+    const PAUSA_BLOQUEIO_MS = 120;
+
+    async function assertFatoRespostaConvergem(
+      osId: string,
+      estoqueAntes: number,
+      qtdConsumo: number,
+    ) {
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: osId, rodada: 1 },
+        }),
+      ).toBe(1);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+          .quantidadeEstoque,
+      ).toBe(estoqueAntes - qtdConsumo);
+    }
+
+    it('fato vence disputa — fato na frente da fila de bloqueio da OS', async () => {
       const databaseUrl = exigirDatabaseUrl();
+      const qtd = 2;
       const { os, correlationId } = await prepararEmCancelamentoReparo(3);
       const fatoId = randomUUID();
       const estoqueAntes = (
         await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
       ).quantidadeEstoque;
       const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
-      await sessao.adquirir();
-      const pFato = processar.executar(
-        montarEnvelopeE42(
-          EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
-          os.id,
-          correlationId,
-          1,
-          {
-            pecasUtilizadas: [{ itemId: pecaId, quantidade: 2 }],
-            concluidoEm: QUANDO_ENCERRAMENTO_E42,
-          },
-          fatoId,
-        ),
-      );
-      const pResposta = processar.executar(
-        montarEnvelopeE42(
-          EVENTOS_TERMINAIS_E42.RESPOSTA,
-          os.id,
-          correlationId,
-          1,
-          payloadReparoConcluidoE42(pecaId, 2, fatoId),
-        ),
-      );
-      await new Promise((r) => setTimeout(r, 100));
-      await sessao.liberar();
-      await Promise.allSettled([pFato, pResposta]);
-      expect(
-        await prisma.consumoAplicadoOs.count({
-          where: { ordemServicoId: os.id, rodada: 1 },
-        }),
-      ).toBe(1);
-      const estoqueDepois = (
+      try {
+        await sessao.adquirir();
+        const pFato = processar.executar(
+          montarEnvelopeE42(
+            EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
+            os.id,
+            correlationId,
+            1,
+            {
+              pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
+              concluidoEm: QUANDO_ENCERRAMENTO_E42,
+            },
+            fatoId,
+          ),
+        );
+        const pResposta = processar.executar(
+          montarEnvelopeE42(
+            EVENTOS_TERMINAIS_E42.RESPOSTA,
+            os.id,
+            correlationId,
+            1,
+            payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+          ),
+        );
+        await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+        await sessao.liberar();
+        await Promise.allSettled([pFato, pResposta]);
+        await assertFatoRespostaConvergem(os.id, estoqueAntes, qtd);
+      } finally {
+        await sessao.descartar();
+      }
+    }, 90_000);
+
+    it('resposta vence disputa — resposta na frente da fila de bloqueio da OS', async () => {
+      const databaseUrl = exigirDatabaseUrl();
+      const qtd = 2;
+      const { os, correlationId } = await prepararEmCancelamentoReparo(3);
+      const fatoId = randomUUID();
+      const estoqueAntes = (
         await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
       ).quantidadeEstoque;
-      expect(estoqueDepois).toBe(estoqueAntes - 2);
-    }, 60_000);
+      const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+      try {
+        await sessao.adquirir();
+        const pResposta = processar.executar(
+          montarEnvelopeE42(
+            EVENTOS_TERMINAIS_E42.RESPOSTA,
+            os.id,
+            correlationId,
+            1,
+            payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+          ),
+        );
+        const pFato = processar.executar(
+          montarEnvelopeE42(
+            EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
+            os.id,
+            correlationId,
+            1,
+            {
+              pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
+              concluidoEm: QUANDO_ENCERRAMENTO_E42,
+            },
+            fatoId,
+          ),
+        );
+        await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+        await sessao.liberar();
+        await Promise.allSettled([pResposta, pFato]);
+        await assertFatoRespostaConvergem(os.id, estoqueAntes, qtd);
+      } finally {
+        await sessao.descartar();
+      }
+    }, 90_000);
   });
 
   describe('estado terminal', () => {

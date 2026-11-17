@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../src/shared/generated/prisma/client';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
 import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
@@ -41,15 +39,9 @@ import {
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
+import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
-function criarPrismaPool(databaseUrl: string): PrismaClient {
-  const adapter = new PrismaPg({
-    connectionString: databaseUrl,
-    max: 2,
-    connectionTimeoutMillis: 15_000,
-  });
-  return new PrismaClient({ adapter });
-}
+const PAUSA_SOBREPOSICAO_MS = 120;
 
 describe('Compensação — ReparoFalhou (integração)', () => {
   let nestModule: TestingModule;
@@ -639,60 +631,161 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     expect(consumo.eventId).toBe(eventId);
   });
 
-  it('C6 — concorrência desistência e ReparoFalhou com exatamente um de cada efeito', async () => {
-    const databaseUrl = exigirDatabaseUrl();
-    const { os, correlationId } = await prepararEmExecucao(4);
-    const falhouPayload = {
-      pecasUtilizadas: [{ itemId: pecaId, quantidade: 1 }],
-      falhouEm: new Date().toISOString(),
-    };
-    const prismaB = criarPrismaPool(databaseUrl);
-    const processarB = processar;
-    let trava = 0;
-    const liberar = new Promise<void>((resolve) => {
-      const iv = setInterval(() => {
-        trava += 1;
-        if (trava >= 2) {
-          clearInterval(iv);
-          resolve();
-        }
-      }, 15);
+  async function assertEfeitosC6OrdemUnica(
+    osId: string,
+    correlationId: string,
+    eventId: string,
+    estoqueAntes: number,
+    qtdConsumida: number,
+    reservaQtdOriginal: number,
+    falhouEmIso: string,
+  ) {
+    expect(
+      await prisma.historicoStatusOS.count({
+        where: { ordemServicoId: osId, statusNovo: StatusOS.EM_CANCELAMENTO },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.consumoAplicadoOs.count({
+        where: { ordemServicoId: osId, rodada: 1 },
+      }),
+    ).toBe(1);
+    const consumo = await prisma.consumoAplicadoOs.findUniqueOrThrow({
+      where: { ordemServicoId_rodada: { ordemServicoId: osId, rodada: 1 } },
     });
-    const pDesistir = (async () => {
-      await liberar;
-      return desistir.execute(os.id, { motivo: 'Concorrência desistência' });
-    })();
-    const pFalha = (async () => {
-      await liberar;
-      return processarB.executar(
+    expect(consumo.eventId).toBe(eventId);
+    expect(consumo.tipoFato).toBe('REPARO_FALHOU');
+    expect(consumo.fatoOcorridoEm.toISOString()).toBe(
+      new Date(falhouEmIso).toISOString(),
+    );
+    expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueAntes - qtdConsumida);
+    const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+      where: { ordemServicoId: osId, pecaId },
+    });
+    expect(reserva.quantidade).toBe(reservaQtdOriginal);
+    expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
+      1,
+    );
+    expect(
+      await prisma.pendenciaOs.count({
+        where: { ordemServicoId: osId, resolvida: false },
+      }),
+    ).toBe(0);
+    const ordem = await prisma.ordemServico.findUniqueOrThrow({
+      where: { id: osId },
+    });
+    expect(ordem.status).toBe(StatusOS.EM_CANCELAMENTO);
+    expect(ordem.status).not.toBe(StatusOS.FINALIZADA);
+  }
+
+  it('C6-A — ReparoFalhou vence a disputa de bloqueio da OS', async () => {
+    const databaseUrl = exigirDatabaseUrl();
+    const qtdReserva = 4;
+    const qtdConsumida = 1;
+    const { os, correlationId } = await prepararEmExecucao(qtdReserva);
+    const estoqueAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
+    const reservaQtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId },
+      })
+    ).quantidade;
+    const falhouEm = '2026-10-01T10:00:00.000Z';
+    const eventId = randomUUID();
+    const falhouPayload = {
+      pecasUtilizadas: [{ itemId: pecaId, quantidade: qtdConsumida }],
+      falhouEm,
+    };
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pFalha = processar.executar(
         montarEnvelope(
           EVENTO_REPARO_FALHOU,
           os.id,
           correlationId,
           1,
           falhouPayload,
+          eventId,
+          falhouEm,
         ),
       );
-    })();
-    const results = await Promise.allSettled([pDesistir, pFalha]);
-    await prismaB.$disconnect();
-    expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
-    expect(
-      await prisma.consumoAplicadoOs.count({
-        where: { ordemServicoId: os.id, rodada: 1 },
-      }),
-    ).toBe(1);
-    expect(
-      await prisma.historicoStatusOS.count({
-        where: { ordemServicoId: os.id, statusNovo: StatusOS.EM_CANCELAMENTO },
-      }),
-    ).toBe(1);
-    expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
-      1,
-    );
-    const ordem = await prisma.ordemServico.findUniqueOrThrow({
-      where: { id: os.id },
-    });
-    expect(ordem.status).not.toBe(StatusOS.FINALIZADA);
-  }, 60_000);
+      const pDesistir = desistir.execute(os.id, {
+        motivo: 'C6-A concorrente',
+      });
+      await new Promise((r) => setTimeout(r, PAUSA_SOBREPOSICAO_MS));
+      await sessao.liberar();
+      const resultados = await Promise.allSettled([pFalha, pDesistir]);
+      expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true);
+      await assertEfeitosC6OrdemUnica(
+        os.id,
+        correlationId,
+        eventId,
+        estoqueAntes,
+        qtdConsumida,
+        reservaQtdOriginal,
+        falhouEm,
+      );
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
+
+  it('C6-B — desistência vence a disputa; ReparoFalhou reconcilia em seguida', async () => {
+    const databaseUrl = exigirDatabaseUrl();
+    const qtdReserva = 4;
+    const qtdConsumida = 1;
+    const { os, correlationId } = await prepararEmExecucao(qtdReserva);
+    const estoqueAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
+    const reservaQtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId },
+      })
+    ).quantidade;
+    const falhouEm = '2026-10-02T11:00:00.000Z';
+    const eventId = randomUUID();
+    const falhouPayload = {
+      pecasUtilizadas: [{ itemId: pecaId, quantidade: qtdConsumida }],
+      falhouEm,
+    };
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pDesistir = desistir.execute(os.id, {
+        motivo: 'C6-B concorrente',
+      });
+      const pFalha = processar.executar(
+        montarEnvelope(
+          EVENTO_REPARO_FALHOU,
+          os.id,
+          correlationId,
+          1,
+          falhouPayload,
+          eventId,
+          falhouEm,
+        ),
+      );
+      await new Promise((r) => setTimeout(r, PAUSA_SOBREPOSICAO_MS));
+      await sessao.liberar();
+      const resultados = await Promise.allSettled([pDesistir, pFalha]);
+      expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true);
+      await assertEfeitosC6OrdemUnica(
+        os.id,
+        correlationId,
+        eventId,
+        estoqueAntes,
+        qtdConsumida,
+        reservaQtdOriginal,
+        falhouEm,
+      );
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
 });

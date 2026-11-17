@@ -365,7 +365,32 @@ describe('Resolução manual de consumo (integração E42)', () => {
     expect(reserva.situacao).toBe(SituacaoReservaEstoque.ATIVA);
   });
 
-  it('resolução manual concorrente com fato terminal: exclusão mútua', async () => {
+  const PAUSA_BLOQUEIO_MS = 120;
+
+  const montarFatoFalhouResolucao = (
+    osId: string,
+    correlationId: string,
+    peca: string,
+    eventId: string,
+  ) =>
+    JSON.stringify({
+      eventId,
+      eventType: EVENTO_REPARO_FALHOU,
+      version: 1,
+      occurredAt: QUANDO_ENCERRAMENTO_E42,
+      source: 'teste-exclusao',
+      correlationId,
+      causationId: null,
+      ordemServicoId: osId,
+      rodada: 1,
+      payload: {
+        pecasUtilizadas: [{ itemId: peca, quantidade: 1 }],
+        falhouEm: QUANDO_ENCERRAMENTO_E42,
+      },
+    });
+
+  it('concorrência — consumo automático vence resolução manual (fato na frente da fila)', async () => {
+    const databaseUrl = exigirDatabaseUrl();
     const peca = await prisma.peca.create({
       data: {
         codigo: `CF-${randomUUID().slice(0, 6)}`,
@@ -380,62 +405,138 @@ describe('Resolução manual de consumo (integração E42)', () => {
       rodada: 1,
       itens: [{ pecaId: peca.id, quantidade: 2 }],
     });
+    const qtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      })
+    ).quantidade;
     const pendencia = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
     const fatoId = randomUUID();
     const fisicoAntes = (
       await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
     ).quantidadeEstoque;
-    let liberar: () => void = () => undefined;
-    const trava = new Promise<void>((r) => {
-      liberar = r;
-    });
-    const pFato = (async () => {
-      await trava;
-      return processar.executar(
-        JSON.stringify({
-          eventId: fatoId,
-          eventType: EVENTO_REPARO_FALHOU,
-          version: 1,
-          occurredAt: new Date().toISOString(),
-          source: 'teste-exclusao',
-          correlationId: os.correlationId,
-          causationId: null,
-          ordemServicoId: os.id,
-          rodada: 1,
-          payload: {
-            pecasUtilizadas: [{ itemId: peca.id, quantidade: 1 }],
-            falhouEm: QUANDO_ENCERRAMENTO_E42,
-          },
-        }),
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pFato = processar.executar(
+        montarFatoFalhouResolucao(os.id, os.correlationId, peca.id, fatoId),
       );
-    })();
-    const pResolucao = (async () => {
-      await trava;
-      return resolver.execute({
+      const pResolucao = resolver.execute({
         pendenciaId: pendencia.id,
         itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
         itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'concorrente',
+        motivo: 'perde disputa',
         responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:cf:${pendencia.id}`,
+        idempotencyKey: `resolucao:cf:perde:${pendencia.id}`,
       });
-    })();
-    setTimeout(liberar, 30);
-    await Promise.allSettled([pFato, pResolucao]);
-    const resolucoes = await prisma.resolucaoConsumoManual.count({
-      where: { ordemServicoId: os.id, rodada: 1 },
+      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.liberar();
+      await Promise.allSettled([pFato, pResolucao]);
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.resolucaoConsumoManual.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(0);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(fisicoAntes - 1);
+      const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      });
+      expect(reserva.quantidade).toBe(qtdOriginal);
+      expect(
+        (
+          await prisma.consumoAplicadoOs.findUniqueOrThrow({
+            where: {
+              ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 },
+            },
+          })
+        ).eventId,
+      ).toBe(fatoId);
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
+
+  it('concorrência — resolução manual vence: bloqueio disputado e fato tardio sem consumo', async () => {
+    const databaseUrl = exigirDatabaseUrl();
+    const peca = await prisma.peca.create({
+      data: {
+        codigo: `CM-${randomUUID().slice(0, 6)}`,
+        nome: 'Cm',
+        precoUnitario: 5,
+        quantidadeEstoque: 15,
+      },
     });
-    const consumos = await prisma.consumoAplicadoOs.count({
-      where: { ordemServicoId: os.id, rodada: 1 },
+    const os = await criarOs();
+    await reservar.execute({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itens: [{ pecaId: peca.id, quantidade: 2 }],
     });
-    expect(resolucoes + consumos).toBe(1);
-    expect(resolucoes + consumos).toBeGreaterThan(0);
-    const fisicoDepois = (
+    const qtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      })
+    ).quantidade;
+    const pendencia = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
+    const fatoId = randomUUID();
+    const fisicoAntes = (
       await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
     ).quantidadeEstoque;
-    expect(fisicoDepois).toBeLessThanOrEqual(fisicoAntes);
-    expect(fisicoDepois).toBeGreaterThanOrEqual(fisicoAntes - 1);
-  }, 60_000);
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pResolucao = resolver.execute({
+        pendenciaId: pendencia.id,
+        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+        motivo: 'vence disputa',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:cm:vence:${pendencia.id}`,
+      });
+      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.liberar();
+      await pResolucao;
+      expect(
+        await prisma.resolucaoConsumoManual.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(1);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(fisicoAntes - 1);
+      await processar.executar(
+        montarFatoFalhouResolucao(os.id, os.correlationId, peca.id, fatoId),
+      );
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(0);
+      const resolucao = await prisma.resolucaoConsumoManual.findUniqueOrThrow({
+        where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+      });
+      expect(resolucao.fatoTardioEventId).toBe(fatoId);
+      const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      });
+      expect(reserva.quantidade).toBe(qtdOriginal);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(fisicoAntes - 1);
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
 
   it('consumo automático vence resolução manual tardia', async () => {
     const peca = await prisma.peca.create({
@@ -481,7 +582,8 @@ describe('Resolução manual de consumo (integração E42)', () => {
     ).toBe(0);
   });
 
-  it('resolução manual concorrente com resposta válida', async () => {
+  it('concorrência — resposta válida vence resolução manual (resposta na frente da fila)', async () => {
+    const databaseUrl = exigirDatabaseUrl();
     const peca = await prisma.peca.create({
       data: {
         codigo: `CR-${randomUUID().slice(0, 6)}`,
@@ -496,15 +598,20 @@ describe('Resolução manual de consumo (integração E42)', () => {
       rodada: 1,
       itens: [{ pecaId: peca.id, quantidade: 2 }],
     });
+    const qtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      })
+    ).quantidade;
     const pendencia = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
     const fatoId = randomUUID();
-    let go: () => void = () => undefined;
-    const trava = new Promise<void>((r) => {
-      go = r;
-    });
-    const pResposta = (async () => {
-      await trava;
-      return processar.executar(
+    const fisicoAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
+    ).quantidadeEstoque;
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pResposta = processar.executar(
         montarEnvelopeE42(
           EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
           os.id,
@@ -513,29 +620,115 @@ describe('Resolução manual de consumo (integração E42)', () => {
           payloadReparoEncerradoE42(peca.id, 1, 'FALHOU', fatoId),
         ),
       );
-    })();
-    const pResolucao = (async () => {
-      await trava;
-      return resolver.execute({
+      const pResolucao = resolver.execute({
         pendenciaId: pendencia.id,
         itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
         itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'resposta conc',
+        motivo: 'perde para resposta',
         responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:cr:${pendencia.id}`,
+        idempotencyKey: `resolucao:cr:perde:${pendencia.id}`,
       });
-    })();
-    setTimeout(go, 25);
-    await Promise.allSettled([pResposta, pResolucao]);
-    expect(
-      (await prisma.resolucaoConsumoManual.count({
-        where: { ordemServicoId: os.id, rodada: 1 },
-      })) +
-        (await prisma.consumoAplicadoOs.count({
+      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.liberar();
+      await Promise.allSettled([pResposta, pResolucao]);
+      expect(
+        await prisma.consumoAplicadoOs.count({
           where: { ordemServicoId: os.id, rodada: 1 },
-        })),
-    ).toBe(1);
-  }, 60_000);
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.resolucaoConsumoManual.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(0);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(fisicoAntes - 1);
+      const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      });
+      expect(reserva.quantidade).toBe(qtdOriginal);
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
+
+  it('concorrência — resolução manual vence resposta: bloqueio disputado e resposta tardia compatível', async () => {
+    const databaseUrl = exigirDatabaseUrl();
+    const peca = await prisma.peca.create({
+      data: {
+        codigo: `CR2-${randomUUID().slice(0, 6)}`,
+        nome: 'Cr2',
+        precoUnitario: 5,
+        quantidadeEstoque: 12,
+      },
+    });
+    const os = await criarOs();
+    await reservar.execute({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itens: [{ pecaId: peca.id, quantidade: 2 }],
+    });
+    const qtdOriginal = (
+      await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      })
+    ).quantidade;
+    const pendencia = await abrirPendenciaInformacaoInsuficiente(os.id, 1);
+    const fatoId = randomUUID();
+    const fisicoAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
+    ).quantidadeEstoque;
+    const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    try {
+      await sessao.adquirir();
+      const pResolucao = resolver.execute({
+        pendenciaId: pendencia.id,
+        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+        motivo: 'vence resposta',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:cr2:vence:${pendencia.id}`,
+      });
+      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.liberar();
+      await pResolucao;
+      expect(
+        await prisma.resolucaoConsumoManual.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(1);
+      await processar.executar(
+        montarEnvelopeE42(
+          EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
+          os.id,
+          os.correlationId,
+          1,
+          payloadReparoEncerradoE42(peca.id, 1, 'FALHOU', fatoId),
+        ),
+      );
+      expect(
+        await prisma.consumoAplicadoOs.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(0);
+      const resolucao = await prisma.resolucaoConsumoManual.findUniqueOrThrow({
+        where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+      });
+      expect(resolucao.fatoTardioEventId).toBe(fatoId);
+      const reserva = await prisma.reservaEstoque.findFirstOrThrow({
+        where: { ordemServicoId: os.id, pecaId: peca.id },
+      });
+      expect(reserva.quantidade).toBe(qtdOriginal);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(fisicoAntes - 1);
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
 
   it('duas resoluções concorrentes — exatamente uma vence com bloqueio disputado', async () => {
     const databaseUrl = exigirDatabaseUrl();
@@ -558,38 +751,42 @@ describe('Resolução manual de consumo (integração E42)', () => {
       await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } })
     ).quantidadeEstoque;
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
-    await sessao.adquirir();
-    const pVencedor = resolver.execute({
-      pendenciaId: pendA.id,
-      itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-      itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-      motivo: 'após liberação do bloqueio',
-      responsavelId: randomUUID(),
-      idempotencyKey: `resolucao:conc:vence:${pendA.id}`,
-    });
-    const pBloqueada = resolver.execute({
-      pendenciaId: pendA.id,
-      itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-      itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-      motivo: 'bloqueada na OS',
-      responsavelId: randomUUID(),
-      idempotencyKey: `resolucao:conc:perde:${pendA.id}`,
-    });
-    await new Promise((r) => setTimeout(r, 80));
-    await sessao.liberar();
-    const resultados = await Promise.allSettled([pBloqueada, pVencedor]);
-    const sucesso = resultados.filter((r) => r.status === 'fulfilled').length;
-    const falha = resultados.filter((r) => r.status === 'rejected').length;
-    expect(sucesso).toBe(1);
-    expect(falha).toBe(1);
-    expect(
-      await prisma.resolucaoConsumoManual.count({
-        where: { ordemServicoId: os.id, rodada: 1 },
-      }),
-    ).toBe(1);
-    expect(
-      (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
-        .quantidadeEstoque,
-    ).toBe(estoqueAntes - 1);
-  }, 60_000);
+    try {
+      await sessao.adquirir();
+      const pVencedor = resolver.execute({
+        pendenciaId: pendA.id,
+        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+        motivo: 'após liberação do bloqueio',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:conc:vence:${pendA.id}`,
+      });
+      const pBloqueada = resolver.execute({
+        pendenciaId: pendA.id,
+        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+        motivo: 'bloqueada na OS',
+        responsavelId: randomUUID(),
+        idempotencyKey: `resolucao:conc:perde:${pendA.id}`,
+      });
+      await new Promise((r) => setTimeout(r, 80));
+      await sessao.liberar();
+      const resultados = await Promise.allSettled([pBloqueada, pVencedor]);
+      const sucesso = resultados.filter((r) => r.status === 'fulfilled').length;
+      const falha = resultados.filter((r) => r.status === 'rejected').length;
+      expect(sucesso).toBe(1);
+      expect(falha).toBe(1);
+      expect(
+        await prisma.resolucaoConsumoManual.count({
+          where: { ordemServicoId: os.id, rodada: 1 },
+        }),
+      ).toBe(1);
+      expect(
+        (await prisma.peca.findUniqueOrThrow({ where: { id: peca.id } }))
+          .quantidadeEstoque,
+      ).toBe(estoqueAntes - 1);
+    } finally {
+      await sessao.descartar();
+    }
+  }, 90_000);
 });
