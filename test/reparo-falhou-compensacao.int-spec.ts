@@ -17,6 +17,7 @@ import { PrismaService } from '@/shared/database/prisma.service';
 import {
   COMANDO_CANCELAR_FINANCEIRO,
   COMANDO_CANCELAR_TAREFA,
+  EVENTO_PENDENCIA_RESOLVIDA,
   EVENTO_DIAGNOSTICO_INICIADO,
   EVENTO_ORCAMENTO_GERADO,
   EVENTO_PAGAMENTO_CONFIRMADO,
@@ -136,6 +137,25 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     );
     return { os, correlationId };
   };
+
+  const simularRespostaFinanceiro = (
+    osId: string,
+    correlationId: string,
+    rodada: number,
+    resultado: string,
+    extra: Record<string, unknown> = {},
+    eventId = randomUUID(),
+  ) =>
+    processar.executar(
+      montarEnvelope(
+        EVENTO_RESPOSTA_CANCELAMENTO,
+        osId,
+        correlationId,
+        rodada,
+        { resultado, ...extra },
+        eventId,
+      ),
+    );
 
   const prepararEmExecucao = async (pecaQtd = 4) => {
     const { os, correlationId } = await prepararAguardandoExecucao(pecaQtd);
@@ -286,8 +306,11 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     expect(estado.resultadoExecucao).toBe('REPARO_INICIADO');
   });
 
-  it('C2 — falha com divergência resolve inventário sem FINALIZADA', async () => {
+  const prepararC2ComDivergencia = async () => {
     const { os, correlationId } = await prepararEmExecucao(4);
+    const estoqueAposFalha = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
     await processar.executar(
       montarEnvelope(EVENTO_REPARO_FALHOU, os.id, correlationId, 1, {
         pecasUtilizadas: [{ itemId: pecaId, quantidade: 9 }],
@@ -304,6 +327,9 @@ describe('Compensação — ReparoFalhou (integração)', () => {
         falhouEm: new Date().toISOString(),
       }),
     );
+    const consumo = await prisma.consumoAplicadoOs.findUniqueOrThrow({
+      where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+    });
     const pendInv = await prisma.pendenciaOs.findFirstOrThrow({
       where: {
         ordemServicoId: os.id,
@@ -311,35 +337,148 @@ describe('Compensação — ReparoFalhou (integração)', () => {
         resolvida: false,
       },
     });
+    const pendenciaFinanceiraId = `pend-fin-${randomUUID().slice(0, 8)}`;
+    await simularRespostaFinanceiro(
+      os.id,
+      correlationId,
+      1,
+      'PENDENCIA_MANUAL_ABERTA',
+      { pendenciaId: pendenciaFinanceiraId },
+    );
+    const financeiroEmitido = await contarOutbox(
+      correlationId,
+      COMANDO_CANCELAR_FINANCEIRO,
+    );
+    return {
+      os,
+      correlationId,
+      pendInv,
+      pendenciaFinanceiraId,
+      consumo,
+      estoqueAposFalha,
+      financeiroEmitido,
+    };
+  };
+
+  it('C2-A — resolve financeiro antes do inventário', async () => {
+    const ctx = await prepararC2ComDivergencia();
+    const estado = await prisma.estadoCompensacaoOs.findUniqueOrThrow({
+      where: { ordemServicoId: ctx.os.id },
+    });
+    expect(estado.passo).toBe(PassoCompensacaoSaga.ESTOQUE);
+    await processar.executar(
+      montarEnvelope(
+        EVENTO_PENDENCIA_RESOLVIDA,
+        ctx.os.id,
+        ctx.correlationId,
+        1,
+        {
+          pendenciaId: ctx.pendenciaFinanceiraId,
+        },
+      ),
+    );
+    expect(
+      (
+        await prisma.ordemServico.findUniqueOrThrow({
+          where: { id: ctx.os.id },
+        })
+      ).status,
+    ).toBe(StatusOS.EM_CANCELAMENTO);
+    expect(
+      await prisma.pendenciaOs.count({
+        where: {
+          ordemServicoId: ctx.os.id,
+          tipo: TipoPendenciaOs.INVENTARIO,
+          resolvida: false,
+        },
+      }),
+    ).toBe(1);
     const peca = await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } });
+    const estoqueAntesInventario = peca.quantidadeEstoque;
     await ajustar.execute({
-      pendenciaId: pendInv.id,
+      pendenciaId: ctx.pendInv.id,
       pecaId,
       quantidadeFisicaNova: peca.quantidadeEstoque,
       motivo: 'Conferência pós falha',
       responsavelId: randomUUID(),
     });
-    const ordemAposInv = await prisma.ordemServico.findUniqueOrThrow({
-      where: { id: os.id },
-    });
-    expect(ordemAposInv.status).toBe(StatusOS.EM_CANCELAMENTO);
-    expect(ordemAposInv.status).not.toBe(StatusOS.FINALIZADA);
-    await processar.executar(
-      montarEnvelope(EVENTO_RESPOSTA_CANCELAMENTO, os.id, correlationId, 1, {
-        resultado: 'ESTORNADA',
-      }),
-    );
-    const ordemFinal = await prisma.ordemServico.findUniqueOrThrow({
-      where: { id: os.id },
-    });
-    expect([StatusOS.CANCELADA, StatusOS.EM_CANCELAMENTO]).toContain(
-      ordemFinal.status,
+    expect(
+      (
+        await prisma.ordemServico.findUniqueOrThrow({
+          where: { id: ctx.os.id },
+        })
+      ).status,
+    ).toBe(StatusOS.CANCELADA);
+    expect(ctx.consumo.id).toBe(
+      (
+        await prisma.consumoAplicadoOs.findUniqueOrThrow({
+          where: {
+            ordemServicoId_rodada: { ordemServicoId: ctx.os.id, rodada: 1 },
+          },
+        })
+      ).id,
     );
     expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueAntesInventario);
+    expect(
+      await contarOutbox(ctx.correlationId, COMANDO_CANCELAR_FINANCEIRO),
+    ).toBe(ctx.financeiroEmitido);
+  });
+
+  it('C2-B — resolve inventário antes do financeiro', async () => {
+    const ctx = await prepararC2ComDivergencia();
+    const peca = await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } });
+    await ajustar.execute({
+      pendenciaId: ctx.pendInv.id,
+      pecaId,
+      quantidadeFisicaNova: peca.quantidadeEstoque,
+      motivo: 'Conferência pós falha',
+      responsavelId: randomUUID(),
+    });
+    expect(
+      (
+        await prisma.ordemServico.findUniqueOrThrow({
+          where: { id: ctx.os.id },
+        })
+      ).status,
+    ).toBe(StatusOS.EM_CANCELAMENTO);
+    expect(
+      await prisma.pendenciaOs.count({
+        where: {
+          ordemServicoId: ctx.os.id,
+          tipo: TipoPendenciaOs.FINANCEIRA,
+          resolvida: false,
+        },
+      }),
+    ).toBeGreaterThanOrEqual(1);
+    await processar.executar(
+      montarEnvelope(
+        EVENTO_PENDENCIA_RESOLVIDA,
+        ctx.os.id,
+        ctx.correlationId,
+        1,
+        {
+          pendenciaId: ctx.pendenciaFinanceiraId,
+        },
+      ),
+    );
+    expect(
+      (
+        await prisma.ordemServico.findUniqueOrThrow({
+          where: { id: ctx.os.id },
+        })
+      ).status,
+    ).toBe(StatusOS.CANCELADA);
+    expect(
       await prisma.consumoAplicadoOs.count({
-        where: { ordemServicoId: os.id, rodada: 1 },
+        where: { ordemServicoId: ctx.os.id, rodada: 1 },
       }),
     ).toBe(1);
+    expect(
+      await contarOutbox(ctx.correlationId, COMANDO_CANCELAR_FINANCEIRO),
+    ).toBe(ctx.financeiroEmitido);
   });
 
   it('C3 — falha em AGUARDANDO_EXECUCAO persiste consumo e compensação', async () => {
@@ -367,7 +506,7 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     expect(estado.passo).not.toBe(PassoCompensacaoSaga.CONCLUIDO);
   });
 
-  it('C4 — reentrega não duplica consumo nem comando financeiro', async () => {
+  it('C4 — reentrega compatível não reaplica estoque físico', async () => {
     const { os, correlationId } = await prepararEmExecucao(4);
     const falhouEm = '2026-09-01T10:00:00.000Z';
     const payload = {
@@ -375,6 +514,9 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       falhouEm,
     };
     const eventId = randomUUID();
+    const estoqueAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
     const corpo = montarEnvelope(
       EVENTO_REPARO_FALHOU,
       os.id,
@@ -386,17 +528,16 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     );
     await processar.executar(corpo);
     await processar.executar(corpo);
-    await processar.executar(
-      montarEnvelope(
-        EVENTO_REPARO_FALHOU,
-        os.id,
-        correlationId,
-        1,
-        payload,
-        randomUUID(),
-        falhouEm,
-      ),
-    );
+    const estoqueMeio = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
+    expect(estoqueMeio).toBe(estoqueAntes - 2);
+    const reservas = await prisma.reservaEstoque.findMany({
+      where: { ordemServicoId: os.id, pecaId },
+    });
+    expect(
+      reservas.some((r) => r.situacao === SituacaoReservaEstoque.CONSUMIDA),
+    ).toBe(true);
     expect(
       await prisma.consumoAplicadoOs.count({
         where: { ordemServicoId: os.id, rodada: 1 },
@@ -410,14 +551,9 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
       1,
     );
-    expect(
-      await prisma.pendenciaOs.count({
-        where: { ordemServicoId: os.id, tipo: TipoPendenciaOs.INVENTARIO },
-      }),
-    ).toBeLessThanOrEqual(1);
   });
 
-  it('C5 — resposta JA_ENCERRADA atrasada não regressa estado', async () => {
+  it('C5a — resposta JA_ENCERRADA compatível converge sem reaplicar estoque', async () => {
     const { os, correlationId } = await prepararEmExecucao(4);
     const eventId = randomUUID();
     await processar.executar(
@@ -433,6 +569,9 @@ describe('Compensação — ReparoFalhou (integração)', () => {
         eventId,
       ),
     );
+    const estoqueAntes = (
+      await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } })
+    ).quantidadeEstoque;
     const consumoAntes = await prisma.consumoAplicadoOs.findUniqueOrThrow({
       where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
     });
@@ -449,6 +588,13 @@ describe('Compensação — ReparoFalhou (integração)', () => {
         {
           tipoTarefa: 'REPARO',
           resultado: 'JA_ENCERRADA',
+          situacaoTarefa: 'FALHOU',
+          encerradaEm: '2026-07-01T12:00:00.000Z',
+          fatoTerminalEventId: eventId,
+          motivo: 'falha de teste',
+          pecasUtilizadas: [{ itemId: pecaId, quantidade: 1 }],
+          servicosRealizados: [],
+          divergencias: [],
         },
       ),
     );
@@ -456,7 +602,12 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
     });
     expect(consumoDepois.id).toBe(consumoAntes.id);
+    expect(consumoDepois.eventId).toBe(eventId);
     expect(consumoDepois.fatoOcorridoEm).toEqual(consumoAntes.fatoOcorridoEm);
+    expect(
+      (await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } }))
+        .quantidadeEstoque,
+    ).toBe(estoqueAntes);
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
       financeiroAntes,
     );
@@ -466,7 +617,29 @@ describe('Compensação — ReparoFalhou (integração)', () => {
     ).toBe(StatusOS.EM_CANCELAMENTO);
   });
 
-  it('C6 — concorrência desistência e ReparoFalhou mantém efeito único', async () => {
+  it('C5b — reentrega compatível do fato não altera auditoria', async () => {
+    const { os, correlationId } = await prepararEmExecucao(2);
+    const eventId = randomUUID();
+    const corpo = montarEnvelope(
+      EVENTO_REPARO_FALHOU,
+      os.id,
+      correlationId,
+      1,
+      {
+        pecasUtilizadas: [{ itemId: pecaId, quantidade: 1 }],
+        falhouEm: '2026-08-01T10:00:00.000Z',
+      },
+      eventId,
+    );
+    await processar.executar(corpo);
+    await processar.executar(corpo);
+    const consumo = await prisma.consumoAplicadoOs.findUniqueOrThrow({
+      where: { ordemServicoId_rodada: { ordemServicoId: os.id, rodada: 1 } },
+    });
+    expect(consumo.eventId).toBe(eventId);
+  });
+
+  it('C6 — concorrência desistência e ReparoFalhou com exatamente um de cada efeito', async () => {
     const databaseUrl = exigirDatabaseUrl();
     const { os, correlationId } = await prepararEmExecucao(4);
     const falhouPayload = {
@@ -501,18 +674,19 @@ describe('Compensação — ReparoFalhou (integração)', () => {
         ),
       );
     })();
-    await Promise.allSettled([pDesistir, pFalha]);
+    const results = await Promise.allSettled([pDesistir, pFalha]);
     await prismaB.$disconnect();
+    expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
     expect(
       await prisma.consumoAplicadoOs.count({
         where: { ordemServicoId: os.id, rodada: 1 },
       }),
-    ).toBeLessThanOrEqual(1);
+    ).toBe(1);
     expect(
       await prisma.historicoStatusOS.count({
         where: { ordemServicoId: os.id, statusNovo: StatusOS.EM_CANCELAMENTO },
       }),
-    ).toBeLessThanOrEqual(1);
+    ).toBe(1);
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
       1,
     );

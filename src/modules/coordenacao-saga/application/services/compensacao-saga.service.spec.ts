@@ -17,6 +17,7 @@ import {
   ResultadoCancelamentoExecucao,
   TipoTarefaCancelamento,
 } from '../../domain/resultado-cancelamento-execucao';
+import { SituacaoTarefaCancelamento } from '../../domain/situacao-tarefa-cancelamento';
 import type { EstadoCompensacaoSnapshot } from '../ports/estado-compensacao.gateway';
 import { CompensacaoSagaService } from './compensacao-saga.service';
 
@@ -150,6 +151,14 @@ describe('CompensacaoSagaService', () => {
       },
     };
 
+    const reconciliacao = {
+      reconciliarRespostaCancelamento: jest.fn().mockResolvedValue('nada'),
+      consumoConciliadoNaRodada: jest.fn().mockResolvedValue(false),
+      resolverPendenciaInformacaoInsuficienteSeCausaEliminada: jest
+        .fn()
+        .mockResolvedValue(undefined),
+    };
+
     const service = new CompensacaoSagaService(
       ordens as never,
       transicoes as never,
@@ -161,6 +170,7 @@ describe('CompensacaoSagaService', () => {
       reservas as never,
       logger as never,
       prisma as never,
+      reconciliacao as never,
     );
 
     return {
@@ -173,6 +183,7 @@ describe('CompensacaoSagaService', () => {
       consumir,
       liberar,
       reservas,
+      reconciliacao,
       transicoes,
       prisma,
       logger,
@@ -204,6 +215,13 @@ describe('CompensacaoSagaService', () => {
     await service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
       tipoTarefa: TipoTarefaCancelamento.REPARO,
       resultado: ResultadoCancelamentoExecucao.JA_CONCLUIDA,
+      situacaoTarefa: SituacaoTarefaCancelamento.CONCLUIDA,
+      concluidaEm: '2026-01-01T12:00:00.000Z',
+      encerradaEm: '2026-01-01T12:00:00.000Z',
+      fatoTerminalEventId: 'a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0',
+      pecasUtilizadas: [],
+      servicosRealizados: [],
+      divergencias: [],
     });
     expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.CONSULTA_E10);
     expect(comandos.emitirConsultarSituacaoFinanceira).toHaveBeenCalledWith(
@@ -409,7 +427,7 @@ describe('CompensacaoSagaService', () => {
   });
 
   it('E10 completa com exceção FINALIZADA após estoque conciliado', async () => {
-    const { service, transicoes } = montar({
+    const { service, transicoes, reconciliacao } = montar({
       snapshot: snapshotInicial({
         passo: PassoCompensacaoSaga.ESTOQUE,
         condicoesE10: {
@@ -420,6 +438,7 @@ describe('CompensacaoSagaService', () => {
         },
       }),
     });
+    reconciliacao.consumoConciliadoNaRodada.mockResolvedValue(true);
     await service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
     expect(transicoes.aplicar).toHaveBeenCalledWith(
       contexto,
@@ -429,19 +448,17 @@ describe('CompensacaoSagaService', () => {
     );
   });
 
-  it('consumo com divergência interrompe passo de estoque', async () => {
+  it('passo de estoque libera reservas sem reaplicar consumo fabricado', async () => {
     const ctx = montar({
       snapshot: snapshotInicial({
         passo: PassoCompensacaoSaga.ESTOQUE,
         pecasUtilizadas: [{ itemId: 'peca-1', quantidade: 1 }],
       }),
     });
-    ctx.consumir.execute.mockResolvedValue({
-      divergencias: [{ pecaId: 'peca-1' }],
-      impedimentoInventario: true,
-    });
+    ctx.reconciliacao.consumoConciliadoNaRodada.mockResolvedValue(false);
     await ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
-    expect(ctx.liberar.execute).not.toHaveBeenCalled();
+    expect(ctx.consumir.execute).not.toHaveBeenCalled();
+    expect(ctx.liberar.execute).toHaveBeenCalled();
   });
 
   it('pula novo consumo quando há registro persistente na rodada', async () => {
@@ -472,20 +489,26 @@ describe('CompensacaoSagaService', () => {
     expect(ctx.liberar.execute).toHaveBeenCalled();
   });
 
-  it('repropaga ReservaJaProcessada quando consumo não está aplicado', async () => {
+  it('E10 não finaliza sem consumo conciliado', async () => {
     const ctx = montar({
       snapshot: snapshotInicial({
         passo: PassoCompensacaoSaga.ESTOQUE,
-        pecasUtilizadas: [{ itemId: 'peca-1', quantidade: 1 }],
+        condicoesE10: {
+          reparoConcluidoAntesCancelamento: true,
+          pagamentoValido: true,
+          semEstorno: true,
+          estoqueConciliado: false,
+        },
       }),
     });
-    ctx.consumir.execute.mockRejectedValue(
-      new ReservaJaProcessadaError('os-1'),
+    ctx.reconciliacao.consumoConciliadoNaRodada.mockResolvedValue(false);
+    await ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
+    expect(ctx.transicoes.aplicar).not.toHaveBeenCalledWith(
+      contexto,
+      expect.objectContaining({
+        observacao: expect.stringContaining('E10'),
+      }),
     );
-    ctx.reservas.possuiConsumoAplicado.mockResolvedValue(false);
-    await expect(
-      ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus'),
-    ).rejects.toBeInstanceOf(ReservaJaProcessadaError);
   });
 
   it('registrarReparoIniciadoDuranteCancelamento persiste flag', async () => {
@@ -546,6 +569,54 @@ describe('CompensacaoSagaService', () => {
     });
     expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.FINANCEIRO);
     expect(getSnapshot().condicoesE10?.semEstorno).toBe(false);
+  });
+
+  it('impedimento de inventário na resposta não avança passos', async () => {
+    const { service, reconciliacao, getSnapshot } = montar();
+    reconciliacao.reconciliarRespostaCancelamento.mockResolvedValue(
+      'impedimento_inventario',
+    );
+    await service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
+      tipoTarefa: TipoTarefaCancelamento.REPARO,
+      resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      situacaoTarefa: SituacaoTarefaCancelamento.FALHOU,
+      fatoTerminalEventId: 'a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0',
+      encerradaEm: '2026-01-01T12:00:00.000Z',
+      pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }],
+    });
+    expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.EXECUCAO);
+  });
+
+  it('pendência informação insuficiente não emite E10', async () => {
+    const { service, reconciliacao, comandos } = montar();
+    reconciliacao.reconciliarRespostaCancelamento.mockResolvedValue(
+      'pendencia_informacao',
+    );
+    await service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
+      tipoTarefa: TipoTarefaCancelamento.REPARO,
+      resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      situacaoTarefa: SituacaoTarefaCancelamento.FALHOU,
+      encerradaEm: '2026-01-01T12:00:00.000Z',
+      pecasUtilizadas: [],
+    });
+    expect(comandos.emitirConsultarSituacaoFinanceira).not.toHaveBeenCalled();
+  });
+
+  it('pendência CONFLITO_CONSUMO interrompe avanço da compensação', async () => {
+    const { service, reconciliacao, comandos, getSnapshot } = montar();
+    reconciliacao.reconciliarRespostaCancelamento.mockResolvedValue(
+      'pendencia_conflito',
+    );
+    await service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
+      tipoTarefa: TipoTarefaCancelamento.REPARO,
+      resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      situacaoTarefa: SituacaoTarefaCancelamento.FALHOU,
+      fatoTerminalEventId: 'a0a0a0a0-a0a0-40a0-80a0-a0a0a0a0a0a0',
+      encerradaEm: '2026-01-01T12:00:00.000Z',
+      pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }],
+    });
+    expect(comandos.emitirConsultarSituacaoFinanceira).not.toHaveBeenCalled();
+    expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.EXECUCAO);
   });
 
   it('fato terminal de execução define REPARO_INICIADO e avança financeiro', async () => {

@@ -119,6 +119,24 @@ describe('conciliarConsumoEfetivo', () => {
     expect(r.divergenciasInventario.length).toBe(1);
   });
 
+  it('motivo com peça desconhecida exige pendência', () => {
+    const r = conciliarConsumoEfetivo(
+      [{ pecaId: P1, quantidadeReservada: 1 }],
+      [{ itemId: P1, quantidade: 1 }],
+      [
+        {
+          itemId: P1,
+          quantidadePrevista: 1,
+          quantidadeUtilizada: 1,
+          motivo: 'peça desconhecida no catálogo',
+        },
+      ],
+      existe,
+    );
+    expect(r.divergenciasAuditoria.length).toBe(1);
+    expect(r.divergenciasInventario.length).toBe(0);
+  });
+
   it('itemId inválido vira divergência sem cast UUID', () => {
     const r = conciliarConsumoEfetivo(
       [{ pecaId: P1, quantidadeReservada: 1 }],

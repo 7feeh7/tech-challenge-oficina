@@ -11,6 +11,7 @@ import { ReservarEstoqueUseCase } from './application/use-cases/reservar-estoque
 import { LiberarReservaEstoqueUseCase } from './application/use-cases/liberar-reserva-estoque.use-case';
 import { ConsumirReservaEstoqueUseCase } from './application/use-cases/consumir-reserva-estoque.use-case';
 import { AjustarEstoqueDivergenciaUseCase } from './application/use-cases/ajustar-estoque-divergencia.use-case';
+import { ResolverConsumoManualUseCase } from './application/use-cases/resolver-consumo-manual.use-case';
 import { PrismaReservaEstoqueGateway } from './infra/persistence/prisma-reserva-estoque.gateway';
 import { ReservasEstoqueController } from './infra/http/controllers/reservas-estoque.controller';
 
@@ -51,6 +52,15 @@ import { ReservasEstoqueController } from './infra/http/controllers/reservas-est
         new AjustarEstoqueDivergenciaUseCase(reservas, uow, retomadaInventario),
       inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK, RETOMADA_SAGA_INVENTARIO],
     },
+    {
+      provide: ResolverConsumoManualUseCase,
+      useFactory: (
+        reservas: ReservaEstoqueGateway,
+        uow: UnitOfWork,
+        retomadaInventario: RetomadaSagaInventarioPort,
+      ) => new ResolverConsumoManualUseCase(reservas, uow, retomadaInventario),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK, RETOMADA_SAGA_INVENTARIO],
+    },
   ],
   exports: [
     RESERVA_ESTOQUE_GATEWAY,
@@ -58,6 +68,7 @@ import { ReservasEstoqueController } from './infra/http/controllers/reservas-est
     LiberarReservaEstoqueUseCase,
     ConsumirReservaEstoqueUseCase,
     AjustarEstoqueDivergenciaUseCase,
+    ResolverConsumoManualUseCase,
   ],
 })
 export class ReservasEstoqueModule {}

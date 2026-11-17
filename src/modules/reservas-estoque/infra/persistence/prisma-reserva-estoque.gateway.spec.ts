@@ -11,6 +11,9 @@ import {
   ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
   ConsumoAplicadoIncompativelError,
+  PendenciaResolucaoConsumoInvalidaError,
+  ResolucaoConsumoManualComConsumoAplicadoError,
+  ResolucaoConsumoManualJaExisteError,
 } from '../../domain/errors/reserva-estoque.errors';
 import { PrismaReservaEstoqueGateway } from './prisma-reserva-estoque.gateway';
 
@@ -19,6 +22,20 @@ jest.mock('@/shared/database/obter-cliente-transacao', () => ({
 }));
 
 const PECA_UUID = '11111111-1111-4111-8111-111111111111';
+const EVENTO_FATO_UUID = '22222222-2222-4222-8222-222222222222';
+
+function contextoFatoTeste(
+  qtd = 1,
+): NonNullable<
+  Parameters<PrismaReservaEstoqueGateway['consumir']>[1]['contextoFato']
+> {
+  return {
+    eventId: EVENTO_FATO_UUID,
+    fatoOcorridoEm: new Date('2026-01-01T12:00:00.000Z'),
+    tipoFato: 'REPARO_CONCLUIDO',
+    consumoEfetivo: [{ itemId: PECA_UUID, quantidade: qtd }],
+  };
+}
 
 describe('PrismaReservaEstoqueGateway', () => {
   const cliente = {
@@ -37,6 +54,10 @@ describe('PrismaReservaEstoqueGateway', () => {
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+    },
+    resolucaoConsumoManual: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue({ id: 'res-manual' }),
     },
     reservaEstoque: {
       create: jest.fn(),
@@ -228,6 +249,7 @@ describe('PrismaReservaEstoqueGateway', () => {
       ordemServicoId: 'os',
       rodada: 1,
       itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
+      contextoFato: contextoFatoTeste(1),
     });
 
     expect(out.divergencias).toHaveLength(0);
@@ -375,6 +397,7 @@ describe('PrismaReservaEstoqueGateway', () => {
       ordemServicoId: 'os',
       rodada: 1,
       itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 5 }],
+      contextoFato: contextoFatoTeste(5),
     });
     expect(out.pendenciaInventarioId).toBe('pend-existente');
     expect(cliente.pendenciaOs.create).not.toHaveBeenCalled();
@@ -415,6 +438,7 @@ describe('PrismaReservaEstoqueGateway', () => {
       ordemServicoId: 'os',
       rodada: 1,
       itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 5 }],
+      contextoFato: contextoFatoTeste(5),
     });
 
     expect(out.divergencias.length).toBeGreaterThan(0);
@@ -525,6 +549,7 @@ describe('PrismaReservaEstoqueGateway', () => {
         ordemServicoId: 'os',
         rodada: 1,
         itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
+        contextoFato: contextoFatoTeste(1),
       }),
     ).rejects.toThrow(ReservaJaProcessadaError);
   });
@@ -540,6 +565,11 @@ describe('PrismaReservaEstoqueGateway', () => {
         ordemServicoId: 'os',
         rodada: 1,
         itensUtilizados: [{ pecaId: 'p1', quantidade: 1 }],
+        contextoFato: {
+          eventId: EVENTO_FATO_UUID,
+          fatoOcorridoEm: new Date(),
+          tipoFato: 'REPARO_FALHOU',
+        },
       }),
     ).rejects.toThrow(ReservaEstoqueNaoEncontradaError);
   });
@@ -555,6 +585,11 @@ describe('PrismaReservaEstoqueGateway', () => {
         ordemServicoId: 'os',
         rodada: 1,
         itensUtilizados: [{ pecaId: 'p1', quantidade: 1 }],
+        contextoFato: {
+          eventId: EVENTO_FATO_UUID,
+          fatoOcorridoEm: new Date(),
+          tipoFato: 'REPARO_INTERROMPIDO',
+        },
       }),
     ).rejects.toThrow(ReservaJaProcessadaError);
   });
@@ -813,6 +848,142 @@ describe('PrismaReservaEstoqueGateway', () => {
     await expect(
       gateway.possuiConsumoAplicadoNaRodada(contexto, 'os', 1),
     ).resolves.toBe(true);
+  });
+
+  describe('resolverConsumoManualInicial', () => {
+    const inputBase = {
+      pendenciaId: 'pend-res',
+      itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 1 }],
+      itensLiberados: [] as { pecaId: string; quantidade: number }[],
+      motivo: 'decisão administrativa',
+      responsavelId: 'admin-1',
+    };
+
+    it('recusa motivo vazio', async () => {
+      await expect(
+        gateway.resolverConsumoManualInicial(contexto, {
+          ...inputBase,
+          motivo: '   ',
+        }),
+      ).rejects.toThrow(MotivoAjusteAdministrativoInvalidoError);
+    });
+
+    it('recusa pendência inexistente', async () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue(null);
+      await expect(
+        gateway.resolverConsumoManualInicial(contexto, inputBase),
+      ).rejects.toThrow(PendenciaInventarioNaoEncontradaError);
+    });
+
+    it('recusa quando já existe consumo aplicado', async () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue({
+        id: 'pend-res',
+        ordemServicoId: 'os',
+        rodada: 1,
+      });
+      cliente.$queryRaw.mockResolvedValueOnce([{ id: 'os' }]);
+      cliente.consumoAplicadoOs.findUnique.mockResolvedValue({ id: 'ca' });
+      await expect(
+        gateway.resolverConsumoManualInicial(contexto, inputBase),
+      ).rejects.toThrow(ResolucaoConsumoManualComConsumoAplicadoError);
+    });
+
+    it('recusa resolução manual duplicada', async () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue({
+        id: 'pend-res',
+        ordemServicoId: 'os',
+        rodada: 1,
+      });
+      cliente.$queryRaw.mockResolvedValueOnce([{ id: 'os' }]);
+      cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
+      cliente.resolucaoConsumoManual.findUnique.mockResolvedValue({
+        id: 'dup',
+      });
+      await expect(
+        gateway.resolverConsumoManualInicial(contexto, inputBase),
+      ).rejects.toThrow(ResolucaoConsumoManualJaExisteError);
+    });
+
+    it('registra resolução manual com consumo total da reserva', async () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue({
+        id: 'pend-res',
+        ordemServicoId: 'os',
+        rodada: 1,
+      });
+      cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
+      cliente.resolucaoConsumoManual.findUnique.mockResolvedValue(null);
+      cliente.$queryRaw
+        .mockResolvedValueOnce([{ id: 'os' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'pend-res',
+            ordem_servico_id: 'os',
+            rodada: 1,
+            resolvida: false,
+            detalhes: { natureza: 'INFORMACAO_INSUFICIENTE' },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: 'r1',
+            peca_id: PECA_UUID,
+            quantidade: 2,
+            ordem_servico_id: 'os',
+            rodada: 1,
+            grupo_reserva_id: 'g1',
+            quantidade_consumida: 0,
+            situacao: 'ATIVA',
+            prazo_referencia: null,
+          },
+        ])
+        .mockResolvedValue([
+          {
+            id: PECA_UUID,
+            quantidade_estoque: 10,
+            quantidade_reservada: 2,
+            ativo: true,
+          },
+        ]);
+      cliente.$executeRaw.mockResolvedValue(1);
+
+      const out = await gateway.resolverConsumoManualInicial(contexto, {
+        pendenciaId: 'pend-res',
+        itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 2 }],
+        itensLiberados: [],
+        motivo: 'decisão administrativa',
+        responsavelId: 'admin-1',
+      });
+
+      expect(out.ordemServicoId).toBe('os');
+      expect(out.rodada).toBe(1);
+      expect(cliente.resolucaoConsumoManual.create).toHaveBeenCalled();
+    });
+
+    it('recusa pendência com natureza distinta', async () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue({
+        id: 'pend-res',
+        ordemServicoId: 'os',
+        rodada: 1,
+      });
+      cliente.$queryRaw
+        .mockResolvedValueOnce([{ id: 'os' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'pend-res',
+            ordem_servico_id: 'os',
+            rodada: 1,
+            resolvida: false,
+            detalhes: { natureza: 'CONFLITO_CONSUMO' },
+          },
+        ])
+        .mockResolvedValueOnce([{ id: 'lock' }]);
+      cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
+      cliente.resolucaoConsumoManual.findUnique.mockResolvedValue(null);
+      await expect(
+        gateway.resolverConsumoManualInicial(contexto, inputBase),
+      ).rejects.toThrow(PendenciaResolucaoConsumoInvalidaError);
+    });
   });
 
   it('possuiConsumoAplicado exige todas as peças CONSUMIDA', async () => {

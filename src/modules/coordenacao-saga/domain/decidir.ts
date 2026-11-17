@@ -173,6 +173,13 @@ export function decidir(
 
   if (
     fato === TipoFatoSaga.REPARO_CONCLUIDO &&
+    ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.REPARO_CONCLUIDO &&
     ordem.status === StatusOS.AGUARDANDO_EXECUCAO
   ) {
     return AcaoDecisao.APLICAR;

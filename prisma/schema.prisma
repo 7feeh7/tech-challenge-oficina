@@ -248,10 +248,32 @@ model PendenciaOs {
   resolvidaEm    DateTime?       @map("resolvida_em")
   resolvidaPorId String?         @map("resolvida_por_id") @db.Uuid
   criadoEm       DateTime        @default(now()) @map("criado_em")
-  ajustes        AjusteEstoqueAdministrativo[]
+  ajustes                      AjusteEstoqueAdministrativo[]
+  resolucaoConsumoManual       ResolucaoConsumoManual?
 
   @@index([ordemServicoId, resolvida], map: "pendencias_os_ordem_resolvida_idx")
   @@map("pendencias_os")
+}
+
+model ResolucaoConsumoManual {
+  id                   String       @id @default(uuid()) @db.Uuid
+  ordemServicoId       String       @map("ordem_servico_id") @db.Uuid
+  ordemServico         OrdemServico @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  rodada               Int
+  pendenciaId          String       @unique @map("pendencia_id") @db.Uuid
+  pendencia            PendenciaOs  @relation(fields: [pendenciaId], references: [id], onDelete: Restrict)
+  itensConsumidos      Json         @map("itens_consumidos")
+  itensLiberados       Json         @map("itens_liberados")
+  motivo               String       @db.VarChar(500)
+  responsavelId        String       @map("responsavel_id") @db.Uuid
+  resolvidoEm          DateTime     @map("resolvido_em")
+  fatoTardioEventId    String?      @map("fato_tardio_event_id") @db.Uuid
+  fatoTardioRecebidoEm DateTime?    @map("fato_tardio_recebido_em")
+  fatoTardioConteudo   Json?        @map("fato_tardio_conteudo")
+  criadoEm             DateTime     @default(now()) @map("criado_em")
+
+  @@unique([ordemServicoId, rodada], map: "resolucoes_consumo_manuais_ordem_rodada_key")
+  @@map("resolucoes_consumo_manuais")
 }
 
 model PedidoEmitido {
@@ -356,6 +378,7 @@ model OrdemServico {
   movimentacoesEstoque     MovimentacaoEstoque[]
   reservasEstoque          ReservaEstoque[]
   consumosAplicados        ConsumoAplicadoOs[]
+  resolucoesConsumoManual  ResolucaoConsumoManual[]
   pendencias               PendenciaOs[]
   pedidosEmitidos          PedidoEmitido[]
   projecoesFinanceiras     ProjecaoFinanceiraOs[]

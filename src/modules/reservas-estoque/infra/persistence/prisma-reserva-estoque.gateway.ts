@@ -15,7 +15,12 @@ import {
   ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
   ConsumoAplicadoIncompativelError,
+  PendenciaResolucaoConsumoInvalidaError,
+  QuantidadeResolucaoManualInvalidaError,
+  ResolucaoConsumoManualComConsumoAplicadoError,
+  ResolucaoConsumoManualJaExisteError,
 } from '../../domain/errors/reserva-estoque.errors';
+import { consolidarItensQuantidade } from '@/modules/coordenacao-saga/domain/consolidar-itens-quantidade';
 import { conciliarConsumoEfetivo } from '../../domain/conciliar-consumo-efetivo';
 import type {
   ContextoConsumoEstoque,
@@ -314,6 +319,18 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       SELECT id FROM ordens_servico WHERE id = ${input.ordemServicoId}::uuid FOR UPDATE
     `;
 
+    const resolucaoManual = await cliente.resolucaoConsumoManual.findUnique({
+      where: {
+        ordemServicoId_rodada: {
+          ordemServicoId: input.ordemServicoId,
+          rodada: input.rodada,
+        },
+      },
+    });
+    if (resolucaoManual) {
+      throw new ReservaJaProcessadaError();
+    }
+
     const existente = await cliente.consumoAplicadoOs.findUnique({
       where: {
         ordemServicoId_rodada: {
@@ -539,6 +556,10 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       }
     }
 
+    if (!input.contextoFato) {
+      throw new ReservaJaProcessadaError();
+    }
+
     const consumoAplicadoId = randomUUID();
     const situacao = impedimentoInventario
       ? 'DIVERGENCIA_PENDENTE'
@@ -549,11 +570,11 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
         id: consumoAplicadoId,
         ordemServicoId: input.ordemServicoId,
         rodada: input.rodada,
-        eventId: input.contextoFato?.eventId ?? randomUUID(),
-        fatoOcorridoEm: input.contextoFato?.fatoOcorridoEm ?? new Date(),
-        concluidoEm: input.contextoFato?.concluidoEm ?? null,
-        tipoFato: input.contextoFato?.tipoFato ?? 'REPARO_CONCLUIDO',
-        responsavelId: input.contextoFato?.responsavelId ?? null,
+        eventId: input.contextoFato.eventId,
+        fatoOcorridoEm: input.contextoFato.fatoOcorridoEm,
+        concluidoEm: input.contextoFato.concluidoEm ?? null,
+        tipoFato: input.contextoFato.tipoFato,
+        responsavelId: input.contextoFato.responsavelId ?? null,
         consumoEfetivo: pecasUtilizadas,
         divergencias: divergenciasAuditoria as unknown as Prisma.InputJsonValue,
         situacaoReconciliacao: situacao,
@@ -746,6 +767,270 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     });
 
     return { ordemServicoId: pendencia.ordem_servico_id };
+  }
+
+  async resolverConsumoManualInicial(
+    contexto: ContextoTransacao,
+    input: {
+      pendenciaId: string;
+      itensConsumidos: ItemReservaEstoque[];
+      itensLiberados: ItemReservaEstoque[];
+      motivo: string;
+      responsavelId: string;
+      ajustesFisicos?: { pecaId: string; quantidadeFisicaNova: number }[];
+    },
+  ): Promise<{
+    ordemServicoId: string;
+    rodada: number;
+    resolucaoId: string;
+  }> {
+    const motivoNormalizado = input.motivo.trim();
+    if (!motivoNormalizado || motivoNormalizado.length > 500) {
+      throw new MotivoAjusteAdministrativoInvalidoError();
+    }
+
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const pendenciaRef = await cliente.pendenciaOs.findUnique({
+      where: { id: input.pendenciaId },
+      select: { id: true, ordemServicoId: true, rodada: true },
+    });
+    if (!pendenciaRef) {
+      throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
+    }
+
+    await cliente.$queryRaw`
+      SELECT id FROM ordens_servico WHERE id = ${pendenciaRef.ordemServicoId}::uuid FOR UPDATE
+    `;
+
+    const consumoAplicado = await cliente.consumoAplicadoOs.findUnique({
+      where: {
+        ordemServicoId_rodada: {
+          ordemServicoId: pendenciaRef.ordemServicoId,
+          rodada: pendenciaRef.rodada,
+        },
+      },
+    });
+    if (consumoAplicado) {
+      throw new ResolucaoConsumoManualComConsumoAplicadoError();
+    }
+
+    const resolucaoExistente = await cliente.resolucaoConsumoManual.findUnique({
+      where: {
+        ordemServicoId_rodada: {
+          ordemServicoId: pendenciaRef.ordemServicoId,
+          rodada: pendenciaRef.rodada,
+        },
+      },
+    });
+    if (resolucaoExistente) {
+      throw new ResolucaoConsumoManualJaExisteError();
+    }
+
+    const pendenciaRows = await cliente.$queryRaw<
+      {
+        id: string;
+        ordem_servico_id: string;
+        rodada: number;
+        resolvida: boolean;
+        detalhes: { natureza?: string };
+      }[]
+    >`
+      SELECT id, ordem_servico_id, rodada, resolvida, detalhes
+      FROM pendencias_os
+      WHERE id = ${input.pendenciaId}::uuid
+      FOR UPDATE
+    `;
+    const pendencia = pendenciaRows[0];
+    if (!pendencia || pendencia.resolvida) {
+      throw new PendenciaInventarioJaResolvidaError();
+    }
+    if (pendencia.detalhes?.natureza !== 'INFORMACAO_INSUFICIENTE') {
+      throw new PendenciaResolucaoConsumoInvalidaError();
+    }
+
+    const consumidos = consolidarItensQuantidade(
+      input.itensConsumidos.map((i) => ({
+        itemId: i.pecaId,
+        quantidade: i.quantidade,
+      })),
+    );
+    const liberados = consolidarItensQuantidade(
+      input.itensLiberados.map((i) => ({
+        itemId: i.pecaId,
+        quantidade: i.quantidade,
+      })),
+    );
+    const mapaConsumido = new Map(
+      consumidos.map((i) => [i.itemId, i.quantidade]),
+    );
+    const mapaLiberado = new Map(
+      liberados.map((i) => [i.itemId, i.quantidade]),
+    );
+
+    await cliente.$queryRaw`
+      SELECT id FROM resolucoes_consumo_manuais
+      WHERE ordem_servico_id = ${pendencia.ordem_servico_id}::uuid
+        AND rodada = ${pendencia.rodada}
+      FOR UPDATE
+    `;
+
+    const linhasAtivas = await this.bloquearReservasAtivas(
+      cliente,
+      pendencia.ordem_servico_id,
+      pendencia.rodada,
+    );
+
+    for (const linha of linhasAtivas) {
+      const consumir = mapaConsumido.get(linha.peca_id) ?? 0;
+      const liberarQty = mapaLiberado.get(linha.peca_id) ?? 0;
+      if (consumir + liberarQty !== linha.quantidade) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Soma de consumido e liberado difere da reserva original para a peça ${linha.peca_id}.`,
+        );
+      }
+      if (consumir > linha.quantidade) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Consumo manual excede reserva original para a peça ${linha.peca_id}.`,
+        );
+      }
+    }
+
+    const pecasAfetadas = new Set([
+      ...mapaConsumido.keys(),
+      ...mapaLiberado.keys(),
+      ...(input.ajustesFisicos?.map((a) => a.pecaId) ?? []),
+    ]);
+    for (const pecaId of [...pecasAfetadas].sort()) {
+      await this.bloquearPeca(cliente, pecaId);
+    }
+
+    for (const linha of linhasAtivas) {
+      const utilizada = mapaConsumido.get(linha.peca_id) ?? 0;
+      if (utilizada <= 0) {
+        continue;
+      }
+      const consumoFisico = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = quantidade_estoque - ${utilizada},
+            quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_estoque >= ${utilizada}
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
+      if (consumoFisico !== 1) {
+        throw new ReservaJaProcessadaError();
+      }
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.CONSUMIDA,
+        { quantidadeConsumida: utilizada },
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
+    }
+
+    for (const linha of linhasAtivas) {
+      if ((mapaConsumido.get(linha.peca_id) ?? 0) > 0) {
+        continue;
+      }
+      const liberado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
+      if (liberado !== 1) {
+        throw new ReservaJaProcessadaError();
+      }
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.LIBERADA,
+        {},
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
+    }
+
+    for (const ajuste of input.ajustesFisicos ?? []) {
+      const saldo = await cliente.peca.findUnique({
+        where: { id: ajuste.pecaId },
+        select: { quantidadeEstoque: true, quantidadeReservada: true },
+      });
+      if (!saldo) {
+        throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
+      }
+      if (ajuste.quantidadeFisicaNova < saldo.quantidadeReservada) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+      const fisicoAtualizado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = ${ajuste.quantidadeFisicaNova}
+        WHERE id = ${ajuste.pecaId}::uuid
+          AND quantidade_reservada <= ${ajuste.quantidadeFisicaNova}
+      `;
+      if (fisicoAtualizado !== 1) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+      await cliente.ajusteEstoqueAdministrativo.create({
+        data: {
+          id: randomUUID(),
+          pecaId: ajuste.pecaId,
+          ordemServicoId: pendencia.ordem_servico_id,
+          pendenciaId: pendencia.id,
+          quantidadeFisicaAnterior: saldo.quantidadeEstoque,
+          quantidadeFisicaNova: ajuste.quantidadeFisicaNova,
+          motivo: motivoNormalizado,
+          responsavelId: input.responsavelId,
+        },
+      });
+    }
+
+    const resolucaoId = randomUUID();
+    const resolvidoEm = new Date();
+    await cliente.resolucaoConsumoManual.create({
+      data: {
+        id: resolucaoId,
+        ordemServicoId: pendencia.ordem_servico_id,
+        rodada: pendencia.rodada,
+        pendenciaId: pendencia.id,
+        itensConsumidos: consumidos as unknown as Prisma.InputJsonValue,
+        itensLiberados: liberados as unknown as Prisma.InputJsonValue,
+        motivo: motivoNormalizado,
+        responsavelId: input.responsavelId,
+        resolvidoEm,
+      },
+    });
+
+    const resolvida = await cliente.$executeRaw`
+      UPDATE pendencias_os
+      SET resolvida = true,
+          resolvida_em = ${resolvidoEm},
+          resolvida_por_id = ${input.responsavelId}::uuid
+      WHERE id = ${pendencia.id}::uuid
+        AND resolvida = false
+    `;
+    if (resolvida !== 1) {
+      throw new PendenciaInventarioJaResolvidaError();
+    }
+
+    this.logger.log({
+      message: 'estoque.resolucao_consumo_manual',
+      pendenciaId: pendencia.id,
+      ordemServicoId: pendencia.ordem_servico_id,
+      rodada: pendencia.rodada,
+      resolucaoId,
+      responsavelId: input.responsavelId,
+    });
+
+    return {
+      ordemServicoId: pendencia.ordem_servico_id,
+      rodada: pendencia.rodada,
+      resolucaoId,
+    };
   }
 
   private normalizarDivergencia(

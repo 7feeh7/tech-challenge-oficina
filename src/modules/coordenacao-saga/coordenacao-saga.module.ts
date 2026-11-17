@@ -35,6 +35,7 @@ import { PrismaEstadoCompensacaoGateway } from './infra/persistence/prisma-estad
 import { ProcessadoresSagaProvider } from './infra/messaging/processadores-saga.provider';
 import { ComandosSagaOutboxService } from './application/services/comandos-saga-outbox.service';
 import { CompensacaoSagaService } from './application/services/compensacao-saga.service';
+import { ReconciliacaoConsumoSagaService } from './application/services/reconciliacao-consumo-saga.service';
 import { RetomadaSagaInventarioService } from './application/services/retomada-saga-inventario.service';
 import { ConsultaPrazoReferenciaService } from './application/services/consulta-prazo-referencia.service';
 import { PrismaConsultaPrazoOrdemGateway } from './infra/persistence/prisma-consulta-prazo-ordem.gateway';
@@ -75,6 +76,19 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
       inject: [OUTBOX_GATEWAY, PrismaPedidoEmitidoGateway],
     },
     {
+      provide: ReconciliacaoConsumoSagaService,
+      useFactory: (
+        consumir: ConsumirReservaEstoqueUseCase,
+        reservas: ReservaEstoqueGateway,
+        prisma: PrismaService,
+      ) => new ReconciliacaoConsumoSagaService(consumir, reservas, prisma),
+      inject: [
+        ConsumirReservaEstoqueUseCase,
+        RESERVA_ESTOQUE_GATEWAY,
+        PrismaService,
+      ],
+    },
+    {
       provide: CompensacaoSagaService,
       useFactory: (
         ordens: OrdemServicoGateway,
@@ -87,6 +101,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         reservas: ReservaEstoqueGateway,
         logger: JsonLoggerService,
         prisma: PrismaService,
+        reconciliacao: ReconciliacaoConsumoSagaService,
       ) =>
         new CompensacaoSagaService(
           ordens,
@@ -99,6 +114,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
           reservas,
           logger,
           prisma,
+          reconciliacao,
         ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
@@ -111,6 +127,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         RESERVA_ESTOQUE_GATEWAY,
         JsonLoggerService,
         PrismaService,
+        ReconciliacaoConsumoSagaService,
       ],
     },
     {
@@ -201,6 +218,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         outbox: OutboxGateway,
         consultaPrazo: ConsultaPrazoReferenciaService,
         osMetrics: OsMetricsService,
+        reconciliacao: ReconciliacaoConsumoSagaService,
       ) =>
         new ReagirFatoSagaUseCase(
           ordens,
@@ -216,6 +234,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
           outbox,
           consultaPrazo,
           osMetrics,
+          reconciliacao,
         ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
@@ -231,6 +250,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         OUTBOX_GATEWAY,
         ConsultaPrazoReferenciaService,
         OsMetricsService,
+        ReconciliacaoConsumoSagaService,
       ],
     },
     ProcessadoresSagaProvider,

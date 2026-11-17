@@ -147,4 +147,20 @@ export interface ReservaEstoqueGateway {
       responsavelId: string;
     },
   ): Promise<{ ordemServicoId: string }>;
+
+  resolverConsumoManualInicial(
+    contexto: ContextoTransacao,
+    input: {
+      pendenciaId: string;
+      itensConsumidos: ItemReservaEstoque[];
+      itensLiberados: ItemReservaEstoque[];
+      motivo: string;
+      responsavelId: string;
+      ajustesFisicos?: { pecaId: string; quantidadeFisicaNova: number }[];
+    },
+  ): Promise<{
+    ordemServicoId: string;
+    rodada: number;
+    resolucaoId: string;
+  }>;
 }

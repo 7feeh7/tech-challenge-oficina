@@ -102,6 +102,64 @@ describe('ReagirFatoSagaUseCase', () => {
     const outbox = { registrar: jest.fn() };
     const consultaPrazo = { agendarProximaReconsulta: jest.fn() };
     const osMetrics = { recordSituacaoFinanceiraIndeterminada: jest.fn() };
+    const reconciliacao = {
+      reconciliarFatoTerminal: jest
+        .fn()
+        .mockImplementation(
+          async (
+            ctx: ContextoTransacao,
+            ordemServicoId: string,
+            rodada: number,
+            ctxFato: unknown,
+            pecas: { itemId: string; quantidade: number }[],
+            _p: unknown,
+            _motivo: unknown,
+            idempotencyKey: string,
+          ) => {
+            try {
+              const consumo = await consumirReserva.execute(
+                {
+                  ordemServicoId,
+                  rodada,
+                  itensUtilizados: pecas.map((p) => ({
+                    pecaId: p.itemId,
+                    quantidade: p.quantidade,
+                  })),
+                  idempotencyKey,
+                  contextoFato: ctxFato,
+                },
+                ctx,
+              );
+              return consumo.impedimentoInventario
+                ? 'impedimento_inventario'
+                : consumo.reutilizado
+                  ? 'reutilizado'
+                  : 'aplicado';
+            } catch (erro) {
+              if (erro instanceof ReservaJaProcessadaError) {
+                const naRodada = await reservas.possuiConsumoAplicadoNaRodada(
+                  ctx,
+                  ordemServicoId,
+                  rodada,
+                );
+                const legado = await reservas.possuiConsumoAplicado(
+                  ctx,
+                  ordemServicoId,
+                  rodada,
+                  pecas.map((p) => p.itemId),
+                );
+                if (naRodada || legado) {
+                  return 'reutilizado';
+                }
+              }
+              throw erro;
+            }
+          },
+        ),
+      resolverPendenciaInformacaoInsuficienteSeCausaEliminada: jest
+        .fn()
+        .mockResolvedValue(undefined),
+    };
     const useCase = new ReagirFatoSagaUseCase(
       ordens as never,
       transicoes as never,
@@ -116,6 +174,7 @@ describe('ReagirFatoSagaUseCase', () => {
       outbox,
       consultaPrazo as never,
       osMetrics as never,
+      reconciliacao as never,
     );
     return {
       useCase,
@@ -131,6 +190,7 @@ describe('ReagirFatoSagaUseCase', () => {
       outbox,
       estadoCompensacao,
       prisma,
+      reconciliacao,
     };
   };
 
@@ -691,11 +751,13 @@ describe('ReagirFatoSagaUseCase', () => {
     expect(ordens.bloquearParaAtualizacao).toHaveBeenCalled();
   });
 
-  it('reparo-falhou idempotente quando consumo já aplicado na rodada', async () => {
-    const { useCase, consumirReserva, reservas, transicoes } = montarUseCase(
+  it('reparo-falhou com consumo existente reconcilia sem nova transição', async () => {
+    const { useCase, reconciliacao, transicoes } = montarUseCase(
       StatusOS.EM_CANCELAMENTO,
     );
-    reservas.possuiConsumoAplicadoNaRodada = jest.fn().mockResolvedValue(true);
+    reconciliacao.reconciliarFatoTerminal = jest
+      .fn()
+      .mockResolvedValue('reutilizado');
     await useCase.executar(contexto, {
       eventId: 'falha-idem',
       eventType: EVENTO_REPARO_FALHOU,
@@ -708,7 +770,7 @@ describe('ReagirFatoSagaUseCase', () => {
       rodada: 1,
       payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
     });
-    expect(consumirReserva.execute).not.toHaveBeenCalled();
+    expect(reconciliacao.reconciliarFatoTerminal).toHaveBeenCalled();
     expect(transicoes.aplicar).not.toHaveBeenCalled();
   });
 

@@ -2,11 +2,12 @@
 
 Complemento da E26 (2026-11-16). Todas as operações que alteram reservas, pendências de inventário ou saldo físico seguem a **mesma ordem de bloqueio** no PostgreSQL, para evitar *deadlock*:
 
-1. **Ordem de serviço** (`ordens_servico`), quando a operação envolve compensação, consumo efetivo (complemento E29) ou ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da OS.
-2. **Registro de consumo aplicado** (`consumos_aplicados_os`), no consumo com reconciliação — inserção ou leitura única por OS e rodada **depois** do bloqueio da OS e **antes** de pendência, reservas e peças.
-3. **Pendência** (`pendencias_os`), no ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da pendência, **depois** da OS, com revalidação de `resolvida = false` na mesma transação.
-4. **Reservas ativas** da OS e rodada — `SELECT … FROM reservas_estoque WHERE situacao = 'ATIVA' … ORDER BY peca_id FOR UPDATE`.
-5. **Peças** — `SELECT … FROM pecas WHERE id = … FOR UPDATE`, sempre na ordem crescente de `peca_id`.
+1. **Ordem de serviço** (`ordens_servico`), quando a operação envolve compensação, consumo efetivo (complemento E29), resolução manual de consumo (complemento E42) ou ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da OS.
+2. **Registro de consumo aplicado** (`consumos_aplicados_os`) — leitura única por OS e rodada **depois** do bloqueio da OS.
+3. **Resolução manual de consumo** (`resolucoes_consumo_manuais`) — leitura única por OS e rodada **depois** do consumo aplicado e **antes** de pendências, reservas e peças (exclusão mútua com consumo automático na mesma transação). Endpoint `POST /reservas-estoque/resolucoes-consumo-manual` (ADMINISTRADOR, `Idempotency-Key`): fotografia `itens_consumidos` / `itens_liberados`, movimenta reservas sem `consumos_aplicados_os`, resolve pendência `INFORMACAO_INSUFICIENTE` e retoma saga na mesma transação.
+4. **Pendência** (`pendencias_os`), no ajuste administrativo ou na resolução manual inicial — `SELECT … FOR UPDATE` pela `id` da pendência, **depois** dos registros de consumo, com revalidação de `resolvida = false` na mesma transação.
+5. **Reservas ativas** da OS e rodada — `SELECT … FROM reservas_estoque WHERE situacao = 'ATIVA' … ORDER BY peca_id FOR UPDATE`.
+6. **Peças** — `SELECT … FROM pecas WHERE id = … FOR UPDATE`, sempre na ordem crescente de `peca_id` (ajustes administrativos gravados **depois** das peças).
 
 Operações afetadas: reservar, liberar, consumir, entrada e baixa manual, atualização de peça com quantidade física e ajuste administrativo de divergência.
 

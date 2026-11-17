@@ -21,11 +21,30 @@ import type { ReservaEstoqueGateway } from '../src/modules/reservas-estoque/appl
 import { ReservarEstoqueUseCase } from '../src/modules/reservas-estoque/application/use-cases/reservar-estoque.use-case';
 import { LiberarReservaEstoqueUseCase } from '../src/modules/reservas-estoque/application/use-cases/liberar-reserva-estoque.use-case';
 import { ConsumirReservaEstoqueUseCase } from '../src/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
+import { contextoFatoIntegracao } from './helpers/contexto-fato-estoque';
+
+function comContextoFato(
+  useCase: ConsumirReservaEstoqueUseCase,
+  input: Parameters<ConsumirReservaEstoqueUseCase['execute']>[0],
+) {
+  return useCase.execute({
+    ...input,
+    contextoFato:
+      input.contextoFato ??
+      contextoFatoIntegracao(
+        input.itensUtilizados.map((p) => ({
+          itemId: p.pecaId,
+          quantidade: p.quantidade,
+        })),
+      ),
+  });
+}
 import { AjustarEstoqueDivergenciaUseCase } from '../src/modules/reservas-estoque/application/use-cases/ajustar-estoque-divergencia.use-case';
 import { RetomadaSagaInventarioNoop } from '../src/shared/saga/retomada-saga-inventario.port';
 import {
   EstoqueInsuficienteReservaError,
   ReservaJaProcessadaError,
+  ConsumoAplicadoIncompativelError,
   ReservaEstoqueNaoEncontradaError,
   PendenciaInventarioJaResolvidaError,
 } from '../src/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
@@ -143,6 +162,12 @@ describe('Estoque com reserva (integração)', () => {
   let registrarMovimentacao: RegistrarMovimentacaoUseCase;
 
   const sufixo = `${Date.now()}`;
+
+  async function executarConsumir(
+    input: Parameters<ConsumirReservaEstoqueUseCase['execute']>[0],
+  ) {
+    return comContextoFato(consumir, input);
+  }
 
   async function criarPeca(estoque: number) {
     return prisma.peca.create({
@@ -454,7 +479,7 @@ describe('Estoque com reserva (integração)', () => {
       itens: [{ pecaId: peca.id, quantidade: 5 }],
     });
 
-    await consumir.execute({
+    await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 2 }],
@@ -477,7 +502,7 @@ describe('Estoque com reserva (integração)', () => {
       itens: [{ pecaId: peca.id, quantidade: 4 }],
     });
 
-    const resultado = await consumir.execute({
+    const resultado = await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 6 }],
@@ -625,13 +650,16 @@ describe('Estoque com reserva (integração)', () => {
     const poolB = criarPoolB(databaseUrl, obterGatewaysEstoque(nestModule));
 
     const resultados = await Promise.allSettled([
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 3 }],
         idempotencyKey: `c-a-${randomUUID()}`,
       }),
-      poolB.consumir.execute({
+      comContextoFato.bind(
+        null,
+        poolB.consumir,
+      )({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 3 }],
@@ -681,12 +709,15 @@ describe('Estoque com reserva (integração)', () => {
 
     const poolB = criarPoolB(databaseUrl, obterGatewaysEstoque(nestModule));
     const resultados = await Promise.allSettled([
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 4 }],
       }),
-      poolB.consumir.execute({
+      comContextoFato.bind(
+        null,
+        poolB.consumir,
+      )({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 4 }],
@@ -729,7 +760,7 @@ describe('Estoque com reserva (integração)', () => {
     ).quantidadeEstoque;
 
     await Promise.allSettled([
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 5 }],
@@ -767,7 +798,7 @@ describe('Estoque com reserva (integração)', () => {
     });
     const poolB2 = criarPoolB(databaseUrl, obterGatewaysEstoque(nestModule));
     await Promise.allSettled([
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os2.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca2.id, quantidade: 3 }],
@@ -778,30 +809,68 @@ describe('Estoque com reserva (integração)', () => {
     await poolB2.prismaB.$disconnect();
   });
 
-  it('consumo repetido não cria pendência espúria', async () => {
+  it('mesmo eventId de fato reentrega consumo de forma idempotente', async () => {
     const peca = await criarPeca(10);
     const os = await criarOs();
-
+    const eventId = randomUUID();
     await reservar.execute({
       ordemServicoId: os.id,
       rodada: 1,
       itens: [{ pecaId: peca.id, quantidade: 2 }],
     });
-
-    await consumir.execute({
+    const ctx = contextoFatoIntegracao(
+      [{ itemId: peca.id, quantidade: 2 }],
+      'REPARO_CONCLUIDO',
+      eventId,
+    );
+    await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 2 }],
+      contextoFato: ctx,
     });
+    const segundo = await executarConsumir({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itensUtilizados: [{ pecaId: peca.id, quantidade: 2 }],
+      contextoFato: ctx,
+    });
+    expect(segundo.reutilizado).toBe(true);
+    expect(
+      await prisma.pendenciaOs.count({ where: { ordemServicoId: os.id } }),
+    ).toBe(0);
+  });
 
+  it('fato terminal divergente no gateway lança ConsumoAplicadoIncompativelError', async () => {
+    const peca = await criarPeca(10);
+    const os = await criarOs();
+    await reservar.execute({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itens: [{ pecaId: peca.id, quantidade: 2 }],
+    });
+    await executarConsumir({
+      ordemServicoId: os.id,
+      rodada: 1,
+      itensUtilizados: [{ pecaId: peca.id, quantidade: 2 }],
+      contextoFato: contextoFatoIntegracao(
+        [{ itemId: peca.id, quantidade: 2 }],
+        'REPARO_CONCLUIDO',
+        randomUUID(),
+      ),
+    });
     await expect(
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 1 }],
+        contextoFato: contextoFatoIntegracao(
+          [{ itemId: peca.id, quantidade: 1 }],
+          'REPARO_FALHOU',
+          randomUUID(),
+        ),
       }),
-    ).rejects.toThrow(ReservaJaProcessadaError);
-
+    ).rejects.toThrow(ConsumoAplicadoIncompativelError);
     expect(
       await prisma.pendenciaOs.count({ where: { ordemServicoId: os.id } }),
     ).toBe(0);
@@ -830,7 +899,7 @@ describe('Estoque com reserva (integração)', () => {
     expect(aposSegunda.quantidadeEstoque).toBe(aposPrimeira.quantidadeEstoque);
 
     await expect(
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 1,
         itensUtilizados: [{ pecaId: peca.id, quantidade: 1 }],
@@ -842,7 +911,7 @@ describe('Estoque com reserva (integração)', () => {
     const os = await criarOs();
 
     await expect(
-      consumir.execute({
+      executarConsumir({
         ordemServicoId: os.id,
         rodada: 99,
         itensUtilizados: [{ pecaId: randomUUID(), quantidade: 1 }],
@@ -861,7 +930,7 @@ describe('Estoque com reserva (integração)', () => {
       itens: [{ pecaId: peca.id, quantidade: 4 }],
     });
 
-    const resultado = await consumir.execute({
+    const resultado = await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 6 }],
@@ -910,7 +979,7 @@ describe('Estoque com reserva (integração)', () => {
       itens: [{ pecaId: peca.id, quantidade: 4 }],
     });
 
-    const resultado = await consumir.execute({
+    const resultado = await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 7 }],
@@ -993,7 +1062,7 @@ describe('Estoque com reserva (integração)', () => {
       resultados.length,
     );
 
-    await consumir.execute({
+    await executarConsumir({
       ordemServicoId: os.id,
       rodada: 1,
       itensUtilizados: [{ pecaId: peca.id, quantidade: 2 }],

@@ -7,10 +7,7 @@ import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ConsumirReservaEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
 import { LiberarReservaEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/liberar-reserva-estoque.use-case';
 import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
-import {
-  ReservaEstoqueNaoEncontradaError,
-  ReservaJaProcessadaError,
-} from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { ReservaEstoqueNaoEncontradaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import { JsonLoggerService } from '@/shared/observability/json-logger.service';
 import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
@@ -34,12 +31,11 @@ import {
 import type { ComandosSagaOutboxService } from './comandos-saga-outbox.service';
 import type { EstadoCompensacaoGateway } from '../ports/estado-compensacao.gateway';
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
+import type { RespostaCancelamentoContrato } from '../../domain/resposta-cancelamento-contrato';
+import { SituacaoTarefaCancelamento } from '../../domain/situacao-tarefa-cancelamento';
+import type { ReconciliacaoConsumoSagaService } from './reconciliacao-consumo-saga.service';
 
-export interface RespostaCancelamentoPayload {
-  tipoTarefa: TipoTarefaCancelamento;
-  resultado: ResultadoCancelamentoExecucao;
-  pecasUtilizadas?: { itemId: string; quantidade: number }[];
-}
+export type RespostaCancelamentoPayload = RespostaCancelamentoContrato;
 
 export interface SituacaoFinanceiraPayload {
   consultaId: string;
@@ -71,6 +67,7 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     private readonly reservas: ReservaEstoqueGateway,
     private readonly logger: JsonLoggerService,
     private readonly prisma: PrismaService,
+    private readonly reconciliacao: ReconciliacaoConsumoSagaService,
   ) {}
 
   async avancarAposEntradaEmCancelamento(
@@ -180,9 +177,33 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     if (payload.pecasUtilizadas?.length) {
       snapshot.pecasUtilizadas = payload.pecasUtilizadas;
     }
+    const reconciliacao =
+      await this.reconciliacao.reconciliarRespostaCancelamento(
+        contexto,
+        ordemServicoId,
+        bloqueada.ordem.rodadaVigente,
+        causationId,
+        payload,
+      );
+    if (
+      reconciliacao === 'impedimento_inventario' ||
+      reconciliacao === 'pendencia_informacao' ||
+      reconciliacao === 'pendencia_conflito'
+    ) {
+      await this.estado.salvar(contexto, snapshot);
+      return;
+    }
+    if (reconciliacao === 'aplicado' || reconciliacao === 'reutilizado') {
+      await this.reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
+        contexto,
+        ordemServicoId,
+        bloqueada.ordem.rodadaVigente,
+      );
+    }
     if (
       payload.tipoTarefa === TipoTarefaCancelamento.REPARO &&
-      payload.resultado === ResultadoCancelamentoExecucao.JA_CONCLUIDA
+      payload.resultado === ResultadoCancelamentoExecucao.JA_CONCLUIDA &&
+      payload.situacaoTarefa === SituacaoTarefaCancelamento.CONCLUIDA
     ) {
       snapshot.passo = PassoCompensacaoSaga.CONSULTA_E10;
       snapshot.resultadoExecucao = ResultadoExecucaoCompensacao.REPARO_INICIADO;
@@ -503,56 +524,12 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
   ): Promise<void> {
     const ordemServicoId = bloqueada.ordem.id!;
     const rodada = bloqueada.ordem.rodadaVigente;
-    const pecas = snapshot.pecasUtilizadas ?? [];
-    const idempotencyKeyConsumo = `estoque.consumir:compensacao:${ordemServicoId}:${rodada}`;
-    const pecaIdsConsumo = pecas.map((p) => p.itemId);
-    const consumoJaAplicado =
-      (await this.reservas.possuiConsumoAplicadoNaRodada(
+    const consumoConciliado =
+      await this.reconciliacao.consumoConciliadoNaRodada(
         contexto,
         ordemServicoId,
         rodada,
-      )) ||
-      (pecaIdsConsumo.length > 0 &&
-        (await this.reservas.possuiConsumoAplicado(
-          contexto,
-          ordemServicoId,
-          rodada,
-          pecaIdsConsumo,
-        )));
-    if (pecas.length > 0 && !consumoJaAplicado) {
-      try {
-        const consumo = await this.consumir.execute(
-          {
-            ordemServicoId,
-            rodada,
-            itensUtilizados: pecas.map((p) => ({
-              pecaId: p.itemId,
-              quantidade: p.quantidade,
-            })),
-            idempotencyKey: idempotencyKeyConsumo,
-          },
-          contexto,
-        );
-        if (consumo.impedimentoInventario) {
-          return;
-        }
-      } catch (erro) {
-        if (erro instanceof ReservaJaProcessadaError) {
-          const pecaIds = pecas.map((p) => p.itemId);
-          const aplicado = await this.reservas.possuiConsumoAplicado(
-            contexto,
-            ordemServicoId,
-            rodada,
-            pecaIds,
-          );
-          if (!aplicado) {
-            throw erro;
-          }
-        } else {
-          throw erro;
-        }
-      }
-    }
+      );
     try {
       await this.liberar.execute(
         {
@@ -568,7 +545,10 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
       }
     }
     if (snapshot.condicoesE10) {
-      const condicoes = { ...snapshot.condicoesE10, estoqueConciliado: true };
+      const condicoes = {
+        ...snapshot.condicoesE10,
+        estoqueConciliado: consumoConciliado,
+      };
       snapshot.condicoesE10 = condicoes;
       if (
         condicoes.reparoConcluidoAntesCancelamento &&

@@ -63,7 +63,7 @@ export class ConsumirReservaEstoqueUseCase {
 
       const output: ConsumirReservaEstoqueOutput = {
         ...resultado,
-        reutilizado: false,
+        reutilizado: resultado.reutilizado,
       };
 
       if (input.idempotencyKey) {

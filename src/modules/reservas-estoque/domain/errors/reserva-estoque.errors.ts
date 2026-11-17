@@ -86,3 +86,31 @@ export class ConsumoAplicadoIncompativelError extends DomainConflictError {
     );
   }
 }
+
+export class ResolucaoConsumoManualComConsumoAplicadoError extends DomainConflictError {
+  constructor() {
+    super(
+      'Não é possível resolver consumo manualmente quando o consumo já foi aplicado automaticamente.',
+    );
+  }
+}
+
+export class ResolucaoConsumoManualJaExisteError extends DomainConflictError {
+  constructor() {
+    super('Já existe resolução administrativa de consumo para a OS e rodada.');
+  }
+}
+
+export class PendenciaResolucaoConsumoInvalidaError extends DomainValidationError {
+  constructor() {
+    super(
+      'A pendência deve ser de inventário com natureza INFORMACAO_INSUFICIENTE.',
+    );
+  }
+}
+
+export class QuantidadeResolucaoManualInvalidaError extends DomainValidationError {
+  constructor(mensagem: string) {
+    super(mensagem);
+  }
+}

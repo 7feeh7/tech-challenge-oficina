@@ -39,7 +39,6 @@ import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/applicati
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ConsumirReservaEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
 import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
-import { ReservaJaProcessadaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import { AcaoDecisao } from '../../domain/acao-decisao';
 import { decidir } from '../../domain/decidir';
 import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
@@ -56,6 +55,7 @@ import {
 } from '../services/compensacao-saga.service';
 import { ConsultaPrazoReferenciaService } from '../services/consulta-prazo-referencia.service';
 import { SituacaoPagamentoFinanceira } from '../../domain/consulta-financeira';
+import type { ReconciliacaoConsumoSagaService } from '../services/reconciliacao-consumo-saga.service';
 
 const MAPA_EVENTO_FATO: Record<string, TipoFatoSaga> = {
   [EVENTO_DIAGNOSTICO_INICIADO]: TipoFatoSaga.DIAGNOSTICO_INICIADO,
@@ -118,6 +118,7 @@ export class ReagirFatoSagaUseCase {
     private readonly outbox: OutboxGateway,
     private readonly consultaPrazo: ConsultaPrazoReferenciaService,
     private readonly osMetrics: OsMetricsService,
+    private readonly reconciliacao: ReconciliacaoConsumoSagaService,
   ) {}
 
   async executar(
@@ -530,16 +531,6 @@ export class ReagirFatoSagaUseCase {
     if (!bloqueada) {
       return;
     }
-    if (
-      envelope.eventType === EVENTO_REPARO_FALHOU &&
-      (await this.reservas.possuiConsumoAplicadoNaRodada(
-        contexto,
-        envelope.ordemServicoId,
-        envelope.rodada,
-      ))
-    ) {
-      return;
-    }
     const tipoFato =
       envelope.eventType === EVENTO_REPARO_FALHOU
         ? 'REPARO_FALHOU'
@@ -564,13 +555,26 @@ export class ReagirFatoSagaUseCase {
             : 'Compensação por interrupção do reparo',
       });
     }
-    await this.aplicarConsumoEfetivo(
+    const resultadoConsumo = await this.aplicarConsumoEfetivo(
       contexto,
       envelope,
       payload,
       tipoFato,
       quandoFato,
     );
+    if (
+      bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO &&
+      resultadoConsumo.impedimentoInventario
+    ) {
+      return;
+    }
+    if (bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO) {
+      await this.reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.rodada,
+      );
+    }
     await this.compensacao.registrarFatoTerminalExecucao(
       contexto,
       envelope.ordemServicoId,
@@ -795,11 +799,6 @@ export class ReagirFatoSagaUseCase {
     tipoFato: 'REPARO_CONCLUIDO' | 'REPARO_FALHOU' | 'REPARO_INTERROMPIDO',
     ocorridoEm: Date,
   ): Promise<{ impedimentoInventario: boolean; reutilizado: boolean }> {
-    const pecas =
-      payload.pecasUtilizadas?.map((p) => ({
-        pecaId: p.itemId,
-        quantidade: p.quantidade,
-      })) ?? [];
     const divergenciasFato =
       payload.divergencias?.map((d) => ({
         pecaId: d.itemId,
@@ -817,52 +816,52 @@ export class ReagirFatoSagaUseCase {
       ? new Date(payload.concluidoEm)
       : null;
     const idempotencyKey = `estoque.consumir:${envelope.eventId}`;
+    const contextoFato = {
+      eventId: envelope.eventId,
+      fatoOcorridoEm: ocorridoEm,
+      concluidoEm,
+      responsavelId: payload.responsavelId ?? null,
+      tipoFato,
+      divergenciasFato,
+      consumoEfetivo: payload.pecasUtilizadas ?? [],
+      aguardandoFinalizacao: tipoFato === 'REPARO_CONCLUIDO',
+    };
+    const divergenciasComparacao =
+      payload.divergencias?.map((d) => ({
+        itemId: d.itemId,
+        tipo: d.tipo,
+        quantidadePrevista: d.quantidadePrevista,
+        quantidadeUtilizada: d.quantidadeUtilizada,
+        justificativa: d.justificativa,
+      })) ?? [];
+    const motivo =
+      tipoFato === 'REPARO_FALHOU' && 'motivo' in payload
+        ? String((payload as { motivo?: string }).motivo ?? '')
+        : null;
 
-    try {
-      const consumo = await this.consumirReserva.execute(
-        {
-          ordemServicoId: envelope.ordemServicoId,
-          rodada: envelope.rodada,
-          itensUtilizados: pecas,
-          idempotencyKey,
-          contextoFato: {
-            eventId: envelope.eventId,
-            fatoOcorridoEm: ocorridoEm,
-            concluidoEm,
-            responsavelId: payload.responsavelId ?? null,
-            tipoFato,
-            divergenciasFato,
-            consumoEfetivo: payload.pecasUtilizadas ?? [],
-            aguardandoFinalizacao: tipoFato === 'REPARO_CONCLUIDO',
-          },
-        },
-        contexto,
-      );
-      return {
-        impedimentoInventario: consumo.impedimentoInventario,
-        reutilizado: consumo.reutilizado,
-      };
-    } catch (erro) {
-      if (erro instanceof ReservaJaProcessadaError) {
-        const consumoJaAplicado =
-          (await this.reservas.possuiConsumoAplicadoNaRodada(
-            contexto,
-            envelope.ordemServicoId,
-            envelope.rodada,
-          )) ||
-          (await this.reservas.possuiConsumoAplicado(
-            contexto,
-            envelope.ordemServicoId,
-            envelope.rodada,
-            pecas.map((p) => p.pecaId),
-          ));
-        if (!consumoJaAplicado) {
-          throw erro;
-        }
-        return { impedimentoInventario: false, reutilizado: true };
-      }
-      throw erro;
+    const resultado = await this.reconciliacao.reconciliarFatoTerminal(
+      contexto,
+      envelope.ordemServicoId,
+      envelope.rodada,
+      contextoFato,
+      payload.pecasUtilizadas ?? [],
+      divergenciasComparacao,
+      motivo,
+      idempotencyKey,
+    );
+    if (
+      resultado === 'pendencia_conflito' ||
+      resultado === 'pendencia_informacao'
+    ) {
+      return { impedimentoInventario: true, reutilizado: false };
     }
+    if (resultado === 'impedimento_inventario') {
+      return { impedimentoInventario: true, reutilizado: false };
+    }
+    return {
+      impedimentoInventario: false,
+      reutilizado: resultado === 'reutilizado',
+    };
   }
 
   private async tratarReparoConcluido(
@@ -871,6 +870,14 @@ export class ReagirFatoSagaUseCase {
     ocorridoEm: Date,
   ): Promise<void> {
     const payload = envelope.payload as ReparoConcluidoPayload;
+    const bloqueada = await this.ordens.bloquearParaAtualizacao(
+      contexto,
+      envelope.ordemServicoId,
+    );
+    if (!bloqueada) {
+      return;
+    }
+
     const { impedimentoInventario } = await this.aplicarConsumoEfetivo(
       contexto,
       envelope,
@@ -880,6 +887,20 @@ export class ReagirFatoSagaUseCase {
     );
 
     if (impedimentoInventario) {
+      return;
+    }
+
+    if (bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO) {
+      await this.reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.rodada,
+      );
+      await this.compensacao.avancarSeEmCancelamento(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.eventId,
+      );
       return;
     }
 

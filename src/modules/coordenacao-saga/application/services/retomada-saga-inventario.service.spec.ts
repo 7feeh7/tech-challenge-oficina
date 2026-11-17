@@ -203,6 +203,45 @@ describe('RetomadaSagaInventarioService', () => {
     expect(ordem.registrarReparoConcluido).toHaveBeenCalledWith(concluidoEm);
   });
 
+  it('atualiza DIVERGENCIA_PENDENTE e retoma compensação', async () => {
+    const cliente = {
+      pendenciaOs: { count: jest.fn().mockResolvedValue(0) },
+      consumoAplicadoOs: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'ca1',
+          situacaoReconciliacao: 'DIVERGENCIA_PENDENTE',
+          aguardandoFinalizacao: false,
+          tipoFato: 'REPARO_FALHOU',
+        }),
+        update: jest.fn(),
+      },
+    };
+    const ordens = {
+      bloquearParaAtualizacao: jest.fn().mockResolvedValue({
+        ordem: {
+          id: 'os-1',
+          rodadaVigente: 1,
+          status: StatusOS.EM_CANCELAMENTO,
+        },
+      }),
+    };
+    const compensacao = { avancarSeEmCancelamento: jest.fn() };
+    contexto = new PrismaContextoTransacao(cliente as never);
+    const service = new RetomadaSagaInventarioService(
+      ordens as never,
+      { aplicar: jest.fn() } as never,
+      compensacao as never,
+      cliente as never,
+    );
+    await service.retomarAposResolucaoInventario(contexto, 'os-1', 'evt');
+    expect(cliente.consumoAplicadoOs.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { situacaoReconciliacao: 'DIVERGENCIA_RESOLVIDA' },
+      }),
+    );
+    expect(compensacao.avancarSeEmCancelamento).toHaveBeenCalled();
+  });
+
   it('não finaliza com pendência INVENTARIO aberta', async () => {
     const cliente = {
       pendenciaOs: { count: jest.fn().mockResolvedValue(1) },
