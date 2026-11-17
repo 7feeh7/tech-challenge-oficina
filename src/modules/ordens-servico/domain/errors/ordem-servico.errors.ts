@@ -57,3 +57,51 @@ export class PecaDaOrdemNaoEncontradaError extends DomainNotFoundError {
     super(`Peça "${pecaId}" não encontrada.`);
   }
 }
+
+export class PatchOrdemServicoNaoPermitidoError extends DomainValidationError {
+  constructor(mensagem: string) {
+    super(mensagem);
+  }
+}
+
+export class ItensOficiaisNaoEditaveisError extends DomainValidationError {
+  constructor() {
+    super(
+      'Os itens oficiais só podem ser alterados durante o diagnóstico da rodada vigente.',
+    );
+  }
+}
+
+export class DesistenciaNaoPermitidaError extends DomainValidationError {
+  constructor(status: StatusOS) {
+    super(`Desistência não permitida no status ${status}.`);
+  }
+}
+
+export class MotivoDesistenciaObrigatorioError extends DomainValidationError {
+  constructor() {
+    super('O motivo da desistência é obrigatório.');
+  }
+}
+
+export class RetiradaNaoPermitidaError extends DomainValidationError {
+  constructor(mensagem: string) {
+    super(mensagem);
+  }
+}
+
+export class DiagnosticoNaAberturaNaoPermitidoError extends DomainValidationError {
+  constructor() {
+    super(
+      'O diagnóstico não é aceito na abertura; use sugestões de itens.',
+    );
+  }
+}
+
+export class DevolucaoTarefaFilaNaoPermitidaError extends DomainValidationError {
+  constructor() {
+    super(
+      'Devolução à fila só é permitida na rodada 1, antes da conclusão do diagnóstico.',
+    );
+  }
+}

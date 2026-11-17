@@ -1,4 +1,5 @@
 export const EVENTO_STATUS_CHANGED = 'ordem-servico.status-changed.v1';
+export const COMANDO_INICIAR_DIAGNOSTICO = 'execution.iniciar-diagnostico.v1';
 export const EVENTO_PAGAMENTO_DISPONIVEL =
   'ordem-servico.pagamento-disponivel.v1';
 
