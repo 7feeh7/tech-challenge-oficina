@@ -1,4 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
+import {
+  COMPENSACAO_AVANCO,
+  type CompensacaoAvancoPort,
+} from '@/shared/saga/compensacao-avanco.port';
 import {
   UNIT_OF_WORK,
   type UnitOfWork,
@@ -27,7 +32,11 @@ import { PrismaCatalogoGateway } from './infra/persistence/prisma-catalogo.gatew
 import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-servico.gateway';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => MensageriaModule)],
+  imports: [
+    PrismaModule,
+    forwardRef(() => MensageriaModule),
+    forwardRef(() => CoordenacaoSagaModule),
+  ],
   controllers: [OrdensServicoController],
   providers: [
     PrismaOrdemServicoGateway,
@@ -90,11 +99,19 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
         ordens: OrdemServicoGateway,
         unitOfWork: UnitOfWork,
         transicoes: TransicaoOrdemServicoService,
-      ) => new RegistrarDesistenciaUseCase(ordens, unitOfWork, transicoes),
+        compensacao?: CompensacaoAvancoPort,
+      ) =>
+        new RegistrarDesistenciaUseCase(
+          ordens,
+          unitOfWork,
+          transicoes,
+          compensacao,
+        ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
         UNIT_OF_WORK,
         TransicaoOrdemServicoService,
+        { token: COMPENSACAO_AVANCO, optional: true },
       ],
     },
     {

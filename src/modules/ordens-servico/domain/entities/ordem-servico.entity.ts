@@ -249,6 +249,25 @@ export class OrdemServico {
     this.transicionarPara(StatusOS.EM_CANCELAMENTO, agora);
   }
 
+  registrarCompensacaoIniciada(motivo: string, agora: Date = new Date()): void {
+    const motivoNormalizado = OrdemServico.normalizarTexto(motivo);
+    if (!motivoNormalizado) {
+      throw new MotivoDesistenciaObrigatorioError();
+    }
+    if (this._status === StatusOS.EM_CANCELAMENTO) {
+      return;
+    }
+    if (!transicaoPermitida(this._status, StatusOS.EM_CANCELAMENTO)) {
+      throw new TransicaoStatusInvalidaError(
+        this._status,
+        StatusOS.EM_CANCELAMENTO,
+      );
+    }
+    this._etapaOrigemCancelamento = this._status;
+    this._motivoEncerramento = motivoNormalizado;
+    this.transicionarPara(StatusOS.EM_CANCELAMENTO, agora);
+  }
+
   registrarCancelamentoConcluido(agora: Date = new Date()): void {
     this.transicionarPara(StatusOS.CANCELADA, agora);
   }

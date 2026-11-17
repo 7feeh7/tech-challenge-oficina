@@ -23,6 +23,7 @@ import { IdempotencyInterceptor } from './shared/idempotency/idempotency.interce
 import { CorrelationIdInterceptor } from './shared/http/correlation-id.interceptor';
 import { ObservabilityModule } from './shared/observability/observability.module';
 import { MensageriaModule } from './shared/messaging/mensageria.module';
+import { CoordenacaoSagaModule } from './modules/coordenacao-saga/coordenacao-saga.module';
 import { RotasInternasModule } from './modules/rotas-internas/rotas-internas.module';
 import { TokenChamadorInternoGuard } from './modules/rotas-internas/guards/token-chamador-interno.guard';
 import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idempotency-key-interna.guard';
@@ -31,6 +32,7 @@ import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idem
   imports: [
     ObservabilityModule,
     MensageriaModule,
+    CoordenacaoSagaModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',

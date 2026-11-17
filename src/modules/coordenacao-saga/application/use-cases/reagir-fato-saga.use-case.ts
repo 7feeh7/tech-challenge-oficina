@@ -5,12 +5,22 @@ import {
   EVENTO_DIAGNOSTICO_INICIADO,
   EVENTO_ORCAMENTO_GERADO,
   EVENTO_ORCAMENTO_REJEITADO,
+  EVENTO_COBRANCA_EXPIRADA,
+  EVENTO_ESTORNO_CONCLUIDO,
   EVENTO_PAGAMENTO_CONFIRMADO,
+  EVENTO_PAGAMENTO_TARDIO_REGISTRADO,
+  EVENTO_PENDENCIA_RESOLVIDA,
   EVENTO_REPARO_CONCLUIDO,
+  EVENTO_REPARO_FALHOU,
   EVENTO_REPARO_INICIADO,
+  EVENTO_REPARO_INTERROMPIDO,
+  EVENTO_RESPOSTA_CANCELAMENTO,
+  EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
+  EVENTO_SITUACAO_FINANCEIRA,
   EVENTO_TAREFA_DEVOLVIDA_A_FILA,
   type EnvelopeMensagem,
 } from '@/shared/messaging/envelope';
+import { PassoCompensacaoSaga } from '@/shared/generated/prisma/enums';
 import { JsonLoggerService } from '@/shared/observability/json-logger.service';
 import { DESTINO_FILA_EXECUTION } from '@/shared/messaging/envelope';
 import {
@@ -32,6 +42,14 @@ import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
 import { TipoFatoSaga } from '../../domain/tipo-fato-saga';
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
 import type { ProjecaoFinanceiraGateway } from '../ports/projecao-financeira.gateway';
+import type { EstadoCompensacaoGateway } from '../ports/estado-compensacao.gateway';
+import {
+  CompensacaoSagaService,
+  type RespostaCancelamentoFinanceiroPayload,
+  type RespostaCancelamentoPayload,
+  type SituacaoFinanceiraPayload,
+} from '../services/compensacao-saga.service';
+import { SituacaoPagamentoFinanceira } from '../../domain/consulta-financeira';
 
 const MAPA_EVENTO_FATO: Record<string, TipoFatoSaga> = {
   [EVENTO_DIAGNOSTICO_INICIADO]: TipoFatoSaga.DIAGNOSTICO_INICIADO,
@@ -41,6 +59,16 @@ const MAPA_EVENTO_FATO: Record<string, TipoFatoSaga> = {
   [EVENTO_PAGAMENTO_CONFIRMADO]: TipoFatoSaga.PAGAMENTO_CONFIRMADO,
   [EVENTO_REPARO_INICIADO]: TipoFatoSaga.REPARO_INICIADO,
   [EVENTO_REPARO_CONCLUIDO]: TipoFatoSaga.REPARO_CONCLUIDO,
+  [EVENTO_COBRANCA_EXPIRADA]: TipoFatoSaga.COBRANCA_EXPIRADA,
+  [EVENTO_SITUACAO_FINANCEIRA]: TipoFatoSaga.SITUACAO_FINANCEIRA,
+  [EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO]: TipoFatoSaga.RESPOSTA_CANCELAMENTO,
+  [EVENTO_RESPOSTA_CANCELAMENTO]: TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO,
+  [EVENTO_REPARO_FALHOU]: TipoFatoSaga.REPARO_FALHOU,
+  [EVENTO_REPARO_INTERROMPIDO]: TipoFatoSaga.REPARO_INTERROMPIDO,
+  [EVENTO_ESTORNO_CONCLUIDO]: TipoFatoSaga.ESTORNO_CONCLUIDO,
+  [EVENTO_PENDENCIA_RESOLVIDA]: TipoFatoSaga.PENDENCIA_RESOLVIDA,
+  [EVENTO_PAGAMENTO_TARDIO_REGISTRADO]:
+    TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO,
 };
 
 interface PagamentoConfirmadoPayload {
@@ -64,6 +92,8 @@ export class ReagirFatoSagaUseCase {
     private readonly projecao: ProjecaoFinanceiraGateway,
     private readonly logger: JsonLoggerService,
     private readonly prisma: PrismaService,
+    private readonly compensacao: CompensacaoSagaService,
+    private readonly estadoCompensacao: EstadoCompensacaoGateway,
   ) {}
 
   async executar(
@@ -98,6 +128,18 @@ export class ReagirFatoSagaUseCase {
       envelope.ordemServicoId,
       envelope.rodada,
     );
+    const payloadConsulta = envelope.payload as { consultaId?: string };
+    const exigeEstadoCompensacao =
+      bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO ||
+      fato === TipoFatoSaga.SITUACAO_FINANCEIRA ||
+      fato === TipoFatoSaga.COBRANCA_EXPIRADA;
+    const estadoSnap = exigeEstadoCompensacao
+      ? await this.estadoCompensacao.obterOuCriar(
+          contexto,
+          envelope.ordemServicoId,
+          bloqueada.ordem.rodadaVigente,
+        )
+      : null;
     const ordemDecisao: OrdemParaDecisao = {
       status: bloqueada.ordem.status,
       rodadaVigente: bloqueada.ordem.rodadaVigente,
@@ -107,6 +149,10 @@ export class ReagirFatoSagaUseCase {
       mesmoOrderId:
         Boolean(payloadPagamento.orderId) &&
         payloadPagamento.orderId === orderIdPrincipal,
+      consultaIdVigente: estadoSnap?.consultaIdVigente ?? null,
+      consultaIdFato: payloadConsulta.consultaId ?? null,
+      emCompensacaoConsultaE10:
+        estadoSnap?.passo === PassoCompensacaoSaga.CONSULTA_E10,
     };
 
     const acao = decidir(fato, ordemDecisao);
@@ -131,6 +177,16 @@ export class ReagirFatoSagaUseCase {
 
     if (acao === AcaoDecisao.CONCILIAR) {
       await this.registrarPagamento(contexto, envelope, payloadPagamento);
+      if (
+        fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
+        bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO
+      ) {
+        await this.compensacao.avancarSeEmCancelamento(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.eventId,
+        );
+      }
       if (
         fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
         [StatusOS.FINALIZADA, StatusOS.CANCELADA, StatusOS.ENTREGUE].includes(
@@ -217,7 +273,37 @@ export class ReagirFatoSagaUseCase {
         }
         break;
       }
+      case TipoFatoSaga.REPARO_CONCLUIDO:
+        await this.tratarReparoConcluido(contexto, envelope, ocorridoEm);
+        break;
+      case TipoFatoSaga.COBRANCA_EXPIRADA: {
+        const resultado = await this.transicoes.aplicar(contexto, {
+          ordemServicoId: envelope.ordemServicoId,
+          aplicar: (os, quando) =>
+            os.registrarCompensacaoIniciada(
+              'Prazo de pagamento expirado',
+              quando,
+            ),
+          ocorridoEm,
+          observacao: 'Cobrança expirada — compensação',
+        });
+        if (resultado.mudouStatus && resultado.eventId) {
+          await this.compensacao.avancarAposEntradaEmCancelamento(contexto, {
+            ordemServicoId: envelope.ordemServicoId,
+            rodada: envelope.rodada,
+            causationId: resultado.eventId,
+          });
+        }
+        break;
+      }
       case TipoFatoSaga.REPARO_INICIADO:
+        if (bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO) {
+          await this.compensacao.registrarReparoIniciadoDuranteCancelamento(
+            contexto,
+            envelope.ordemServicoId,
+          );
+          break;
+        }
         await this.transicoes.aplicar(contexto, {
           ordemServicoId: envelope.ordemServicoId,
           aplicar: (os, quando) => os.registrarReparoIniciado(quando),
@@ -225,11 +311,140 @@ export class ReagirFatoSagaUseCase {
           observacao: 'Reparo iniciado',
         });
         break;
-      case TipoFatoSaga.REPARO_CONCLUIDO:
-        await this.tratarReparoConcluido(contexto, envelope, ocorridoEm);
+      case TipoFatoSaga.RESPOSTA_CANCELAMENTO:
+        await this.compensacao.tratarRespostaCancelamento(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.eventId,
+          envelope.payload as RespostaCancelamentoPayload,
+        );
+        break;
+      case TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO:
+        await this.compensacao.tratarRespostaCancelamentoFinanceiro(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.eventId,
+          envelope.payload as RespostaCancelamentoFinanceiroPayload,
+        );
+        break;
+      case TipoFatoSaga.SITUACAO_FINANCEIRA:
+        await this.tratarSituacaoFinanceira(
+          contexto,
+          envelope,
+          bloqueada.ordem.status,
+          ocorridoEm,
+        );
+        break;
+      case TipoFatoSaga.REPARO_FALHOU:
+      case TipoFatoSaga.REPARO_INTERROMPIDO:
+        await this.tratarFatoTerminalExecucao(contexto, envelope, ocorridoEm);
+        break;
+      case TipoFatoSaga.ESTORNO_CONCLUIDO:
+      case TipoFatoSaga.PENDENCIA_RESOLVIDA:
+        await this.resolverPendenciaFinanceiraPosEncerramento(
+          contexto,
+          envelope,
+        );
+        break;
+      case TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO:
+        await this.abrirPendenciaFinanceira(
+          contexto,
+          envelope,
+          envelope.payload as PagamentoConfirmadoPayload,
+        );
         break;
       default:
         break;
+    }
+  }
+
+  private async tratarSituacaoFinanceira(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    status: StatusOS,
+    ocorridoEm: Date,
+  ): Promise<void> {
+    const payload = envelope.payload as SituacaoFinanceiraPayload;
+    if (
+      status === StatusOS.AGUARDANDO_PAGAMENTO &&
+      payload.situacaoPagamento === SituacaoPagamentoFinanceira.SEM_PAGAMENTO
+    ) {
+      await this.transicoes.aplicar(contexto, {
+        ordemServicoId: envelope.ordemServicoId,
+        aplicar: (os, quando) =>
+          os.registrarCompensacaoIniciada(
+            'Sem pagamento confirmado após consulta',
+            quando,
+          ),
+        ocorridoEm,
+        observacao: 'Situação financeira SEM_PAGAMENTO',
+      });
+      return;
+    }
+    if (status === StatusOS.EM_CANCELAMENTO) {
+      await this.compensacao.tratarSituacaoFinanceiraE10(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.eventId,
+        payload,
+      );
+    }
+  }
+
+  private async tratarFatoTerminalExecucao(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    ocorridoEm: Date,
+  ): Promise<void> {
+    const payload = envelope.payload as ReparoConcluidoPayload;
+    const pecas =
+      payload.pecasUtilizadas?.map((p) => ({
+        itemId: p.itemId,
+        quantidade: p.quantidade,
+      })) ?? [];
+    const bloqueada = await this.ordens.bloquearParaAtualizacao(
+      contexto,
+      envelope.ordemServicoId,
+    );
+    if (!bloqueada) {
+      return;
+    }
+    if (bloqueada.ordem.status !== StatusOS.EM_CANCELAMENTO) {
+      await this.transicoes.aplicar(contexto, {
+        ordemServicoId: envelope.ordemServicoId,
+        aplicar: (os, quando) =>
+          os.registrarCompensacaoIniciada(
+            'Falha ou interrupção do reparo',
+            quando,
+          ),
+        ocorridoEm,
+        observacao: 'Compensação por falha/interrupção',
+      });
+    }
+    await this.compensacao.registrarFatoTerminalExecucao(
+      contexto,
+      envelope.ordemServicoId,
+      pecas,
+    );
+  }
+
+  private async resolverPendenciaFinanceiraPosEncerramento(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const abertas = await cliente.pendenciaOs.findMany({
+      where: {
+        ordemServicoId: envelope.ordemServicoId,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+      },
+    });
+    for (const pendencia of abertas) {
+      await cliente.pendenciaOs.update({
+        where: { id: pendencia.id },
+        data: { resolvida: true, resolvidaEm: new Date() },
+      });
     }
   }
 
