@@ -5,7 +5,10 @@ import {
   EVENTO_DIAGNOSTICO_INICIADO,
   EVENTO_ORCAMENTO_GERADO,
   EVENTO_ORCAMENTO_REJEITADO,
+  EVENTO_COBRANCA_CRIADA,
   EVENTO_COBRANCA_EXPIRADA,
+  EVENTO_PAGAMENTO_DISPONIVEL,
+  DESTINO_TOPICO_NOTIFICACAO,
   EVENTO_ESTORNO_CONCLUIDO,
   EVENTO_PAGAMENTO_CONFIRMADO,
   EVENTO_PAGAMENTO_TARDIO_REGISTRADO,
@@ -22,6 +25,7 @@ import {
 } from '@/shared/messaging/envelope';
 import { PassoCompensacaoSaga } from '@/shared/generated/prisma/enums';
 import { JsonLoggerService } from '@/shared/observability/json-logger.service';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 import { DESTINO_FILA_EXECUTION } from '@/shared/messaging/envelope';
 import {
   TipoPedidoSaga,
@@ -42,6 +46,7 @@ import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
 import { TipoFatoSaga } from '../../domain/tipo-fato-saga';
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
 import type { ProjecaoFinanceiraGateway } from '../ports/projecao-financeira.gateway';
+import type { OutboxGateway } from '@/shared/messaging/application/ports/outbox.gateway';
 import type { EstadoCompensacaoGateway } from '../ports/estado-compensacao.gateway';
 import {
   CompensacaoSagaService,
@@ -49,6 +54,7 @@ import {
   type RespostaCancelamentoPayload,
   type SituacaoFinanceiraPayload,
 } from '../services/compensacao-saga.service';
+import { ConsultaPrazoReferenciaService } from '../services/consulta-prazo-referencia.service';
 import { SituacaoPagamentoFinanceira } from '../../domain/consulta-financeira';
 
 const MAPA_EVENTO_FATO: Record<string, TipoFatoSaga> = {
@@ -59,6 +65,7 @@ const MAPA_EVENTO_FATO: Record<string, TipoFatoSaga> = {
   [EVENTO_PAGAMENTO_CONFIRMADO]: TipoFatoSaga.PAGAMENTO_CONFIRMADO,
   [EVENTO_REPARO_INICIADO]: TipoFatoSaga.REPARO_INICIADO,
   [EVENTO_REPARO_CONCLUIDO]: TipoFatoSaga.REPARO_CONCLUIDO,
+  [EVENTO_COBRANCA_CRIADA]: TipoFatoSaga.COBRANCA_CRIADA,
   [EVENTO_COBRANCA_EXPIRADA]: TipoFatoSaga.COBRANCA_EXPIRADA,
   [EVENTO_SITUACAO_FINANCEIRA]: TipoFatoSaga.SITUACAO_FINANCEIRA,
   [EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO]: TipoFatoSaga.RESPOSTA_CANCELAMENTO,
@@ -94,6 +101,9 @@ export class ReagirFatoSagaUseCase {
     private readonly prisma: PrismaService,
     private readonly compensacao: CompensacaoSagaService,
     private readonly estadoCompensacao: EstadoCompensacaoGateway,
+    private readonly outbox: OutboxGateway,
+    private readonly consultaPrazo: ConsultaPrazoReferenciaService,
+    private readonly osMetrics: OsMetricsService,
   ) {}
 
   async executar(
@@ -232,14 +242,28 @@ export class ReagirFatoSagaUseCase {
           observacao: 'Tarefa devolvida à fila',
         });
         break;
-      case TipoFatoSaga.ORCAMENTO_GERADO:
+      case TipoFatoSaga.ORCAMENTO_GERADO: {
+        const payloadOrcamento = envelope.payload as {
+          orcamentoId?: string;
+          valorTotalCentavos?: number;
+        };
         await this.transicoes.aplicar(contexto, {
           ordemServicoId: envelope.ordemServicoId,
           aplicar: (os, quando) => os.registrarOrcamentoGerado(quando),
           ocorridoEm,
           observacao: 'Orçamento gerado',
         });
+        if (payloadOrcamento.orcamentoId) {
+          await this.projecao.registrarOrcamento(contexto, {
+            ordemServicoId: envelope.ordemServicoId,
+            rodada: envelope.rodada,
+            orcamentoId: payloadOrcamento.orcamentoId,
+            valorTotalCentavos: payloadOrcamento.valorTotalCentavos ?? 0,
+            eventId: envelope.eventId,
+          });
+        }
         break;
+      }
       case TipoFatoSaga.ORCAMENTO_REJEITADO:
         await this.transicoes.aplicar(contexto, {
           ordemServicoId: envelope.ordemServicoId,
@@ -275,6 +299,9 @@ export class ReagirFatoSagaUseCase {
       }
       case TipoFatoSaga.REPARO_CONCLUIDO:
         await this.tratarReparoConcluido(contexto, envelope, ocorridoEm);
+        break;
+      case TipoFatoSaga.COBRANCA_CRIADA:
+        await this.tratarCobrancaCriada(contexto, envelope, bloqueada);
         break;
       case TipoFatoSaga.COBRANCA_EXPIRADA: {
         const resultado = await this.transicoes.aplicar(contexto, {
@@ -341,9 +368,10 @@ export class ReagirFatoSagaUseCase {
         break;
       case TipoFatoSaga.ESTORNO_CONCLUIDO:
       case TipoFatoSaga.PENDENCIA_RESOLVIDA:
-        await this.resolverPendenciaFinanceiraPosEncerramento(
+        await this.tratarPendenciaResolvidaOuEstorno(
           contexto,
           envelope,
+          bloqueada.ordem.status,
         );
         break;
       case TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO:
@@ -365,21 +393,100 @@ export class ReagirFatoSagaUseCase {
     ocorridoEm: Date,
   ): Promise<void> {
     const payload = envelope.payload as SituacaoFinanceiraPayload;
-    if (
-      status === StatusOS.AGUARDANDO_PAGAMENTO &&
-      payload.situacaoPagamento === SituacaoPagamentoFinanceira.SEM_PAGAMENTO
-    ) {
-      await this.transicoes.aplicar(contexto, {
-        ordemServicoId: envelope.ordemServicoId,
-        aplicar: (os, quando) =>
-          os.registrarCompensacaoIniciada(
-            'Sem pagamento confirmado após consulta',
-            quando,
-          ),
-        ocorridoEm,
-        observacao: 'Situação financeira SEM_PAGAMENTO',
-      });
-      return;
+    if (status === StatusOS.AGUARDANDO_PAGAMENTO) {
+      if (
+        payload.situacaoPagamento === SituacaoPagamentoFinanceira.PAGO_NO_PRAZO
+      ) {
+        await this.pedidos.marcarConcluidoPorTipo(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.rodada,
+          TipoPedidoSaga.CONSULTAR_SITUACAO_FINANCEIRA,
+        );
+        await this.encerrarConsultaPrazoReferencia(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.rodada,
+        );
+        if (payload.orderId) {
+          await this.registrarPagamento(contexto, envelope, {
+            cobrancaId: payload.cobrancaId,
+            orderId: payload.orderId,
+            valorCentavos: payload.valorCentavos,
+          });
+        }
+        const resultado = await this.transicoes.aplicar(contexto, {
+          ordemServicoId: envelope.ordemServicoId,
+          aplicar: (os, quando) => os.registrarPagamentoConfirmado(quando),
+          ocorridoEm,
+          observacao: 'Pagamento confirmado no prazo (consulta Billing)',
+        });
+        if (resultado.mudouStatus && resultado.eventId) {
+          const pedidoEventId =
+            await this.transicoes.registrarIniciarReparoNaOutbox(
+              contexto,
+              resultado.bloqueada,
+              resultado.eventId,
+            );
+          await this.pedidos.registrar(contexto, {
+            ordemServicoId: envelope.ordemServicoId,
+            rodada: envelope.rodada,
+            tipo: TipoPedidoSaga.INICIAR_REPARO,
+            destino: DESTINO_FILA_EXECUTION,
+            eventId: pedidoEventId,
+          });
+        }
+        return;
+      }
+      if (
+        payload.situacaoPagamento === SituacaoPagamentoFinanceira.INDETERMINADA
+      ) {
+        await this.pedidos.marcarConcluidoPorTipo(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.rodada,
+          TipoPedidoSaga.CONSULTAR_SITUACAO_FINANCEIRA,
+        );
+        await this.consultaPrazo.agendarProximaReconsulta(
+          contexto,
+          envelope.ordemServicoId,
+        );
+        this.osMetrics.recordSituacaoFinanceiraIndeterminada();
+        return;
+      }
+      if (
+        payload.situacaoPagamento === SituacaoPagamentoFinanceira.SEM_PAGAMENTO
+      ) {
+        await this.pedidos.marcarConcluidoPorTipo(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.rodada,
+          TipoPedidoSaga.CONSULTAR_SITUACAO_FINANCEIRA,
+        );
+        await this.encerrarConsultaPrazoReferencia(
+          contexto,
+          envelope.ordemServicoId,
+          envelope.rodada,
+        );
+        const resultado = await this.transicoes.aplicar(contexto, {
+          ordemServicoId: envelope.ordemServicoId,
+          aplicar: (os, quando) =>
+            os.registrarCompensacaoIniciada(
+              'Sem pagamento confirmado após consulta',
+              quando,
+            ),
+          ocorridoEm,
+          observacao: 'Situação financeira SEM_PAGAMENTO',
+        });
+        if (resultado.mudouStatus && resultado.eventId) {
+          await this.compensacao.avancarAposEntradaEmCancelamento(contexto, {
+            ordemServicoId: envelope.ordemServicoId,
+            rodada: envelope.rodada,
+            causationId: resultado.eventId,
+          });
+        }
+        return;
+      }
     }
     if (status === StatusOS.EM_CANCELAMENTO) {
       await this.compensacao.tratarSituacaoFinanceiraE10(
@@ -428,10 +535,15 @@ export class ReagirFatoSagaUseCase {
     );
   }
 
-  private async resolverPendenciaFinanceiraPosEncerramento(
+  private async tratarPendenciaResolvidaOuEstorno(
     contexto: ContextoTransacao,
     envelope: EnvelopeMensagem,
+    status: StatusOS,
   ): Promise<void> {
+    const payload = envelope.payload as {
+      pendenciaId?: string;
+      cobrancaId?: string;
+    };
     const cliente = obterClienteTransacao(contexto, this.prisma);
     const abertas = await cliente.pendenciaOs.findMany({
       where: {
@@ -440,11 +552,29 @@ export class ReagirFatoSagaUseCase {
         resolvida: false,
       },
     });
-    for (const pendencia of abertas) {
-      await cliente.pendenciaOs.update({
-        where: { id: pendencia.id },
-        data: { resolvida: true, resolvidaEm: new Date() },
-      });
+    const alvo = abertas.find((pendencia) => {
+      const detalhes = pendencia.detalhes as Record<string, unknown>;
+      if (payload.pendenciaId) {
+        return detalhes.pendenciaId === payload.pendenciaId;
+      }
+      if (payload.cobrancaId) {
+        return detalhes.cobrancaId === payload.cobrancaId;
+      }
+      return false;
+    });
+    if (!alvo) {
+      return;
+    }
+    await cliente.pendenciaOs.update({
+      where: { id: alvo.id },
+      data: { resolvida: true, resolvidaEm: new Date() },
+    });
+    if (status === StatusOS.EM_CANCELAMENTO) {
+      await this.compensacao.avancarSeEmCancelamento(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.eventId,
+      );
     }
   }
 
@@ -466,12 +596,140 @@ export class ReagirFatoSagaUseCase {
     });
   }
 
+  private async tratarCobrancaCriada(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    bloqueada: NonNullable<
+      Awaited<ReturnType<OrdemServicoGateway['bloquearParaAtualizacao']>>
+    >,
+  ): Promise<void> {
+    const payload = envelope.payload as {
+      cobrancaId?: string;
+      orderId?: string;
+      linkPagamento?: string;
+      valorCentavos?: number;
+      prazoPagamento?: string;
+    };
+    if (!payload.orderId) {
+      return;
+    }
+    const criado = await this.projecao.registrarPagamento(contexto, {
+      ordemServicoId: envelope.ordemServicoId,
+      rodada: envelope.rodada,
+      cobrancaId: payload.cobrancaId ?? null,
+      orderId: payload.orderId,
+      valorCentavos: payload.valorCentavos ?? null,
+      linkPagamento: payload.linkPagamento ?? null,
+      eventId: envelope.eventId,
+    });
+    if (!payload.linkPagamento) {
+      return;
+    }
+    if (
+      criado === 'duplicado' &&
+      (await this.projecao.jaNotificouPagamentoDisponivel(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.rodada,
+        payload.orderId,
+      ))
+    ) {
+      return;
+    }
+    const eventId = randomUUID();
+    await this.outbox.registrar(contexto, {
+      eventId,
+      eventType: EVENTO_PAGAMENTO_DISPONIVEL,
+      envelope: {
+        eventId,
+        eventType: EVENTO_PAGAMENTO_DISPONIVEL,
+        version: 1,
+        occurredAt: envelope.occurredAt,
+        source: 'os-service',
+        correlationId: bloqueada.ordem.correlationId,
+        causationId: envelope.eventId,
+        ordemServicoId: envelope.ordemServicoId,
+        rodada: envelope.rodada,
+        payload: {
+          destinatario: {
+            nome: bloqueada.cliente.nome,
+            email: bloqueada.cliente.email,
+          },
+          numeroOs: bloqueada.ordem.numero,
+          linkPagamento: payload.linkPagamento,
+          prazoPagamento: payload.prazoPagamento,
+          valorCentavos: payload.valorCentavos,
+        },
+      },
+      correlationId: bloqueada.ordem.correlationId,
+      destino: DESTINO_TOPICO_NOTIFICACAO,
+    });
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    await cliente.projecaoFinanceiraOs.updateMany({
+      where: {
+        ordemServicoId: envelope.ordemServicoId,
+        rodada: envelope.rodada,
+        orderId: payload.orderId,
+        natureza: 'PAGAMENTO',
+      },
+      data: { linkPagamento: payload.linkPagamento },
+    });
+  }
+
+  private async encerrarConsultaPrazoReferencia(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const abertas = await cliente.pendenciaOs.findMany({
+      where: {
+        ordemServicoId,
+        rodada,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+      },
+    });
+    const agora = new Date();
+    for (const pendencia of abertas) {
+      const detalhes = pendencia.detalhes as Record<string, unknown>;
+      if (detalhes.natureza === 'CONSULTA_PRAZO_REFERENCIA') {
+        await cliente.pendenciaOs.update({
+          where: { id: pendencia.id },
+          data: { resolvida: true, resolvidaEm: agora },
+        });
+      }
+    }
+    const snapshot = await this.estadoCompensacao.obterOuCriar(
+      contexto,
+      ordemServicoId,
+      rodada,
+    );
+    snapshot.consultaIdVigente = null;
+    await this.estadoCompensacao.salvar(contexto, snapshot);
+  }
+
   private async abrirPendenciaFinanceira(
     contexto: ContextoTransacao,
     envelope: EnvelopeMensagem,
     payload: PagamentoConfirmadoPayload,
   ): Promise<void> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
+    const duplicada = await cliente.pendenciaOs.findFirst({
+      where: {
+        ordemServicoId: envelope.ordemServicoId,
+        rodada: envelope.rodada,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+        detalhes: {
+          path: ['orderId'],
+          equals: payload.orderId,
+        },
+      },
+    });
+    if (duplicada) {
+      return;
+    }
     await cliente.pendenciaOs.create({
       data: {
         id: randomUUID(),

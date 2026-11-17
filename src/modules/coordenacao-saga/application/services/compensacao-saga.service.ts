@@ -45,6 +45,9 @@ export interface SituacaoFinanceiraPayload {
   consultaId: string;
   situacaoPagamento: SituacaoPagamentoFinanceira;
   situacaoEstorno: SituacaoEstornoFinanceira;
+  cobrancaId?: string;
+  orderId?: string;
+  valorCentavos?: number;
 }
 
 export interface RespostaCancelamentoFinanceiroPayload {

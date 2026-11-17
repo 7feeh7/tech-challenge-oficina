@@ -13,10 +13,18 @@ describe('AjustarEstoqueDivergenciaUseCase', () => {
       liberar: jest.fn(),
       consumir: jest.fn(),
       listarLinhasAtivas: jest.fn(),
-      ajustarFisicoAdministrativo: jest.fn(),
+      ajustarFisicoAdministrativo: jest
+        .fn()
+        .mockResolvedValue({ ordemServicoId: 'os-1' }),
+      possuiConsumoAplicado: jest.fn(),
     };
 
-    const useCase = new AjustarEstoqueDivergenciaUseCase(gateway, uow);
+    const compensacao = { avancarSeEmCancelamento: jest.fn() };
+    const useCase = new AjustarEstoqueDivergenciaUseCase(
+      gateway,
+      uow,
+      compensacao,
+    );
     await useCase.execute({
       pendenciaId: 'pend',
       pecaId: 'p1',

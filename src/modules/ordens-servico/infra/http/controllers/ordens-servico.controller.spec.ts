@@ -6,6 +6,7 @@ import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/u
 import { ListarOrdensServicoUseCase } from '@/modules/ordens-servico/application/use-cases/listar-ordens-servico.use-case';
 import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
 import { RegistrarRetiradaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-retirada.use-case';
+import { SolicitarConsultaFinanceiraUseCase } from '@/modules/coordenacao-saga/application/use-cases/solicitar-consulta-financeira.use-case';
 import { OrdemServicoNaoEncontradaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { OrdensServicoController } from './ordens-servico.controller';
@@ -25,6 +26,7 @@ const atualizarOrdemMock = { execute: jest.fn() };
 const desistenciaMock = { execute: jest.fn() };
 const retiradaMock = { execute: jest.fn() };
 const calcularTempoMedioMock = { execute: jest.fn() };
+const consultaFinanceiraMock = { execute: jest.fn() };
 
 describe('OrdensServicoController', () => {
   let controller: OrdensServicoController;
@@ -42,6 +44,10 @@ describe('OrdensServicoController', () => {
         {
           provide: CalcularTempoMedioUseCase,
           useValue: calcularTempoMedioMock,
+        },
+        {
+          provide: SolicitarConsultaFinanceiraUseCase,
+          useValue: consultaFinanceiraMock,
         },
       ],
     }).compile();

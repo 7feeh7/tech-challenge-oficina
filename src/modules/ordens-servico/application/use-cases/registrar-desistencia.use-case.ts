@@ -21,7 +21,7 @@ export class RegistrarDesistenciaUseCase extends MudancaOrdemServicoUseCase {
     ordens: OrdemServicoGateway,
     unitOfWork: UnitOfWork,
     transicoes: TransicaoOrdemServicoService,
-    private readonly compensacao?: CompensacaoAvancoPort,
+    private readonly compensacao: CompensacaoAvancoPort,
   ) {
     super(ordens, unitOfWork, transicoes);
   }
@@ -39,7 +39,7 @@ export class RegistrarDesistenciaUseCase extends MudancaOrdemServicoUseCase {
         observacao: 'Desistência registrada',
       });
       if (transicao.mudouStatus && transicao.eventId) {
-        await this.compensacao?.avancarAposEntradaEmCancelamento(contexto, {
+        await this.compensacao.avancarAposEntradaEmCancelamento(contexto, {
           ordemServicoId: id,
           rodada: transicao.bloqueada.ordem.rodadaVigente,
           causationId: transicao.eventId,

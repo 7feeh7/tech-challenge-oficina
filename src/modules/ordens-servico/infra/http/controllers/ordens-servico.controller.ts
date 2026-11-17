@@ -34,6 +34,7 @@ import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/u
 import { ListarOrdensServicoUseCase } from '@/modules/ordens-servico/application/use-cases/listar-ordens-servico.use-case';
 import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
 import { RegistrarRetiradaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-retirada.use-case';
+import { SolicitarConsultaFinanceiraUseCase } from '@/modules/coordenacao-saga/application/use-cases/solicitar-consulta-financeira.use-case';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { CreateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/create-ordem-servico.dto';
 import { DesistenciaOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/desistencia-ordem-servico.dto';
@@ -57,6 +58,7 @@ export class OrdensServicoController {
     private readonly registrarDesistencia: RegistrarDesistenciaUseCase,
     private readonly registrarRetirada: RegistrarRetiradaUseCase,
     private readonly calcularTempoMedio: CalcularTempoMedioUseCase,
+    private readonly solicitarConsultaFinanceira: SolicitarConsultaFinanceiraUseCase,
   ) {}
 
   @Post()
@@ -151,6 +153,20 @@ export class OrdensServicoController {
     @Body() body: DesistenciaOrdemServicoDto,
   ) {
     return await this.registrarDesistencia.execute(id, body);
+  }
+
+  @Post(':id/consulta-financeira')
+  @Roles(PerfilUsuario.ADMINISTRADOR)
+  @Idempotent('ordens-servico.consulta-financeira')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary:
+      'Força nova consulta da situação financeira (prazo de referência ou exceção E10)',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 202, description: 'Consulta solicitada ou ignorada.' })
+  async consultaFinanceira(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.solicitarConsultaFinanceira.execute(id);
   }
 
   @Post(':id/retirada')

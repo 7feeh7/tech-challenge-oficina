@@ -102,7 +102,29 @@ export function decidir(
   }
 
   if (
+    fato === TipoFatoSaga.SITUACAO_FINANCEIRA &&
+    ordem.status === StatusOS.AGUARDANDO_PAGAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.COBRANCA_CRIADA &&
+    ordem.status === StatusOS.AGUARDANDO_PAGAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
     fato === TipoFatoSaga.REPARO_INICIADO &&
+    ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    (fato === TipoFatoSaga.ESTORNO_CONCLUIDO ||
+      fato === TipoFatoSaga.PENDENCIA_RESOLVIDA) &&
     ordem.status === StatusOS.EM_CANCELAMENTO
   ) {
     return AcaoDecisao.APLICAR;

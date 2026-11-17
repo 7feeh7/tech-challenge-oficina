@@ -1,4 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
+import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
+import type { CompensacaoAvancoPort } from '@/shared/saga/compensacao-avanco.port';
 import { PrismaModule } from '@/shared/database/prisma.module';
 import { UNIT_OF_WORK } from '@/shared/database/unit-of-work.port';
 import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
@@ -12,7 +15,7 @@ import { PrismaReservaEstoqueGateway } from './infra/persistence/prisma-reserva-
 import { ReservasEstoqueController } from './infra/http/controllers/reservas-estoque.controller';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, forwardRef(() => CoordenacaoSagaModule)],
   controllers: [ReservasEstoqueController],
   providers: [
     PrismaReservaEstoqueGateway,
@@ -40,9 +43,12 @@ import { ReservasEstoqueController } from './infra/http/controllers/reservas-est
     },
     {
       provide: AjustarEstoqueDivergenciaUseCase,
-      useFactory: (reservas: ReservaEstoqueGateway, uow: UnitOfWork) =>
-        new AjustarEstoqueDivergenciaUseCase(reservas, uow),
-      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK],
+      useFactory: (
+        reservas: ReservaEstoqueGateway,
+        uow: UnitOfWork,
+        compensacao: CompensacaoAvancoPort,
+      ) => new AjustarEstoqueDivergenciaUseCase(reservas, uow, compensacao),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK, COMPENSACAO_AVANCO],
     },
   ],
   exports: [

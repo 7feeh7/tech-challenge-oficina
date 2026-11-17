@@ -16,10 +16,16 @@ describe('RegistrarDesistenciaUseCase', () => {
       criarDetalheFake({ status: StatusOS.EM_CANCELAMENTO }),
     );
 
+    const compensacao = {
+      avancarAposEntradaEmCancelamento: jest.fn(),
+      avancarSeEmCancelamento: jest.fn(),
+    };
+
     const useCase = new RegistrarDesistenciaUseCase(
       gateway,
       new UnitOfWorkFake(),
       transicoes,
+      compensacao,
     );
 
     const result = await useCase.execute('uuid-os1', { motivo: 'Desistiu' });

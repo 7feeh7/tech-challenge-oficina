@@ -433,7 +433,14 @@ describe('OS — domínio da ordem (integração)', () => {
         ].map((o) => o.id),
       );
 
-      const pagina = await listar.execute(1, 1000);
+      const totalAtivas = await prisma.ordemServico.count({
+        where: {
+          status: {
+            notIn: [StatusOS.CANCELADA, StatusOS.FINALIZADA, StatusOS.ENTREGUE],
+          },
+        },
+      });
+      const pagina = await listar.execute(1, totalAtivas + 10);
       const ids = pagina.data
         .map((o) => o.id)
         .filter((id): id is string => id !== undefined && meus.has(id));

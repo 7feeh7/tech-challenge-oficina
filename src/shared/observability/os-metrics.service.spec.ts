@@ -60,6 +60,14 @@ describe('OsMetricsService', () => {
     );
   });
 
+  it('emite contador de situação financeira indeterminada', () => {
+    service.recordSituacaoFinanceiraIndeterminada();
+    expect(mockIncrement).toHaveBeenCalled();
+    expect(mockIncrement.mock.calls[0][0]).toBe(
+      METRIC_NAMES.situacaoFinanceiraIndeterminada,
+    );
+  });
+
   it('ignora status fora do catalogo de duracao', async () => {
     await service.recordTransicao(
       'os-id-interno',

@@ -116,5 +116,5 @@ export interface ReservaEstoqueGateway {
       motivo: string;
       responsavelId: string;
     },
-  ): Promise<void>;
+  ): Promise<{ ordemServicoId: string }>;
 }

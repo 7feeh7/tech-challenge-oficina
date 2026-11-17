@@ -1,4 +1,9 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import { PrismaModule } from '@/shared/database/prisma.module';
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
 import { PROCESSADORES_MENSAGEM } from '@/shared/messaging/application/ports/tokens';
@@ -29,6 +34,11 @@ import { PrismaEstadoCompensacaoGateway } from './infra/persistence/prisma-estad
 import { ProcessadoresSagaProvider } from './infra/messaging/processadores-saga.provider';
 import { ComandosSagaOutboxService } from './application/services/comandos-saga-outbox.service';
 import { CompensacaoSagaService } from './application/services/compensacao-saga.service';
+import { ConsultaPrazoReferenciaService } from './application/services/consulta-prazo-referencia.service';
+import { PrismaConsultaPrazoOrdemGateway } from './infra/persistence/prisma-consulta-prazo-ordem.gateway';
+import { ProcessadorPrazoReferenciaService } from './infra/jobs/processador-prazo-referencia.service';
+import { SolicitarConsultaFinanceiraUseCase } from './application/use-cases/solicitar-consulta-financeira.use-case';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 
 @Module({
   imports: [
@@ -36,7 +46,7 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
     ObservabilityModule,
     forwardRef(() => MensageriaModule),
     forwardRef(() => OrdensServicoModule),
-    ReservasEstoqueModule,
+    forwardRef(() => ReservasEstoqueModule),
   ],
   providers: [
     PrismaPedidoEmitidoGateway,
@@ -106,6 +116,49 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
       useExisting: CompensacaoSagaService,
     },
     {
+      provide: ConsultaPrazoReferenciaService,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        estado: PrismaEstadoCompensacaoGateway,
+        comandos: ComandosSagaOutboxService,
+        pedidos: PrismaPedidoEmitidoGateway,
+        prisma: PrismaService,
+        config: ConfigService,
+      ) =>
+        new ConsultaPrazoReferenciaService(
+          ordens,
+          estado,
+          comandos,
+          pedidos,
+          prisma,
+          Number(
+            config.get<string>('PRAZO_REFERENCIA_RECONSULTA_CICLOS') ?? '5',
+          ),
+          Number(
+            config.get<string>('PRAZO_REFERENCIA_VERIFICADOR_INTERVAL_MS') ??
+              '10000',
+          ),
+        ),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        PrismaEstadoCompensacaoGateway,
+        ComandosSagaOutboxService,
+        PrismaPedidoEmitidoGateway,
+        PrismaService,
+        ConfigService,
+      ],
+    },
+    PrismaConsultaPrazoOrdemGateway,
+    ProcessadorPrazoReferenciaService,
+    {
+      provide: SolicitarConsultaFinanceiraUseCase,
+      useFactory: (
+        unitOfWork: UnitOfWork,
+        consulta: ConsultaPrazoReferenciaService,
+      ) => new SolicitarConsultaFinanceiraUseCase(unitOfWork, consulta),
+      inject: [UNIT_OF_WORK, ConsultaPrazoReferenciaService],
+    },
+    {
       provide: ReagirFatoSagaUseCase,
       useFactory: (
         ordens: OrdemServicoGateway,
@@ -118,6 +171,9 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
         prisma: PrismaService,
         compensacao: CompensacaoSagaService,
         estado: PrismaEstadoCompensacaoGateway,
+        outbox: OutboxGateway,
+        consultaPrazo: ConsultaPrazoReferenciaService,
+        osMetrics: OsMetricsService,
       ) =>
         new ReagirFatoSagaUseCase(
           ordens,
@@ -130,6 +186,9 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
           prisma,
           compensacao,
           estado,
+          outbox,
+          consultaPrazo,
+          osMetrics,
         ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
@@ -142,6 +201,9 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
         PrismaService,
         CompensacaoSagaService,
         PrismaEstadoCompensacaoGateway,
+        OUTBOX_GATEWAY,
+        ConsultaPrazoReferenciaService,
+        OsMetricsService,
       ],
     },
     ProcessadoresSagaProvider,
@@ -151,6 +213,10 @@ import { CompensacaoSagaService } from './application/services/compensacao-saga.
       inject: [ProcessadoresSagaProvider],
     },
   ],
-  exports: [PROCESSADORES_MENSAGEM, COMPENSACAO_AVANCO],
+  exports: [
+    PROCESSADORES_MENSAGEM,
+    COMPENSACAO_AVANCO,
+    SolicitarConsultaFinanceiraUseCase,
+  ],
 })
 export class CoordenacaoSagaModule {}

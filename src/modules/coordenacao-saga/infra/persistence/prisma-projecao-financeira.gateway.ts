@@ -5,8 +5,12 @@ import { PrismaService } from '@/shared/database/prisma.service';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import type {
   ProjecaoFinanceiraGateway,
+  RegistrarOrcamentoInput,
   RegistrarPagamentoInput,
 } from '../../application/ports/projecao-financeira.gateway';
+
+const NATUREZA_PAGAMENTO = 'PAGAMENTO';
+const NATUREZA_ORCAMENTO = 'ORCAMENTO';
 
 @Injectable()
 export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGateway {
@@ -19,7 +23,7 @@ export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGatewa
   ): Promise<string | null> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
     const primeira = await cliente.projecaoFinanceiraOs.findFirst({
-      where: { ordemServicoId, rodada },
+      where: { ordemServicoId, rodada, natureza: NATUREZA_PAGAMENTO },
       orderBy: { criadoEm: 'asc' },
       select: { orderId: true },
     });
@@ -34,7 +38,7 @@ export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGatewa
   ): Promise<boolean> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
     const existe = await cliente.projecaoFinanceiraOs.findFirst({
-      where: { ordemServicoId, rodada, orderId },
+      where: { ordemServicoId, rodada, orderId, natureza: NATUREZA_PAGAMENTO },
       select: { id: true },
     });
     return Boolean(existe);
@@ -50,6 +54,44 @@ export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGatewa
         ordemServicoId: input.ordemServicoId,
         rodada: input.rodada,
         orderId: input.orderId,
+        natureza: NATUREZA_PAGAMENTO,
+      },
+    });
+    if (existente) {
+      if (input.linkPagamento && !existente.linkPagamento) {
+        await cliente.projecaoFinanceiraOs.update({
+          where: { id: existente.id },
+          data: { linkPagamento: input.linkPagamento },
+        });
+      }
+      return 'duplicado';
+    }
+    await cliente.projecaoFinanceiraOs.create({
+      data: {
+        id: randomUUID(),
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        natureza: NATUREZA_PAGAMENTO,
+        cobrancaId: input.cobrancaId,
+        orderId: input.orderId,
+        valorCentavos: input.valorCentavos,
+        linkPagamento: input.linkPagamento ?? null,
+        eventId: input.eventId,
+      },
+    });
+    return 'criado';
+  }
+
+  async registrarOrcamento(
+    contexto: ContextoTransacao,
+    input: RegistrarOrcamentoInput,
+  ): Promise<'criado' | 'duplicado'> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const existente = await cliente.projecaoFinanceiraOs.findFirst({
+      where: {
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        orcamentoId: input.orcamentoId,
       },
     });
     if (existente) {
@@ -60,12 +102,32 @@ export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGatewa
         id: randomUUID(),
         ordemServicoId: input.ordemServicoId,
         rodada: input.rodada,
-        cobrancaId: input.cobrancaId,
-        orderId: input.orderId,
-        valorCentavos: input.valorCentavos,
+        natureza: NATUREZA_ORCAMENTO,
+        orcamentoId: input.orcamentoId,
+        orderId: `orcamento:${input.orcamentoId}`,
+        valorCentavos: input.valorTotalCentavos,
         eventId: input.eventId,
       },
     });
     return 'criado';
+  }
+
+  async jaNotificouPagamentoDisponivel(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    orderId: string,
+  ): Promise<boolean> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const linha = await cliente.projecaoFinanceiraOs.findFirst({
+      where: {
+        ordemServicoId,
+        rodada,
+        orderId,
+        natureza: NATUREZA_PAGAMENTO,
+      },
+      select: { linkPagamento: true },
+    });
+    return Boolean(linha?.linkPagamento);
   }
 }
