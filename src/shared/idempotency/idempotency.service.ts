@@ -3,6 +3,8 @@ import { createHash } from 'crypto';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
+import { ConteudoDivergenteInternoError } from '@/modules/rotas-internas/domain/erros-internos';
 import { devePersistirResultadoIdempotente } from './idempotencia-interna';
 
 const TTL_HOURS = 24;
@@ -20,6 +22,36 @@ export class IdempotencyService {
     return createHash('sha256')
       .update(JSON.stringify(body ?? {}))
       .digest('hex');
+  }
+
+  async buscarNaTransacao(
+    contexto: ContextoTransacao,
+    key: string,
+    scope: string,
+    requestHash: string,
+  ): Promise<StoredIdempotentResponse | null> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const record = await cliente.idempotencyRecord.findUnique({
+      where: {
+        idempotencyKey_scope: {
+          idempotencyKey: key,
+          scope,
+        },
+      },
+    });
+
+    if (!record) {
+      return null;
+    }
+
+    if (record.requestHash !== requestHash) {
+      throw new ConteudoDivergenteInternoError();
+    }
+
+    return {
+      statusCode: record.responseStatus,
+      body: record.responseBody,
+    };
   }
 
   async findReplay(

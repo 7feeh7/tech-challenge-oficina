@@ -8,6 +8,8 @@ Complemento da E26 (2026-11-16). Todas as operações que alteram reservas, pend
 
 Operações afetadas: reservar, liberar, consumir, entrada e baixa manual, atualização de peça com quantidade física e ajuste administrativo de divergência.
 
+Na rota interna `POST /internal/ordens-servico/{id}/reservas` (E28), a ordem de serviço é bloqueada **antes** das reservas e peças, na mesma transação do Unit of Work do chamador.
+
 ## Transições de reserva
 
 Liberação e consumo só alteram linhas lidas sob bloqueio com situação `ATIVA`. A mudança de situação usa `UPDATE … WHERE situacao = 'ATIVA'`; se a contagem de linhas afetadas for diferente de 1, a transação é desfeita antes de alterar a peça.
@@ -21,5 +23,6 @@ Liberação e consumo só alteram linhas lidas sob bloqueio com situação `ATIV
 | Consumo sem reserva ativa, mas já liberada/consumida | `ReservaJaProcessadaError` | 409 |
 | Consumo/liberar sem nenhuma reserva na rodada | `ReservaEstoqueNaoEncontradaError` | 404 |
 | Ajuste com pendência já resolvida (concorrência) | `PendenciaInventarioJaResolvidaError` | 409 |
+| Reserva repetida na mesma OS, rodada e peça (`P2002` em `reservas_estoque`) | `ReservaDuplicadaInternaError` (`ESTADO_INCOMPATIVEL` na rota interna) | 409 |
 
 Violações de `CHECK` ou índice único no banco são convertidas em erros de domínio acima sempre que possível; não devem chegar ao cliente como 500 genérico.

@@ -222,4 +222,13 @@ describe('PrismaClienteGateway', () => {
 
     expect(db.delete).toHaveBeenCalledWith({ where: { id: 'c1' } });
   });
+
+  it('buscarPorCpf normaliza e consulta por cpfCnpj', async () => {
+    db.findFirst.mockResolvedValue(raw);
+    const encontrado = await gateway.buscarPorCpf('529.982.247-25');
+    expect(encontrado).toBeInstanceOf(Cliente);
+    expect(db.findFirst).toHaveBeenCalledWith({
+      where: { cpfCnpj: '52998224725' },
+    });
+  });
 });

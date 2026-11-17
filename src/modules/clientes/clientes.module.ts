@@ -58,5 +58,6 @@ import { PrismaClienteGateway } from './infra/persistence/prisma-cliente.gateway
       inject: [CLIENTE_GATEWAY],
     },
   ],
+  exports: [CLIENTE_GATEWAY],
 })
 export class ClientesModule {}

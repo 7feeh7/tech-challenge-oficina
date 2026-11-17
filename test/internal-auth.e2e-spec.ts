@@ -17,11 +17,15 @@ import { JwtService } from '@nestjs/jwt';
 import { sign } from 'jsonwebtoken';
 import { AppModule } from '../src/app.module';
 import { RelacaoChamadorInterno } from '../src/modules/rotas-internas/relacao-chamador-interno';
-import { ChamadorInterno } from '../src/modules/rotas-internas/decorators/chamador-interno.decorator';
 import { RotaInternaPost } from '../src/modules/rotas-internas/decorators/rota-interna-post.decorator';
+import { RotaInternaGet } from '../src/modules/rotas-internas/decorators/rota-interna-get.decorator';
 
 @Controller('internal')
 class ProbeRotasInternasController {
+  @Get('probe/sem-metadado')
+  probeSemMetadado() {
+    return { aberto: true };
+  }
   @Post('probe/billing')
   @RotaInternaPost(RelacaoChamadorInterno.BILLING)
   probeBilling() {
@@ -35,7 +39,7 @@ class ProbeRotasInternasController {
   }
 
   @Get('probe/auth-cpf')
-  @ChamadorInterno(RelacaoChamadorInterno.AUTH_CPF)
+  @RotaInternaGet(RelacaoChamadorInterno.AUTH_CPF)
   probeAuthCpf(@Req() req: { headers: { authorization?: string } }) {
     return { ok: true, autorizado: Boolean(req.headers.authorization) };
   }
@@ -103,6 +107,25 @@ describe('Autenticação RS256 e rotas internas (e2e)', () => {
       .expect(401);
   });
 
+  it('rejeita rota /internal sem metadado de chamador', async () => {
+    await request(app.getHttpServer())
+      .get('/internal/probe/sem-metadado')
+      .expect(401);
+  });
+
+  it('aceita GET interno só com token auth-cpf', async () => {
+    const tokenAuth = process.env.TOKEN_AUTH_CPF_OS!;
+    await request(app.getHttpServer())
+      .get('/internal/probe/auth-cpf')
+      .set('Authorization', `Bearer ${tokenAuth}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/internal/probe/auth-cpf')
+      .set('Authorization', `Bearer ${process.env.TOKEN_BILLING_OS}`)
+      .expect(401);
+  });
+
   it('rejeita JWT de usuário em rota interna', async () => {
     const jwtUsuario = await jwtService.signAsync({
       sub: 'u1',
@@ -118,8 +141,11 @@ describe('Autenticação RS256 e rotas internas (e2e)', () => {
       .expect(401);
   });
 
-  it('omite /internal do Swagger público', () => {
-    const config = new DocumentBuilder().setTitle('t').build();
+  it('omite /internal do Swagger público (mesma lógica do bootstrap)', () => {
+    const config = new DocumentBuilder()
+      .setTitle('Sistema de Oficina Mecânica')
+      .setVersion('1.0.0')
+      .build();
     const document = SwaggerModule.createDocument(app, config);
     for (const path of Object.keys(document.paths)) {
       if (path.startsWith('/internal')) {
@@ -128,5 +154,6 @@ describe('Autenticação RS256 e rotas internas (e2e)', () => {
     }
     const paths = Object.keys(document.paths);
     expect(paths.some((p) => p.startsWith('/internal'))).toBe(false);
+    expect(paths.some((p) => p.startsWith('/v1/'))).toBe(true);
   });
 });

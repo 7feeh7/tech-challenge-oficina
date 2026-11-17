@@ -72,4 +72,17 @@ export function validarConfiguracaoOs(
   exigirPreenchido(ambiente, 'TOKEN_BILLING_OS', 'Token Billing → OS');
   exigirPreenchido(ambiente, 'TOKEN_EXECUTION_OS', 'Token Execution → OS');
   exigirPreenchido(ambiente, 'TOKEN_AUTH_CPF_OS', 'Token auth-cpf → OS');
+
+  exigirPreenchido(ambiente, 'JWT_ISSUER', 'JWT_ISSUER');
+  exigirPreenchido(ambiente, 'JWT_AUDIENCE', 'JWT_AUDIENCE');
+
+  const billing = ambiente.TOKEN_BILLING_OS!.trim();
+  const execution = ambiente.TOKEN_EXECUTION_OS!.trim();
+  const authCpf = ambiente.TOKEN_AUTH_CPF_OS!.trim();
+  const tokens = [billing, execution, authCpf];
+  if (new Set(tokens).size !== tokens.length) {
+    throw new ConfiguracaoOsInvalidaError(
+      'Tokens de chamador interno devem ser distintos entre Billing, Execution e auth-cpf.',
+    );
+  }
 }

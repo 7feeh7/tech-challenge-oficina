@@ -30,11 +30,28 @@ describe('validarConfiguracaoOs', () => {
         NODE_ENV: 'production',
         JWT_PRIVATE_KEY: privateKey,
         JWT_PUBLIC_KEY: publicKey,
+        JWT_ISSUER: 'tech-challenge-auth',
+        JWT_AUDIENCE: 'tech-challenge-api',
         TOKEN_BILLING_OS: 't1',
         TOKEN_EXECUTION_OS: 't2',
         TOKEN_AUTH_CPF_OS: 't3',
       }),
     ).not.toThrow();
+  });
+
+  it('recusa tokens de chamador iguais em produção', () => {
+    expect(() =>
+      validarConfiguracaoOs({
+        NODE_ENV: 'production',
+        JWT_PRIVATE_KEY: privateKey,
+        JWT_PUBLIC_KEY: publicKey,
+        JWT_ISSUER: 'tech-challenge-auth',
+        JWT_AUDIENCE: 'tech-challenge-api',
+        TOKEN_BILLING_OS: 'mesmo',
+        TOKEN_EXECUTION_OS: 'mesmo',
+        TOKEN_AUTH_CPF_OS: 't3',
+      }),
+    ).toThrow(ConfiguracaoOsInvalidaError);
   });
 
   it('falha em produção com PEM inválido', () => {
@@ -54,6 +71,19 @@ describe('validarConfiguracaoOs', () => {
     expect(() =>
       validarConfiguracaoOs({
         NODE_ENV: 'production',
+        JWT_PUBLIC_KEY: publicKey,
+        TOKEN_BILLING_OS: 't1',
+        TOKEN_EXECUTION_OS: 't2',
+        TOKEN_AUTH_CPF_OS: 't3',
+      }),
+    ).toThrow(ConfiguracaoOsInvalidaError);
+  });
+
+  it('falha em produção sem JWT_ISSUER e JWT_AUDIENCE', () => {
+    expect(() =>
+      validarConfiguracaoOs({
+        NODE_ENV: 'production',
+        JWT_PRIVATE_KEY: privateKey,
         JWT_PUBLIC_KEY: publicKey,
         TOKEN_BILLING_OS: 't1',
         TOKEN_EXECUTION_OS: 't2',

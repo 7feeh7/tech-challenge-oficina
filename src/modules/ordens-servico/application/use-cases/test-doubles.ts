@@ -59,4 +59,6 @@ export const criarCatalogoMock = (): jest.Mocked<CatalogoGateway> => ({
     .mockResolvedValue({ id: 'uuid-v1', clienteId: 'uuid-c1' }),
   servicoExiste: jest.fn().mockResolvedValue(true),
   pecaExiste: jest.fn().mockResolvedValue(true),
+  buscarServicoParaDiagnostico: jest.fn(),
+  buscarPecaParaDiagnostico: jest.fn(),
 });

@@ -441,5 +441,12 @@ describe('OrdemServico', () => {
         ItensOficiaisNaoEditaveisError,
       );
     });
+
+    it('preenche diagnosticoConcluidoEm na conclusão do diagnóstico', () => {
+      const ordem = criarOrdem({ status: StatusOS.EM_DIAGNOSTICO });
+      ordem.concluirDiagnostico('Laudo técnico', agora);
+      expect(ordem.diagnostico).toBe('Laudo técnico');
+      expect(ordem.diagnosticoConcluidoEm).toEqual(agora);
+    });
   });
 });

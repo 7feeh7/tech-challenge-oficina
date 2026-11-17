@@ -351,6 +351,23 @@ export class OrdemServico {
     this._itensOficiaisSubstituidos = true;
   }
 
+  concluirDiagnostico(laudo: string, agora: Date): void {
+    if (
+      this._status !== StatusOS.EM_DIAGNOSTICO ||
+      this._diagnosticoConcluidoEm
+    ) {
+      throw new ItensOficiaisNaoEditaveisError();
+    }
+    const texto = OrdemServico.normalizarTexto(laudo);
+    if (!texto) {
+      throw new PatchOrdemServicoNaoPermitidoError(
+        'O laudo do diagnóstico é obrigatório na conclusão.',
+      );
+    }
+    this._diagnostico = texto;
+    this._diagnosticoConcluidoEm = agora;
+  }
+
   // Os itens da rodada anterior ficam até a conclusão do novo diagnóstico, que os
   // substitui: item mantido conserva o preço congelado e só assim dá para saber (D1.7).
   private abrirNovaRodada(): void {
