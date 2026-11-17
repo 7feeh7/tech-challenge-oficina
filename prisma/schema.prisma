@@ -47,6 +47,18 @@ enum TipoPendenciaOs {
   FINANCEIRA
 }
 
+enum SituacaoReconciliacaoConsumo {
+  APLICADO
+  DIVERGENCIA_PENDENTE
+  DIVERGENCIA_RESOLVIDA
+}
+
+enum TipoFatoConsumoEstoque {
+  REPARO_CONCLUIDO
+  REPARO_FALHOU
+  REPARO_INTERROMPIDO
+}
+
 enum TipoPedidoSaga {
   INICIAR_DIAGNOSTICO
   GERAR_ORCAMENTO
@@ -203,6 +215,28 @@ model ReservaEstoque {
   @@map("reservas_estoque")
 }
 
+model ConsumoAplicadoOs {
+  id                    String                       @id @default(uuid()) @db.Uuid
+  ordemServicoId        String                       @map("ordem_servico_id") @db.Uuid
+  ordemServico          OrdemServico                 @relation(fields: [ordemServicoId], references: [id], onDelete: Cascade)
+  rodada                Int
+  eventId               String                       @map("event_id") @db.Uuid
+  fatoOcorridoEm        DateTime                     @map("fato_ocorrido_em")
+  concluidoEm           DateTime?                    @map("concluido_em")
+  tipoFato              TipoFatoConsumoEstoque       @map("tipo_fato")
+  responsavelId         String?                      @map("responsavel_id") @db.VarChar(256)
+  consumoEfetivo        Json                         @map("consumo_efetivo")
+  divergencias          Json
+  situacaoReconciliacao SituacaoReconciliacaoConsumo @map("situacao_reconciliacao")
+  aguardandoFinalizacao Boolean                      @default(false) @map("aguardando_finalizacao")
+  criadoEm              DateTime                     @default(now()) @map("criado_em")
+  atualizadoEm          DateTime                     @updatedAt @map("atualizado_em")
+
+  @@unique([ordemServicoId, rodada], map: "consumos_aplicados_os_ordem_rodada_key")
+  @@index([eventId], map: "consumos_aplicados_os_event_id_idx")
+  @@map("consumos_aplicados_os")
+}
+
 model PendenciaOs {
   id             String          @id @default(uuid()) @db.Uuid
   ordemServicoId String          @map("ordem_servico_id") @db.Uuid
@@ -321,6 +355,7 @@ model OrdemServico {
   historicoStatus          HistoricoStatusOS[]
   movimentacoesEstoque     MovimentacaoEstoque[]
   reservasEstoque          ReservaEstoque[]
+  consumosAplicados        ConsumoAplicadoOs[]
   pendencias               PendenciaOs[]
   pedidosEmitidos          PedidoEmitido[]
   projecoesFinanceiras     ProjecaoFinanceiraOs[]

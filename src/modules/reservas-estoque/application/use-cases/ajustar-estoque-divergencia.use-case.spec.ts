@@ -17,13 +17,16 @@ describe('AjustarEstoqueDivergenciaUseCase', () => {
         .fn()
         .mockResolvedValue({ ordemServicoId: 'os-1' }),
       possuiConsumoAplicado: jest.fn(),
+      possuiConsumoAplicadoNaRodada: jest.fn(),
     };
 
-    const compensacao = { avancarSeEmCancelamento: jest.fn() };
+    const retomadaInventario = {
+      retomarAposResolucaoInventario: jest.fn(),
+    };
     const useCase = new AjustarEstoqueDivergenciaUseCase(
       gateway,
       uow,
-      compensacao,
+      retomadaInventario,
     );
     await useCase.execute({
       pendenciaId: 'pend',

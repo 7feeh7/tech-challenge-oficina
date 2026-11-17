@@ -36,13 +36,33 @@ export interface DivergenciaInventarioDetalhe {
   pecaId: string;
   quantidadeReservada: number;
   quantidadeInformada: number;
+  quantidadePrevista?: number;
+  quantidadeUtilizada?: number;
+  tipo?: string | null;
+  observacao?: string | null;
+  justificativa?: string | null;
   motivo: string;
+}
+
+export interface ContextoConsumoEstoque {
+  eventId: string;
+  fatoOcorridoEm: Date;
+  concluidoEm?: Date | null;
+  responsavelId?: string | null;
+  tipoFato: 'REPARO_CONCLUIDO' | 'REPARO_FALHOU' | 'REPARO_INTERROMPIDO';
+  divergenciasFato?: DivergenciaInventarioDetalhe[];
+  consumoEfetivo?: { itemId: string; quantidade: number }[];
+  aguardandoFinalizacao?: boolean;
 }
 
 export interface ResultadoConsumoReserva {
   linhasAtualizadas: LinhaReservaEstoque[];
   divergencias: DivergenciaInventarioDetalhe[];
+  divergenciasAuditoria: DivergenciaInventarioDetalhe[];
   pendenciaInventarioId: string | null;
+  impedimentoInventario: boolean;
+  consumoAplicadoId: string | null;
+  reutilizado: boolean;
 }
 
 export interface ResultadoIdempotenciaEstoque<T> {
@@ -90,8 +110,15 @@ export interface ReservaEstoqueGateway {
       ordemServicoId: string;
       rodada: number;
       itensUtilizados: ItemReservaEstoque[];
+      contextoFato?: ContextoConsumoEstoque;
     },
   ): Promise<ResultadoConsumoReserva>;
+
+  possuiConsumoAplicadoNaRodada(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+  ): Promise<boolean>;
 
   listarLinhasAtivas(
     contexto: ContextoTransacao,
@@ -99,7 +126,10 @@ export interface ReservaEstoqueGateway {
     rodada: number,
   ): Promise<LinhaReservaEstoque[]>;
 
-  /** Evidência de consumo já aplicado (E29): todas as peças informadas CONSUMIDAS. */
+  /**
+   * Legado pré-migration: todas as peças informadas com reserva CONSUMIDA.
+   * Complemento E29: preferir `possuiConsumoAplicadoNaRodada`.
+   */
   possuiConsumoAplicado(
     contexto: ContextoTransacao,
     ordemServicoId: string,

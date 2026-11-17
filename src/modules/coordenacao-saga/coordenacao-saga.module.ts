@@ -22,6 +22,7 @@ import type { OrdemServicoGateway } from '@/modules/ordens-servico/application/p
 import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
+import { RETOMADA_SAGA_INVENTARIO } from '@/shared/saga/retomada-saga-inventario.port';
 import {
   ESTADO_COMPENSACAO_GATEWAY,
   PEDIDO_EMITIDO_GATEWAY,
@@ -34,6 +35,7 @@ import { PrismaEstadoCompensacaoGateway } from './infra/persistence/prisma-estad
 import { ProcessadoresSagaProvider } from './infra/messaging/processadores-saga.provider';
 import { ComandosSagaOutboxService } from './application/services/comandos-saga-outbox.service';
 import { CompensacaoSagaService } from './application/services/compensacao-saga.service';
+import { RetomadaSagaInventarioService } from './application/services/retomada-saga-inventario.service';
 import { ConsultaPrazoReferenciaService } from './application/services/consulta-prazo-referencia.service';
 import { PrismaConsultaPrazoOrdemGateway } from './infra/persistence/prisma-consulta-prazo-ordem.gateway';
 import { ProcessadorPrazoReferenciaService } from './infra/jobs/processador-prazo-referencia.service';
@@ -114,6 +116,31 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
     {
       provide: COMPENSACAO_AVANCO,
       useExisting: CompensacaoSagaService,
+    },
+    {
+      provide: RetomadaSagaInventarioService,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        transicoes: TransicaoOrdemServicoService,
+        compensacao: CompensacaoSagaService,
+        prisma: PrismaService,
+      ) =>
+        new RetomadaSagaInventarioService(
+          ordens,
+          transicoes,
+          compensacao,
+          prisma,
+        ),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        TransicaoOrdemServicoService,
+        CompensacaoSagaService,
+        PrismaService,
+      ],
+    },
+    {
+      provide: RETOMADA_SAGA_INVENTARIO,
+      useExisting: RetomadaSagaInventarioService,
     },
     {
       provide: ConsultaPrazoReferenciaService,
@@ -216,6 +243,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
   exports: [
     PROCESSADORES_MENSAGEM,
     COMPENSACAO_AVANCO,
+    RETOMADA_SAGA_INVENTARIO,
     SolicitarConsultaFinanceiraUseCase,
   ],
 })

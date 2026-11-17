@@ -1,19 +1,28 @@
 import { criarOrdemFake } from '@/modules/ordens-servico/application/use-cases/test-doubles';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
-import { ReservaJaProcessadaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import {
+  ConsumoAplicadoIncompativelError,
+  ReservaJaProcessadaError,
+} from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { OrdemServicoNaoEncontradaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
+import { EVENTO_REPARO_INTERROMPIDO } from '@/shared/messaging/envelope';
 import {
   EVENTO_COBRANCA_CRIADA,
   EVENTO_COBRANCA_EXPIRADA,
   EVENTO_DIAGNOSTICO_INICIADO,
   EVENTO_ORCAMENTO_GERADO,
+  EVENTO_ORCAMENTO_REJEITADO,
+  EVENTO_TAREFA_DEVOLVIDA_A_FILA,
   EVENTO_PAGAMENTO_CONFIRMADO,
   EVENTO_SITUACAO_FINANCEIRA,
   EVENTO_PENDENCIA_RESOLVIDA,
   EVENTO_REPARO_CONCLUIDO,
+  EVENTO_REPARO_FALHOU,
   EVENTO_REPARO_INICIADO,
   EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
 } from '@/shared/messaging/envelope';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
+import { PassoCompensacaoSaga } from '@/shared/generated/prisma/enums';
 import { ReagirFatoSagaUseCase } from './reagir-fato-saga.use-case';
 
 jest.mock('@/shared/database/obter-cliente-transacao', () => ({
@@ -51,7 +60,10 @@ describe('ReagirFatoSagaUseCase', () => {
       registrarIniciarReparoNaOutbox: jest.fn().mockResolvedValue('pedido-1'),
     };
     const consumirReserva = { execute: jest.fn() };
-    const reservas = { possuiConsumoAplicado: jest.fn() };
+    const reservas = {
+      possuiConsumoAplicado: jest.fn(),
+      possuiConsumoAplicadoNaRodada: jest.fn(),
+    };
     const pedidos = {
       registrar: jest.fn(),
       marcarConcluidoPorTipo: jest.fn(),
@@ -200,9 +212,84 @@ describe('ReagirFatoSagaUseCase', () => {
     consumirReserva.execute = jest.fn().mockResolvedValue({
       divergencias: [{ pecaId: 'p1' }],
       pendenciaInventarioId: 'pend-1',
+      impedimentoInventario: true,
+      reutilizado: false,
     });
     await useCase.executar(contexto, {
       eventId: 'e4',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  it('reentrega com ReservaJaProcessada e registro na rodada segue sem erro', async () => {
+    const { useCase, consumirReserva, reservas, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest
+      .fn()
+      .mockRejectedValue(new ReservaJaProcessadaError());
+    reservas.possuiConsumoAplicadoNaRodada = jest.fn().mockResolvedValue(true);
+    reservas.possuiConsumoAplicado = jest.fn().mockResolvedValue(false);
+    await useCase.executar(contexto, {
+      eventId: 'e-retry',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('reentrega ReservaJaProcessada usa legado CONSUMIDA quando não há registro', async () => {
+    const { useCase, consumirReserva, reservas, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest
+      .fn()
+      .mockRejectedValue(new ReservaJaProcessadaError());
+    reservas.possuiConsumoAplicadoNaRodada = jest.fn().mockResolvedValue(false);
+    reservas.possuiConsumoAplicado = jest.fn().mockResolvedValue(true);
+    await useCase.executar(contexto, {
+      eventId: 'e-leg',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(reservas.possuiConsumoAplicado).toHaveBeenCalled();
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('reentrega com consumo reutilizado e impedimento não finaliza', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      divergencias: [{ pecaId: 'p1' }],
+      impedimentoInventario: true,
+      reutilizado: true,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-imp-reuse',
       eventType: EVENTO_REPARO_CONCLUIDO,
       version: 1,
       occurredAt: new Date().toISOString(),
@@ -223,7 +310,8 @@ describe('ReagirFatoSagaUseCase', () => {
     consumirReserva.execute = jest
       .fn()
       .mockRejectedValue(new ReservaJaProcessadaError());
-    reservas.possuiConsumoAplicado = jest.fn().mockResolvedValue(true);
+    reservas.possuiConsumoAplicadoNaRodada = jest.fn().mockResolvedValue(true);
+    reservas.possuiConsumoAplicado = jest.fn().mockResolvedValue(false);
     await useCase.executar(contexto, {
       eventId: 'e5',
       eventType: EVENTO_REPARO_CONCLUIDO,
@@ -348,12 +436,21 @@ describe('ReagirFatoSagaUseCase', () => {
   });
 
   it('PAGO_NO_PRAZO na consulta de prazo confirma pagamento', async () => {
-    const { useCase, transicoes, estadoCompensacao } = montarUseCase(
+    const { useCase, transicoes, estadoCompensacao, pedidos } = montarUseCase(
       StatusOS.AGUARDANDO_PAGAMENTO,
     );
     estadoCompensacao.obterOuCriar = jest.fn().mockResolvedValue({
       consultaIdVigente: 'c1',
       passo: 'EXECUCAO',
+    });
+    transicoes.aplicar.mockResolvedValue({
+      mudouStatus: true,
+      eventId: 'ev-pago-prazo',
+      bloqueada: {
+        ordem: criarOrdemFake({ status: StatusOS.AGUARDANDO_EXECUCAO }),
+        cliente: { id: 'c1', nome: 'A', email: 'a@b.com' },
+        veiculo: { placa: 'ABC', modelo: 'X' },
+      },
     });
     await useCase.executar(contexto, {
       eventId: 'e-sit',
@@ -369,9 +466,38 @@ describe('ReagirFatoSagaUseCase', () => {
         consultaId: 'c1',
         situacaoPagamento: 'PAGO_NO_PRAZO',
         orderId: 'ORD',
+        cobrancaId: 'cob-1',
+        valorCentavos: 900,
       },
     });
     expect(transicoes.aplicar).toHaveBeenCalled();
+    expect(pedidos.registrar).toHaveBeenCalled();
+  });
+
+  it('SituacaoFinanceira em EM_CANCELAMENTO delega à compensação E10', async () => {
+    const { useCase, compensacao, estadoCompensacao } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    estadoCompensacao.obterOuCriar = jest.fn().mockResolvedValue({
+      consultaIdVigente: 'c1',
+      passo: PassoCompensacaoSaga.CONSULTA_E10,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-sit-e10',
+      eventType: EVENTO_SITUACAO_FINANCEIRA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        consultaId: 'c1',
+        situacaoPagamento: 'SEM_PAGAMENTO',
+      },
+    });
+    expect(compensacao.tratarSituacaoFinanceiraE10).toHaveBeenCalled();
   });
 
   it('INDETERMINADA na consulta de prazo agenda reconsulta e métrica', async () => {
@@ -418,6 +544,34 @@ describe('ReagirFatoSagaUseCase', () => {
       payload: { consultaId: 'c1', situacaoPagamento: 'SEM_PAGAMENTO' },
     });
     expect(compensacao.avancarAposEntradaEmCancelamento).toHaveBeenCalled();
+  });
+
+  it('CobrancaCriada publica pagamento disponível quando link é novo', async () => {
+    const { useCase, projecao, outbox, prisma } = montarUseCase(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+    );
+    projecao.registrarPagamento = jest.fn().mockResolvedValue('criado');
+    projecao.jaNotificouPagamentoDisponivel = jest
+      .fn()
+      .mockResolvedValue(false);
+    await useCase.executar(contexto, {
+      eventId: 'e-cob-novo',
+      eventType: EVENTO_COBRANCA_CRIADA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        orderId: 'ORD',
+        linkPagamento: 'https://pay.example',
+        valorCentavos: 1500,
+      },
+    });
+    expect(outbox.registrar).toHaveBeenCalled();
+    expect(prisma.projecaoFinanceiraOs.updateMany).toHaveBeenCalled();
   });
 
   it('CobrancaCriada não republica pagamento disponível se já notificado', async () => {
@@ -471,6 +625,29 @@ describe('ReagirFatoSagaUseCase', () => {
     expect(compensacao.avancarSeEmCancelamento).toHaveBeenCalled();
   });
 
+  it('PendenciaResolvida sem alvo não atualiza pendências', async () => {
+    const { useCase, prisma, compensacao } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    prisma.pendenciaOs.findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: 'p1', detalhes: { cobrancaId: 'cob-x' } }]);
+    await useCase.executar(contexto, {
+      eventId: 'e-pend-miss',
+      eventType: EVENTO_PENDENCIA_RESOLVIDA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { cobrancaId: 'cob-outro' },
+    });
+    expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    expect(compensacao.avancarSeEmCancelamento).not.toHaveBeenCalled();
+  });
+
   it('registra projeção ao receber OrcamentoGerado', async () => {
     const { useCase, projecao } = montarUseCase(StatusOS.EM_DIAGNOSTICO);
     await useCase.executar(contexto, {
@@ -512,5 +689,357 @@ describe('ReagirFatoSagaUseCase', () => {
       }),
     ).rejects.toBeInstanceOf(ReservaJaProcessadaError);
     expect(ordens.bloquearParaAtualizacao).toHaveBeenCalled();
+  });
+
+  it('reparo-falhou idempotente quando consumo já aplicado na rodada', async () => {
+    const { useCase, consumirReserva, reservas, transicoes } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    reservas.possuiConsumoAplicadoNaRodada = jest.fn().mockResolvedValue(true);
+    await useCase.executar(contexto, {
+      eventId: 'falha-idem',
+      eventType: EVENTO_REPARO_FALHOU,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(consumirReserva.execute).not.toHaveBeenCalled();
+    expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  it('reparo-falhou aplica consumo efetivo antes da compensação', async () => {
+    const { useCase, consumirReserva, compensacao } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      divergencias: [],
+      impedimentoInventario: false,
+      reutilizado: false,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'falha-1',
+      eventType: EVENTO_REPARO_FALHOU,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        responsavelId: 'sub-mec',
+        pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }],
+      },
+    });
+    expect(consumirReserva.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextoFato: expect.objectContaining({
+          tipoFato: 'REPARO_FALHOU',
+          responsavelId: 'sub-mec',
+        }),
+      }),
+      contexto,
+    );
+    expect(compensacao.registrarFatoTerminalExecucao).toHaveBeenCalled();
+  });
+
+  it('lança quando OS não existe no bloqueio', async () => {
+    const { useCase, ordens } = montarUseCase(StatusOS.EM_EXECUCAO);
+    ordens.bloquearParaAtualizacao.mockResolvedValue(null);
+    await expect(
+      useCase.executar(contexto, {
+        eventId: 'e-miss',
+        eventType: EVENTO_REPARO_CONCLUIDO,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'execution',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload: {},
+      }),
+    ).rejects.toBeInstanceOf(OrdemServicoNaoEncontradaError);
+  });
+
+  it('reentrega com consumo reutilizado ainda finaliza sem impedimento', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      divergencias: [],
+      impedimentoInventario: false,
+      reutilizado: true,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-reuse',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('reparo-interrompido delega consumo com tipo correto', async () => {
+    const { useCase, consumirReserva } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      impedimentoInventario: false,
+      reutilizado: false,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'int-1',
+      eventType: EVENTO_REPARO_INTERROMPIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [] },
+    });
+    expect(consumirReserva.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextoFato: expect.objectContaining({
+          tipoFato: 'REPARO_INTERROMPIDO',
+        }),
+      }),
+      contexto,
+    );
+  });
+
+  it('propaga ConsumoAplicadoIncompativelError do estoque', async () => {
+    const { useCase, consumirReserva } = montarUseCase(StatusOS.EM_EXECUCAO);
+    consumirReserva.execute = jest
+      .fn()
+      .mockRejectedValue(new ConsumoAplicadoIncompativelError());
+    await expect(
+      useCase.executar(contexto, {
+        eventId: 'e-inc',
+        eventType: EVENTO_REPARO_CONCLUIDO,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'execution',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+      }),
+    ).rejects.toBeInstanceOf(ConsumoAplicadoIncompativelError);
+  });
+
+  it('OrçamentoGerado sem orcamentoId não chama projeção', async () => {
+    const { useCase, transicoes, projecao } = montarUseCase(
+      StatusOS.EM_DIAGNOSTICO,
+    );
+    await useCase.executar(contexto, {
+      eventId: 'e-orc',
+      eventType: EVENTO_ORCAMENTO_GERADO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { valorTotalCentavos: 1000 },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+    expect(projecao.registrarOrcamento).not.toHaveBeenCalled();
+  });
+
+  it('TarefaDevolvida aplica transição de devolução', async () => {
+    const { useCase, transicoes } = montarUseCase(StatusOS.EM_DIAGNOSTICO);
+    await useCase.executar(contexto, {
+      eventId: 'e-dev',
+      eventType: EVENTO_TAREFA_DEVOLVIDA_A_FILA,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {},
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('OrcamentoRejeitado inicia nova rodada', async () => {
+    const { useCase, transicoes } = montarUseCase(
+      StatusOS.AGUARDANDO_APROVACAO,
+    );
+    await useCase.executar(contexto, {
+      eventId: 'e-rej',
+      eventType: EVENTO_ORCAMENTO_REJEITADO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {},
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('reparo concluído antecipado em AGUARDANDO_EXECUCAO aplica transição', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.AGUARDANDO_EXECUCAO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      impedimentoInventario: false,
+      reutilizado: false,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-adiant',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }] },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalled();
+  });
+
+  it('pagamento em OS FINALIZADA abre pendência financeira', async () => {
+    const { useCase, prisma } = montarUseCase(StatusOS.FINALIZADA);
+    await useCase.executar(contexto, {
+      eventId: 'e-tardio',
+      eventType: EVENTO_PAGAMENTO_CONFIRMADO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { orderId: 'ORD-2', valorCentavos: 500 },
+    });
+    expect(prisma.pendenciaOs.create).toHaveBeenCalled();
+  });
+
+  it('reparo-falhou em EM_CANCELAMENTO não reinsere compensação iniciada', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.EM_CANCELAMENTO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      impedimentoInventario: false,
+      reutilizado: false,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'falha-2',
+      eventType: EVENTO_REPARO_FALHOU,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { pecasUtilizadas: [] },
+    });
+    expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  it('mapeia divergências opcionais do payload ao aplicar consumo', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      impedimentoInventario: true,
+      reutilizado: false,
+    });
+    await useCase.executar(contexto, {
+      eventId: 'e-div',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        responsavelId: 'sub',
+        pecasUtilizadas: [{ itemId: 'p1', quantidade: 2 }],
+        divergencias: [
+          {
+            itemId: 'p1',
+            quantidadePrevista: 1,
+            quantidadeUtilizada: 2,
+            tipo: 'CONSUMO_ACIMA',
+            observacao: 'obs',
+            justificativa: 'just',
+          },
+        ],
+      },
+    });
+    expect(consumirReserva.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextoFato: expect.objectContaining({
+          divergenciasFato: [
+            expect.objectContaining({
+              justificativa: 'just',
+              observacao: 'obs',
+            }),
+          ],
+        }),
+      }),
+      contexto,
+    );
+    expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  it('reparo-concluido preserva concluidoEm na transição', async () => {
+    const { useCase, consumirReserva, transicoes } = montarUseCase(
+      StatusOS.EM_EXECUCAO,
+    );
+    consumirReserva.execute = jest.fn().mockResolvedValue({
+      divergencias: [],
+      impedimentoInventario: false,
+      reutilizado: false,
+    });
+    const concluidoEm = '2025-08-10T10:00:00.000Z';
+    await useCase.executar(contexto, {
+      eventId: 'e-conc',
+      eventType: EVENTO_REPARO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'execution',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: {
+        concluidoEm,
+        pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }],
+      },
+    });
+    expect(transicoes.aplicar).toHaveBeenCalledWith(
+      contexto,
+      expect.objectContaining({
+        ocorridoEm: new Date(concluidoEm),
+      }),
+    );
   });
 });

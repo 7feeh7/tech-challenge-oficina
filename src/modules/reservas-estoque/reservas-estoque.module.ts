@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
-import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
-import type { CompensacaoAvancoPort } from '@/shared/saga/compensacao-avanco.port';
+import { RETOMADA_SAGA_INVENTARIO } from '@/shared/saga/retomada-saga-inventario.port';
+import type { RetomadaSagaInventarioPort } from '@/shared/saga/retomada-saga-inventario.port';
 import { PrismaModule } from '@/shared/database/prisma.module';
 import { UNIT_OF_WORK } from '@/shared/database/unit-of-work.port';
 import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
@@ -46,9 +46,10 @@ import { ReservasEstoqueController } from './infra/http/controllers/reservas-est
       useFactory: (
         reservas: ReservaEstoqueGateway,
         uow: UnitOfWork,
-        compensacao: CompensacaoAvancoPort,
-      ) => new AjustarEstoqueDivergenciaUseCase(reservas, uow, compensacao),
-      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK, COMPENSACAO_AVANCO],
+        retomadaInventario: RetomadaSagaInventarioPort,
+      ) =>
+        new AjustarEstoqueDivergenciaUseCase(reservas, uow, retomadaInventario),
+      inject: [RESERVA_ESTOQUE_GATEWAY, UNIT_OF_WORK, RETOMADA_SAGA_INVENTARIO],
     },
   ],
   exports: [

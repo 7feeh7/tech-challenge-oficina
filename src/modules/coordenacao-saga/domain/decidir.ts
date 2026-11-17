@@ -87,9 +87,19 @@ export function decidir(
   if (
     (fato === TipoFatoSaga.RESPOSTA_CANCELAMENTO ||
       fato === TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO ||
-      fato === TipoFatoSaga.REPARO_FALHOU ||
       fato === TipoFatoSaga.REPARO_INTERROMPIDO) &&
     ordem.status === StatusOS.EM_CANCELAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.REPARO_FALHOU &&
+    [
+      StatusOS.EM_EXECUCAO,
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_CANCELAMENTO,
+    ].includes(ordem.status)
   ) {
     return AcaoDecisao.APLICAR;
   }

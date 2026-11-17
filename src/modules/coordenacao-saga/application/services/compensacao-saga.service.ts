@@ -507,13 +507,18 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     const idempotencyKeyConsumo = `estoque.consumir:compensacao:${ordemServicoId}:${rodada}`;
     const pecaIdsConsumo = pecas.map((p) => p.itemId);
     const consumoJaAplicado =
-      pecaIdsConsumo.length > 0 &&
-      (await this.reservas.possuiConsumoAplicado(
+      (await this.reservas.possuiConsumoAplicadoNaRodada(
         contexto,
         ordemServicoId,
         rodada,
-        pecaIdsConsumo,
-      ));
+      )) ||
+      (pecaIdsConsumo.length > 0 &&
+        (await this.reservas.possuiConsumoAplicado(
+          contexto,
+          ordemServicoId,
+          rodada,
+          pecaIdsConsumo,
+        )));
     if (pecas.length > 0 && !consumoJaAplicado) {
       try {
         const consumo = await this.consumir.execute(
@@ -528,7 +533,7 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
           },
           contexto,
         );
-        if (consumo.divergencias.length > 0) {
+        if (consumo.impedimentoInventario) {
           return;
         }
       } catch (erro) {

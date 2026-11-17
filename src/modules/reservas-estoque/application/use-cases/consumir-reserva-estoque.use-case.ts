@@ -8,6 +8,7 @@ import {
   hashCorpoEstoque,
 } from '../estoque-idempotencia';
 import type {
+  ContextoConsumoEstoque,
   ItemReservaEstoque,
   ReservaEstoqueGateway,
   ResultadoConsumoReserva,
@@ -18,6 +19,7 @@ export interface ConsumirReservaEstoqueInput {
   rodada: number;
   itensUtilizados: ItemReservaEstoque[];
   idempotencyKey?: string;
+  contextoFato?: ContextoConsumoEstoque;
 }
 
 export interface ConsumirReservaEstoqueOutput extends ResultadoConsumoReserva {
@@ -56,6 +58,7 @@ export class ConsumirReservaEstoqueUseCase {
         ordemServicoId: input.ordemServicoId,
         rodada: input.rodada,
         itensUtilizados: input.itensUtilizados,
+        contextoFato: input.contextoFato,
       });
 
       const output: ConsumirReservaEstoqueOutput = {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { CompensacaoAvancoPort } from '@/shared/saga/compensacao-avanco.port';
+import type { RetomadaSagaInventarioPort } from '@/shared/saga/retomada-saga-inventario.port';
 import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
 import type { ReservaEstoqueGateway } from '../ports/reserva-estoque.gateway';
 
@@ -15,7 +15,7 @@ export class AjustarEstoqueDivergenciaUseCase {
   constructor(
     private readonly reservas: ReservaEstoqueGateway,
     private readonly unitOfWork: UnitOfWork,
-    private readonly compensacao: CompensacaoAvancoPort,
+    private readonly retomadaInventario: RetomadaSagaInventarioPort,
   ) {}
 
   async execute(input: AjustarEstoqueDivergenciaInput): Promise<void> {
@@ -24,7 +24,7 @@ export class AjustarEstoqueDivergenciaUseCase {
         contexto,
         input,
       );
-      await this.compensacao.avancarSeEmCancelamento(
+      await this.retomadaInventario.retomarAposResolucaoInventario(
         contexto,
         resultado.ordemServicoId,
         randomUUID(),

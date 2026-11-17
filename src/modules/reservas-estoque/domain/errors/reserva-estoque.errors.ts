@@ -78,3 +78,11 @@ export class MotivoAjusteAdministrativoInvalidoError extends DomainValidationErr
     super('O motivo do ajuste administrativo é obrigatório.');
   }
 }
+
+export class ConsumoAplicadoIncompativelError extends DomainConflictError {
+  constructor() {
+    super(
+      'Já existe consumo aplicado para a OS e rodada com fato de origem incompatível.',
+    );
+  }
+}

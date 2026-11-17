@@ -256,7 +256,6 @@ describe('decidir (fluxo principal E29)', () => {
     const fatos: TipoFatoSaga[] = [
       TipoFatoSaga.RESPOSTA_CANCELAMENTO,
       TipoFatoSaga.RESPOSTA_CANCELAMENTO_FINANCEIRO,
-      TipoFatoSaga.REPARO_FALHOU,
       TipoFatoSaga.REPARO_INTERROMPIDO,
     ];
     for (const fato of fatos) {
@@ -264,6 +263,64 @@ describe('decidir (fluxo principal E29)', () => {
         AcaoDecisao.APLICAR,
       );
     }
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_FALHOU,
+        ordem({ status: StatusOS.EM_CANCELAMENTO }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('aplica ReparoFalhou em EM_EXECUCAO e AGUARDANDO_EXECUCAO', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_FALHOU,
+        ordem({ status: StatusOS.EM_EXECUCAO }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_FALHOU,
+        ordem({ status: StatusOS.AGUARDANDO_EXECUCAO }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('ignora ReparoFalhou de rodada antiga', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_FALHOU,
+        ordem({
+          status: StatusOS.EM_EXECUCAO,
+          rodadaVigente: 2,
+          rodadaFato: 1,
+        }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
+  });
+
+  it.each([StatusOS.FINALIZADA, StatusOS.CANCELADA, StatusOS.ENTREGUE])(
+    'ignora ReparoFalhou em %s',
+    (status) => {
+      expect(decidir(TipoFatoSaga.REPARO_FALHOU, ordem({ status }))).toBe(
+        AcaoDecisao.IGNORAR,
+      );
+    },
+  );
+
+  it('ignora ReparoInterrompido fora de EM_CANCELAMENTO', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_INTERROMPIDO,
+        ordem({ status: StatusOS.EM_EXECUCAO }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
+    expect(
+      decidir(
+        TipoFatoSaga.REPARO_INTERROMPIDO,
+        ordem({ status: StatusOS.AGUARDANDO_EXECUCAO }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
   });
 
   it('aplica ReparoIniciado em EM_CANCELAMENTO', () => {
