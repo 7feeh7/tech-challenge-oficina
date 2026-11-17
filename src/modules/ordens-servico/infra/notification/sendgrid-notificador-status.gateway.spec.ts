@@ -75,6 +75,19 @@ describe('SendGridNotificadorStatusGateway', () => {
     expect(enviar).not.toHaveBeenCalled();
   });
 
+  it('descreve status novos da saga no assunto do e-mail', async () => {
+    enviar.mockResolvedValue([{ statusCode: 202 }]);
+    const notificador = new SendGridNotificadorStatusGateway(configComSendGrid);
+
+    await notificador.notificarMudancaDeStatus({
+      ...notificacao,
+      statusNovo: StatusOS.AGUARDANDO_PAGAMENTO,
+    });
+
+    const email = enviar.mock.calls[0][0] as Record<string, string>;
+    expect(email.subject).toContain('Aguardando pagamento');
+  });
+
   it('não tenta enviar quando o cliente não tem e-mail cadastrado', async () => {
     const notificador = new SendGridNotificadorStatusGateway(configComSendGrid);
 

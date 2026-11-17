@@ -83,10 +83,7 @@ describe('StatusOS', () => {
 
     it('reparo: de AGUARDANDO_EXECUCAO para EM_EXECUCAO', () => {
       expect(
-        transicaoPermitida(
-          StatusOS.AGUARDANDO_EXECUCAO,
-          StatusOS.EM_EXECUCAO,
-        ),
+        transicaoPermitida(StatusOS.AGUARDANDO_EXECUCAO, StatusOS.EM_EXECUCAO),
       ).toBe(true);
     });
   });

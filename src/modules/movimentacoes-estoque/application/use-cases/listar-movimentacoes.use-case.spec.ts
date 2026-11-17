@@ -10,6 +10,12 @@ describe('ListarMovimentacoesUseCase', () => {
     useCase = new ListarMovimentacoesUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ movimentacoes: [], total: 0 });
+    await useCase.execute();
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de movimentações', async () => {
     gateway.listar.mockResolvedValue({
       movimentacoes: [criarMovimentacaoComPecaFake()],

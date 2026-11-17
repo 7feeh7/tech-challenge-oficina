@@ -1,4 +1,5 @@
 import {
+  DomainConflictError,
   DomainNotFoundError,
   DomainValidationError,
 } from '@/shared/exceptions/domain.error';
@@ -58,13 +59,13 @@ export class PecaDaOrdemNaoEncontradaError extends DomainNotFoundError {
   }
 }
 
-export class PatchOrdemServicoNaoPermitidoError extends DomainValidationError {
+export class PatchOrdemServicoNaoPermitidoError extends DomainConflictError {
   constructor(mensagem: string) {
     super(mensagem);
   }
 }
 
-export class ItensOficiaisNaoEditaveisError extends DomainValidationError {
+export class ItensOficiaisNaoEditaveisError extends DomainConflictError {
   constructor() {
     super(
       'Os itens oficiais só podem ser alterados durante o diagnóstico da rodada vigente.',
@@ -72,7 +73,7 @@ export class ItensOficiaisNaoEditaveisError extends DomainValidationError {
   }
 }
 
-export class DesistenciaNaoPermitidaError extends DomainValidationError {
+export class DesistenciaNaoPermitidaError extends DomainConflictError {
   constructor(status: StatusOS) {
     super(`Desistência não permitida no status ${status}.`);
   }
@@ -84,21 +85,13 @@ export class MotivoDesistenciaObrigatorioError extends DomainValidationError {
   }
 }
 
-export class RetiradaNaoPermitidaError extends DomainValidationError {
+export class RetiradaNaoPermitidaError extends DomainConflictError {
   constructor(mensagem: string) {
     super(mensagem);
   }
 }
 
-export class DiagnosticoNaAberturaNaoPermitidoError extends DomainValidationError {
-  constructor() {
-    super(
-      'O diagnóstico não é aceito na abertura; use sugestões de itens.',
-    );
-  }
-}
-
-export class DevolucaoTarefaFilaNaoPermitidaError extends DomainValidationError {
+export class DevolucaoTarefaFilaNaoPermitidaError extends DomainConflictError {
   constructor() {
     super(
       'Devolução à fila só é permitida na rodada 1, antes da conclusão do diagnóstico.',

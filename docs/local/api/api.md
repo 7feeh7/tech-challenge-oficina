@@ -401,24 +401,23 @@ Leitura: qualquer perfil autenticado. Escrita (`POST`, `PATCH`, `DELETE`): **ADM
 
 Acesso: **ADMINISTRADOR**, **ATENDENTE**, **MECANICO**.
 
-As regras de negócio da OS (fila, máquina de estados, notificação por e-mail) estão em [regras-de-negocio.md](regras-de-negocio.md).
+As regras de negócio da OS (fila, máquina de estados, notificação) estão em [regras-de-negocio.md](regras-de-negocio.md).
 
 ### POST /ordens-servico
 
-Abre a OS com cliente, veículo, serviços e peças. Os itens gravam o **preço congelado** no momento da abertura.
+Abre a OS com cliente, veículo e **sugestões** de serviços e peças. As sugestões não são itens oficiais e **não têm preço**: o preço congela quando o diagnóstico é concluído. A OS nasce `RECEBIDA`, na rodada 1, com `correlationId` próprio. Aceita `Idempotency-Key`.
 
 ```json
 {
   "clienteId": "uuid-do-cliente",
   "veiculoId": "uuid-do-veiculo",
   "descricaoProblema": "Barulho na suspensão dianteira",
-  "diagnostico": null,
   "servicos": [{ "servicoId": "uuid-do-servico", "quantidade": 1 }],
   "pecas": [{ "pecaId": "uuid-da-peca", "quantidade": 2 }]
 }
 ```
 
-`servicos` e `pecas` são opcionais. Em `servicos`, `quantidade` é opcional (padrão `1`).
+`servicos` e `pecas` são opcionais. Em `servicos`, `quantidade` é opcional (padrão `1`). Enviar `diagnostico` (ou qualquer campo fora deste contrato) devolve `400`: o diagnóstico é feito pelo mecânico, depois da abertura.
 
 #### Resposta de sucesso (201)
 
@@ -442,31 +441,38 @@ Abre a OS com cliente, veículo, serviços e peças. Os itens gravam o **preço 
   },
   "descricaoProblema": "Barulho na suspensão dianteira",
   "criadoEm": "2025-01-10T12:00:00.000Z",
+  "rodadaVigente": 1,
+  "correlationId": "uuid-de-correlacao",
   "diagnostico": null,
-  "servicos": [
-    {
-      "id": "uuid-item",
-      "servico": { "id": "uuid-do-servico", "nome": "Troca de óleo" },
-      "quantidade": 1,
-      "precoUnitario": 150
-    }
+  "diagnosticoConcluidoEm": null,
+  "sugestoes": [
+    { "tipo": "SERVICO", "itemId": "uuid-do-servico", "quantidade": 1 },
+    { "tipo": "PECA", "itemId": "uuid-da-peca", "quantidade": 2 }
   ],
-  "pecas": [
-    {
-      "id": "uuid-item",
-      "peca": { "id": "uuid-da-peca", "codigo": "FLT-001", "nome": "Filtro de óleo" },
-      "quantidade": 2,
-      "precoUnitario": 29.9
-    }
-  ],
-  "valorTotal": 209.8,
+  "servicos": [],
+  "pecas": [],
+  "valorTotal": 0,
   "orcamentos": [],
-  "historicoStatus": [],
+  "historicoStatus": [
+    {
+      "statusAnterior": null,
+      "statusNovo": "RECEBIDA",
+      "rodada": 1,
+      "eventId": "uuid-do-evento",
+      "observacao": "Ordem aberta"
+    }
+  ],
+  "etapaOrigemCancelamento": null,
+  "motivoEncerramento": null,
+  "veiculoLiberadoRetirada": false,
+  "devolvidaEm": null,
   "iniciadaEm": null,
   "finalizadaEm": null,
   "entregueEm": null
 }
 ```
+
+`servicos` e `pecas` (itens oficiais, com `precoUnitario` congelado) ficam vazios até o diagnóstico ser concluído.
 
 #### Erros
 
@@ -477,7 +483,7 @@ Abre a OS com cliente, veículo, serviços e peças. Os itens gravam o **preço 
 
 ### GET /ordens-servico
 
-Sem filtro, devolve a **fila de trabalho** (OS `FINALIZADA` e `ENTREGUE` ficam fora). Ver [regras-de-negocio.md](regras-de-negocio.md).
+Sem filtro, devolve a **fila de trabalho**, ordenada por prioridade persistida e, dentro dela, pelas mais antigas primeiro (OS `FINALIZADA`, `CANCELADA` e `ENTREGUE` ficam fora). Ver [regras-de-negocio.md](regras-de-negocio.md).
 
 | Parâmetro | Obrigatório | Descrição                                            |
 | --------- | ----------- | ---------------------------------------------------- |
@@ -514,31 +520,45 @@ Devolve a OS completa — o mesmo contrato do `POST`, já com `orcamentos` e `hi
 
 ### PATCH /ordens-servico/{id}
 
-Atualiza status, dados ou itens da OS. Aceita qualquer subconjunto dos campos do `POST`, mais `status`.
+PATCH restrito: só `descricaoProblema`, e só enquanto a OS está `RECEBIDA` e o diagnóstico não começou. Status e itens **não** são alterados por aqui — mudam pelas rotas de fluxo (orçamento, desistência, retirada) e pelos eventos das outras etapas. Não gera histórico nem notificação.
 
 ```json
-{
-  "status": "EM_DIAGNOSTICO",
-  "diagnostico": "Amortecedor dianteiro esquerdo com folga"
-}
+{ "descricaoProblema": "Barulho na suspensão dianteira e vibração ao frear" }
 ```
 
-`status`: `RECEBIDA` | `EM_DIAGNOSTICO` | `AGUARDANDO_APROVACAO` | `EM_EXECUCAO` | `FINALIZADA` | `ENTREGUE`.
+| HTTP | Descrição                                                      |
+| ---- | -------------------------------------------------------------- |
+| 200  | OS atualizada.                                                 |
+| 400  | Campo fora do contrato (inclui `status`, `diagnostico`, itens). |
+| 404  | OS não encontrada.                                             |
+| 409  | OS fora de `RECEBIDA` ou com diagnóstico já iniciado.          |
 
-Toda mudança efetiva de status notifica o cliente por e-mail e grava uma entrada em `historicoStatus`.
+### POST /ordens-servico/{id}/desistencia
 
-| HTTP | Descrição                     |
-| ---- | ----------------------------- |
-| 200  | OS atualizada.                |
-| 400  | Transição de status inválida. |
-| 404  | OS não encontrada.            |
+Registra a desistência do cliente: a OS vai para `EM_CANCELAMENTO`, guardando a etapa de origem e o motivo. Acesso: **ADMINISTRADOR**, **ATENDENTE**. Aceita `Idempotency-Key`; repetir a chamada preserva o primeiro motivo e não gera nova notificação.
 
-### DELETE /ordens-servico/{id}
+```json
+{ "motivo": "Cliente desistiu do serviço" }
+```
 
-| HTTP | Descrição          |
-| ---- | ------------------ |
-| 200  | OS removida.       |
-| 404  | OS não encontrada. |
+| HTTP | Descrição                                                          |
+| ---- | ------------------------------------------------------------------ |
+| 200  | OS em `EM_CANCELAMENTO` (também ao repetir a chamada).             |
+| 400  | Motivo ausente.                                                    |
+| 404  | OS não encontrada.                                                 |
+| 409  | OS já `FINALIZADA`, `CANCELADA` ou `ENTREGUE` — não há o que cancelar. |
+
+### POST /ordens-servico/{id}/retirada
+
+Retirada do veículo, sem corpo. Em `FINALIZADA` entrega o veículo (`ENTREGUE`); em `EM_CANCELAMENTO`/`CANCELADA` registra só a devolução física, desde que o veículo esteja liberado. Acesso: **ADMINISTRADOR**, **ATENDENTE**. Aceita `Idempotency-Key`; é idempotente.
+
+| HTTP | Descrição                                                              |
+| ---- | ---------------------------------------------------------------------- |
+| 200  | Retirada registrada (também ao repetir a chamada).                     |
+| 404  | OS não encontrada.                                                     |
+| 409  | OS fora de `FINALIZADA`/cancelamento, ou veículo ainda não liberado.   |
+
+`DELETE /ordens-servico/{id}` foi removido: a OS é histórico e o encerramento antecipado é a desistência.
 
 ### GET /ordens-servico/metricas/tempo-medio
 
@@ -572,7 +592,7 @@ Acesso: **ADMINISTRADOR**, **ATENDENTE**.
 
 ### POST /orcamentos
 
-Cria o orçamento e move a OS para `AGUARDANDO_APROVACAO`.
+Cria o orçamento e move a OS de `EM_DIAGNOSTICO` para `AGUARDANDO_APROVACAO`.
 
 ```json
 {
@@ -602,12 +622,13 @@ Cria o orçamento e move a OS para `AGUARDANDO_APROVACAO`.
 
 | HTTP | Descrição                                                 |
 | ---- | --------------------------------------------------------- |
+| 400  | OS fora de `EM_DIAGNOSTICO`.                              |
 | 404  | OS não encontrada.                                        |
 | 409  | Já existe um orçamento aguardando aprovação para essa OS. |
 
 ### PATCH /orcamentos/{id}
 
-Aprovar ou recusar. **Aprovar** move a OS para `EM_EXECUCAO` e **dá baixa no estoque** das peças, na mesma transação. **Recusar** exige `motivoRejeicao` e devolve a OS para `EM_DIAGNOSTICO`.
+Aprovar ou recusar. **Aprovar** **reserva o estoque** das peças e move a OS para `AGUARDANDO_PAGAMENTO`, na mesma transação (a baixa definitiva só ocorre na execução). **Recusar** exige `motivoRejeicao` e devolve a OS para `EM_DIAGNOSTICO` em uma **nova rodada**.
 
 ```json
 {
@@ -618,7 +639,7 @@ Aprovar ou recusar. **Aprovar** move a OS para `EM_EXECUCAO` e **dá baixa no es
 
 `status`: `AGUARDANDO_APROVACAO` | `APROVADO` | `REJEITADO`.
 
-Reenviar a mesma decisão é idempotente: a OS não muda de status e nenhum e-mail novo sai.
+Reenviar a mesma decisão é idempotente: a OS não muda de status e nenhuma notificação nova sai.
 
 | HTTP | Descrição                                           |
 | ---- | --------------------------------------------------- |

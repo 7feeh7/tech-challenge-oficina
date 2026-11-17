@@ -172,6 +172,7 @@ describe('Estoque com reserva (integração)', () => {
       data: {
         clienteId: cliente.id,
         veiculoId: veiculo.id,
+        correlationId: randomUUID(),
         descricaoProblema: 'teste reserva',
       },
     });

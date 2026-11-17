@@ -5,7 +5,6 @@ import {
   Body,
   Patch,
   Param,
-  Delete,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
@@ -33,9 +32,11 @@ import { BuscarOrdemServicoUseCase } from '@/modules/ordens-servico/application/
 import { CalcularTempoMedioUseCase } from '@/modules/ordens-servico/application/use-cases/calcular-tempo-medio.use-case';
 import { CriarOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { ListarOrdensServicoUseCase } from '@/modules/ordens-servico/application/use-cases/listar-ordens-servico.use-case';
-import { RemoverOrdemServicoUseCase } from '@/modules/ordens-servico/application/use-cases/remover-ordem-servico.use-case';
+import { RegistrarDesistenciaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-desistencia.use-case';
+import { RegistrarRetiradaUseCase } from '@/modules/ordens-servico/application/use-cases/registrar-retirada.use-case';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { CreateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/create-ordem-servico.dto';
+import { DesistenciaOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/desistencia-ordem-servico.dto';
 import { UpdateOrdemServicoDto } from '@/modules/ordens-servico/infra/http/dtos/update-ordem-servico.dto';
 import { Idempotent } from '@/shared/idempotency/idempotent.decorator';
 
@@ -53,7 +54,8 @@ export class OrdensServicoController {
     private readonly listarOrdensServico: ListarOrdensServicoUseCase,
     private readonly buscarOrdemServico: BuscarOrdemServicoUseCase,
     private readonly atualizarOrdemServico: AtualizarOrdemServicoUseCase,
-    private readonly removerOrdemServico: RemoverOrdemServicoUseCase,
+    private readonly registrarDesistencia: RegistrarDesistenciaUseCase,
+    private readonly registrarRetirada: RegistrarRetiradaUseCase,
     private readonly calcularTempoMedio: CalcularTempoMedioUseCase,
   ) {}
 
@@ -62,26 +64,12 @@ export class OrdensServicoController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Abrir uma nova ordem de serviço' })
   @ApiResponse({ status: 201, description: 'OS criada com sucesso.' })
-  @ApiResponse({
-    status: 400,
-    description: 'Veículo não pertence ao cliente informado.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Cliente, veículo, serviço ou peça não encontrado.',
-  })
   async create(@Body() createOrdemServicoDto: CreateOrdemServicoDto) {
     return await this.criarOrdemServico.execute(createOrdemServicoDto);
   }
 
   @Get()
-  @ApiOperation({
-    summary: 'Listar a fila de ordens de serviço',
-    description:
-      'Sem filtro, retorna apenas as OS em aberto (exclusão lógica das FINALIZADA e ENTREGUE), ' +
-      'ordenadas por Em Execução > Aguardando Aprovação > Diagnóstico > Recebida e, dentro de cada ' +
-      'status, as mais antigas primeiro. Informar `status` consulta um status específico, inclusive os encerrados.',
-  })
+  @ApiOperation({ summary: 'Listar a fila de ordens de serviço' })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
   @ApiQuery({
@@ -90,7 +78,6 @@ export class OrdensServicoController {
     enum: StatusOS,
     description: 'Consultar um status específico (inclusive os encerrados)',
   })
-  @ApiResponse({ status: 200, description: 'Lista paginada de OS.' })
   async findAll(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -115,7 +102,6 @@ export class OrdensServicoController {
     type: String,
     description: 'Fim do intervalo (ISO 8601)',
   })
-  @ApiResponse({ status: 200, description: 'Métricas calculadas.' })
   async metricas(
     @Query('dataInicio') dataInicio?: string,
     @Query('dataFim') dataFim?: string,
@@ -136,36 +122,44 @@ export class OrdensServicoController {
   @RequireOwnership(OwnershipResource.ORDEM_SERVICO)
   @ApiOperation({ summary: 'Consultar uma ordem de serviço pelo ID' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'OS encontrada.' })
-  @ApiResponse({
-    status: 403,
-    description: 'Cliente tentando acessar OS de outro cliente.',
-  })
-  @ApiResponse({ status: 404, description: 'OS não encontrada.' })
   async findOne(@Param('id', ParseUUIDPipe) id: string) {
     return await this.buscarOrdemServico.execute(id);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Atualizar status, dados ou itens da OS' })
+  @ApiOperation({
+    summary: 'Atualizar a descrição do problema (PATCH restrito)',
+  })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'OS atualizada.' })
-  @ApiResponse({ status: 400, description: 'Transição de status inválida.' })
-  @ApiResponse({ status: 404, description: 'OS não encontrada.' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateOrdemServicoDto: UpdateOrdemServicoDto,
   ) {
-    return await this.atualizarOrdemServico.execute(id, updateOrdemServicoDto);
+    return await this.atualizarOrdemServico.execute(id, {
+      descricaoProblema: updateOrdemServicoDto.descricaoProblema ?? '',
+    });
   }
 
-  @Delete(':id')
+  @Post(':id/desistencia')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
+  @Idempotent('ordens-servico.desistencia')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Remover uma ordem de serviço' })
+  @ApiOperation({ summary: 'Registrar desistência do cliente' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'OS removida.' })
-  @ApiResponse({ status: 404, description: 'OS não encontrada.' })
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    return await this.removerOrdemServico.execute(id);
+  async desistencia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: DesistenciaOrdemServicoDto,
+  ) {
+    return await this.registrarDesistencia.execute(id, body);
+  }
+
+  @Post(':id/retirada')
+  @Roles(PerfilUsuario.ADMINISTRADOR, PerfilUsuario.ATENDENTE)
+  @Idempotent('ordens-servico.retirada')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Registrar retirada do veículo' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  async retirada(@Param('id', ParseUUIDPipe) id: string) {
+    return await this.registrarRetirada.execute(id);
   }
 }

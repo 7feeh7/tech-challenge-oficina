@@ -42,10 +42,10 @@ export class OsMetricsService {
         where: {
           ordemServicoId,
           statusNovo: statusAnterior,
-          criadoEm: { lt: transicaoEm },
+          ocorridoEm: { lt: transicaoEm },
         },
-        orderBy: { criadoEm: 'desc' },
-        select: { criadoEm: true },
+        orderBy: { ocorridoEm: 'desc' },
+        select: { ocorridoEm: true },
       });
 
       if (!entrada) {
@@ -53,7 +53,7 @@ export class OsMetricsService {
       }
 
       const duracaoSegundos =
-        (transicaoEm.getTime() - entrada.criadoEm.getTime()) / 1000;
+        (transicaoEm.getTime() - entrada.ocorridoEm.getTime()) / 1000;
 
       if (duracaoSegundos < 0) {
         return;

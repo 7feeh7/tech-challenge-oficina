@@ -1,42 +1,57 @@
+import { UnitOfWorkFake } from '@/shared/database/unit-of-work-fake';
+import { OrdemServico } from '@/modules/ordens-servico/domain/entities/ordem-servico.entity';
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
+import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
 import {
   OrcamentoEmAbertoError,
+  OrcamentoForaDeDiagnosticoError,
   OrdemDoOrcamentoNaoEncontradaError,
   ValorOrcamentoInvalidoError,
 } from '../../domain/errors/orcamento.errors';
 import { StatusOrcamento } from '../../domain/status-orcamento';
 import { CriarOrcamentoUseCase } from './criar-orcamento.use-case';
-import {
-  clienteFake,
-  comTransicao,
-  criarGatewayMock,
-  criarNotificadorMock,
-  semTransicao,
-} from './test-doubles';
+import { criarGatewayMock, criarOrcamentoFake } from './test-doubles';
 
 describe('CriarOrcamentoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
-  let notificador: ReturnType<typeof criarNotificadorMock>;
+  let transicoes: jest.Mocked<TransicaoOrdemServicoService>;
   let useCase: CriarOrcamentoUseCase;
 
   const input = { ordemServicoId: 'uuid-os1', valorTotal: 350 };
 
   beforeEach(() => {
     gateway = criarGatewayMock();
-    notificador = criarNotificadorMock();
-    useCase = new CriarOrcamentoUseCase(gateway, notificador);
-    gateway.criarEEnviarParaAprovacao.mockImplementation((orcamento) =>
+    transicoes = {
+      aplicar: jest.fn().mockResolvedValue({ mudouStatus: true }),
+    } as unknown as jest.Mocked<TransicaoOrdemServicoService>;
+    useCase = new CriarOrcamentoUseCase(
+      gateway,
+      new UnitOfWorkFake(),
+      transicoes,
+    );
+    gateway.criar.mockImplementation((_, orcamento) =>
       Promise.resolve(
-        comTransicao(
-          orcamento,
-          StatusOS.EM_DIAGNOSTICO,
-          StatusOS.AGUARDANDO_APROVACAO,
-        ),
+        criarOrcamentoFake({
+          id: 'uuid-orc1',
+          ordemServicoId: orcamento.ordemServicoId,
+          valorTotal: orcamento.valorTotal,
+          observacoes: orcamento.observacoes,
+          status: orcamento.status,
+        }),
       ),
     );
   });
 
-  it('cria o orçamento aguardando aprovação', async () => {
+  it('persiste observações opcionais', async () => {
+    const result = await useCase.execute({
+      ...input,
+      observacoes: 'Inclui revisão',
+    });
+
+    expect(result.observacoes).toBe('Inclui revisão');
+  });
+
+  it('cria o orçamento e move a OS para aguardando aprovação', async () => {
     const result = await useCase.execute(input);
 
     expect(result).toMatchObject({
@@ -44,45 +59,37 @@ describe('CriarOrcamentoUseCase', () => {
       valorTotal: 350,
       status: StatusOrcamento.AGUARDANDO_APROVACAO,
     });
-    expect(gateway.criarEEnviarParaAprovacao).toHaveBeenCalled();
-  });
-
-  it('avisa o cliente de que a OS entrou em aprovação', async () => {
-    await useCase.execute(input);
-
-    expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
-      ordemServicoId: 'uuid-os1',
-      destinatario: clienteFake,
-      numeroOS: 42,
-      statusAnterior: StatusOS.EM_DIAGNOSTICO,
-      statusNovo: StatusOS.AGUARDANDO_APROVACAO,
-    });
-  });
-
-  it('não avisa o cliente quando a OS não sai do lugar', async () => {
-    gateway.criarEEnviarParaAprovacao.mockImplementation((orcamento) =>
-      Promise.resolve(semTransicao(orcamento)),
-    );
-
-    await useCase.execute(input);
-
-    expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
+    expect(gateway.criar).toHaveBeenCalled();
+    expect(transicoes.aplicar).toHaveBeenCalled();
   });
 
   it('falha quando a OS não existe', async () => {
-    gateway.buscarOrdemComPecas.mockResolvedValue(null);
+    gateway.buscarOrdemParaOrcamento.mockResolvedValue(null);
 
     await expect(useCase.execute(input)).rejects.toThrow(
       OrdemDoOrcamentoNaoEncontradaError,
     );
-    expect(gateway.criarEEnviarParaAprovacao).not.toHaveBeenCalled();
+    expect(gateway.criar).not.toHaveBeenCalled();
+  });
+
+  it('recusa orçamento fora de EM_DIAGNOSTICO', async () => {
+    gateway.buscarOrdemParaOrcamento.mockResolvedValue({
+      id: 'uuid-os1',
+      status: StatusOS.RECEBIDA,
+      rodadaVigente: 1,
+      pecas: [],
+    });
+
+    await expect(useCase.execute(input)).rejects.toThrow(
+      OrcamentoForaDeDiagnosticoError,
+    );
   });
 
   it('recusa valor inválido', async () => {
     await expect(useCase.execute({ ...input, valorTotal: 0 })).rejects.toThrow(
       ValorOrcamentoInvalidoError,
     );
-    expect(gateway.criarEEnviarParaAprovacao).not.toHaveBeenCalled();
+    expect(gateway.criar).not.toHaveBeenCalled();
   });
 
   it('recusa um segundo orçamento enquanto o atual aguarda aprovação', async () => {
@@ -91,17 +98,23 @@ describe('CriarOrcamentoUseCase', () => {
     await expect(useCase.execute(input)).rejects.toThrow(
       OrcamentoEmAbertoError,
     );
-    expect(gateway.criarEEnviarParaAprovacao).not.toHaveBeenCalled();
+    expect(gateway.criar).not.toHaveBeenCalled();
   });
 
-  it('permite gerar nova proposta depois que a anterior foi recusada', async () => {
-    gateway.existeOrcamentoAguardandoAprovacao.mockResolvedValue(false);
-
-    const result = await useCase.execute({ ...input, valorTotal: 600 });
-
-    expect(result).toMatchObject({
-      valorTotal: 600,
-      status: StatusOrcamento.AGUARDANDO_APROVACAO,
+  it('recusa sob o lock da OS quando outra requisição já gerou o orçamento', async () => {
+    const ordemJaAguardando = new OrdemServico({
+      id: 'uuid-os1',
+      clienteId: 'uuid-c1',
+      veiculoId: 'uuid-v1',
+      status: StatusOS.AGUARDANDO_APROVACAO,
     });
+    transicoes.aplicar.mockImplementation((_contexto, entrada) => {
+      entrada.aplicar(ordemJaAguardando, new Date());
+      return Promise.resolve({} as never);
+    });
+
+    await expect(useCase.execute(input)).rejects.toThrow(
+      OrcamentoEmAbertoError,
+    );
   });
 });

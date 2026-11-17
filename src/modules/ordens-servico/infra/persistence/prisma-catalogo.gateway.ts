@@ -24,19 +24,19 @@ export class PrismaCatalogoGateway implements CatalogoGateway {
     });
   }
 
-  async buscarPrecoDoServico(servicoId: string): Promise<number | null> {
+  async servicoExiste(servicoId: string): Promise<boolean> {
     const servico = await this.prisma.servico.findUnique({
       where: { id: servicoId },
-      select: { precoBase: true },
+      select: { id: true },
     });
-    return servico ? Number(servico.precoBase) : null;
+    return servico !== null;
   }
 
-  async buscarPrecoDaPeca(pecaId: string): Promise<number | null> {
+  async pecaExiste(pecaId: string): Promise<boolean> {
     const peca = await this.prisma.peca.findUnique({
       where: { id: pecaId },
-      select: { precoUnitario: true },
+      select: { id: true },
     });
-    return peca ? Number(peca.precoUnitario) : null;
+    return peca !== null;
   }
 }

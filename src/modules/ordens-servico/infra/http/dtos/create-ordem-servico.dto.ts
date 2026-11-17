@@ -49,11 +49,6 @@ export class CreateOrdemServicoDto {
   @IsOptional()
   descricaoProblema?: string;
 
-  @ApiPropertyOptional({ description: 'Diagnóstico técnico' })
-  @IsString()
-  @IsOptional()
-  diagnostico?: string;
-
   @ApiPropertyOptional({
     type: [ItemServicoDto],
     description: 'Serviços vinculados à OS',

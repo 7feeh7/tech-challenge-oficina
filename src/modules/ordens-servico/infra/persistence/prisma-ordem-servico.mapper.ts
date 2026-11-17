@@ -124,6 +124,8 @@ export class PrismaOrdemServicoMapper {
   static toTipoSugestaoPrisma(
     tipo: SugestaoItemOrdem['tipo'],
   ): TipoSugestaoPrisma {
-    return tipo === 'PECA' ? TipoSugestaoPrisma.PECA : TipoSugestaoPrisma.SERVICO;
+    return tipo === 'PECA'
+      ? TipoSugestaoPrisma.PECA
+      : TipoSugestaoPrisma.SERVICO;
   }
 }

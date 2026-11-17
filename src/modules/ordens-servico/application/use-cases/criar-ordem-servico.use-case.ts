@@ -1,27 +1,36 @@
+import { randomUUID } from 'crypto';
+import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
 import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
 import {
   ClienteDaOrdemNaoEncontradoError,
+  OrdemServicoNaoEncontradaError,
+  PecaDaOrdemNaoEncontradaError,
+  ServicoDaOrdemNaoEncontradoError,
   VeiculoDaOrdemNaoEncontradoError,
   VeiculoNaoPertenceAoClienteError,
 } from '../../domain/errors/ordem-servico.errors';
-import { StatusOS } from '../../domain/status-os';
 import {
   OrdemServicoOutput,
   OrdemServicoOutputMapper,
 } from '../mappers/ordem-servico-output.mapper';
 import { CatalogoGateway } from '../ports/catalogo.gateway';
 import { OrdemServicoGateway } from '../ports/ordem-servico.gateway';
-import {
-  adicionarItensNaOrdem,
-  ItemPecaInput,
-  ItemServicoInput,
-} from './montar-itens';
+import { TransicaoOrdemServicoService } from '../services/transicao-ordem-servico.service';
+
+export interface ItemServicoInput {
+  servicoId: string;
+  quantidade?: number;
+}
+
+export interface ItemPecaInput {
+  pecaId: string;
+  quantidade: number;
+}
 
 export interface CriarOrdemServicoInput {
   clienteId: string;
   veiculoId: string;
   descricaoProblema?: string;
-  diagnostico?: string;
   servicos?: ItemServicoInput[];
   pecas?: ItemPecaInput[];
 }
@@ -30,6 +39,8 @@ export class CriarOrdemServicoUseCase {
   constructor(
     private readonly ordens: OrdemServicoGateway,
     private readonly catalogo: CatalogoGateway,
+    private readonly unitOfWork: UnitOfWork,
+    private readonly transicoes: TransicaoOrdemServicoService,
   ) {}
 
   async execute(input: CriarOrdemServicoInput): Promise<OrdemServicoOutput> {
@@ -39,23 +50,52 @@ export class CriarOrdemServicoUseCase {
       clienteId: input.clienteId,
       veiculoId: input.veiculoId,
       descricaoProblema: input.descricaoProblema,
-      diagnostico: input.diagnostico,
+      correlationId: randomUUID(),
     });
+    await this.adicionarSugestoes(ordem, input);
 
-    await adicionarItensNaOrdem(
-      ordem,
-      this.catalogo,
-      input.servicos,
-      input.pecas,
+    const criada = await this.unitOfWork.executar((contexto) =>
+      this.transicoes.abrir(contexto, ordem),
     );
+    this.transicoes.registrarMetricasDaAbertura();
 
-    const detalhe = await this.ordens.criar(ordem, {
-      statusAnterior: null,
-      statusNovo: StatusOS.RECEBIDA,
-      observacao: 'OS criada',
-    });
+    return await this.montarSaida(criada.ordem.id!);
+  }
 
+  private async montarSaida(id: string): Promise<OrdemServicoOutput> {
+    const detalhe = await this.ordens.buscarDetalhePorId(id);
+    if (!detalhe) {
+      throw new OrdemServicoNaoEncontradaError(id);
+    }
     return OrdemServicoOutputMapper.toOutput(detalhe);
+  }
+
+  /** Sugestões não têm preço: o preço congela só na conclusão do diagnóstico. */
+  private async adicionarSugestoes(
+    ordem: OrdemServico,
+    input: CriarOrdemServicoInput,
+  ): Promise<void> {
+    for (const item of input.servicos ?? []) {
+      if (!(await this.catalogo.servicoExiste(item.servicoId))) {
+        throw new ServicoDaOrdemNaoEncontradoError(item.servicoId);
+      }
+      ordem.adicionarSugestao({
+        tipo: 'SERVICO',
+        itemId: item.servicoId,
+        quantidade: item.quantidade ?? 1,
+      });
+    }
+
+    for (const item of input.pecas ?? []) {
+      if (!(await this.catalogo.pecaExiste(item.pecaId))) {
+        throw new PecaDaOrdemNaoEncontradaError(item.pecaId);
+      }
+      ordem.adicionarSugestao({
+        tipo: 'PECA',
+        itemId: item.pecaId,
+        quantidade: item.quantidade,
+      });
+    }
   }
 
   /** O veículo precisa existir e ser do cliente informado. */

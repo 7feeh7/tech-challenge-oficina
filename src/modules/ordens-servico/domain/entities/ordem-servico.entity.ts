@@ -2,10 +2,10 @@ import { randomUUID } from 'crypto';
 import {
   DesistenciaNaoPermitidaError,
   DevolucaoTarefaFilaNaoPermitidaError,
-  DiagnosticoNaAberturaNaoPermitidoError,
   ItensOficiaisNaoEditaveisError,
   MotivoDesistenciaObrigatorioError,
   PatchOrdemServicoNaoPermitidoError,
+  QuantidadeItemInvalidaError,
   RetiradaNaoPermitidaError,
   TransicaoStatusInvalidaError,
 } from '../errors/ordem-servico.errors';
@@ -126,6 +126,9 @@ export class OrdemServico {
   get descricaoProblema() {
     return this._descricaoProblema;
   }
+  get diagnostico() {
+    return this._diagnostico;
+  }
   get diagnosticoConcluidoEm() {
     return this._diagnosticoConcluidoEm;
   }
@@ -199,12 +202,18 @@ export class OrdemServico {
   }
 
   registrarOrcamentoRejeitado(agora: Date = new Date()): void {
-    this.abrirNovaRodada();
+    if (this._status !== StatusOS.AGUARDANDO_APROVACAO) {
+      throw new TransicaoStatusInvalidaError(
+        this._status,
+        StatusOS.EM_DIAGNOSTICO,
+      );
+    }
     this.transicionarPara(StatusOS.EM_DIAGNOSTICO, agora);
+    this.abrirNovaRodada();
   }
 
   registrarReservaConfirmada(
-    prazoReferencia: Date,
+    prazoReferencia: Date | null,
     agora: Date = new Date(),
   ): void {
     this._prazoReferenciaReserva = prazoReferencia;
@@ -228,16 +237,15 @@ export class OrdemServico {
     if (!motivoNormalizado) {
       throw new MotivoDesistenciaObrigatorioError();
     }
-    if (!desistenciaPermitida(this._status)) {
-      throw new DesistenciaNaoPermitidaError(this._status);
-    }
+    // Repetir a desistência é idempotente e preserva o primeiro motivo (D2.12).
     if (this._status === StatusOS.EM_CANCELAMENTO) {
       return;
     }
-    this._etapaOrigemCancelamento = this._status;
-    if (!this._motivoEncerramento) {
-      this._motivoEncerramento = motivoNormalizado;
+    if (!desistenciaPermitida(this._status)) {
+      throw new DesistenciaNaoPermitidaError(this._status);
     }
+    this._etapaOrigemCancelamento = this._status;
+    this._motivoEncerramento = motivoNormalizado;
     this.transicionarPara(StatusOS.EM_CANCELAMENTO, agora);
   }
 
@@ -251,22 +259,24 @@ export class OrdemServico {
     this.transicionarPara(StatusOS.FINALIZADA, agora);
   }
 
-  registrarEntregaDoVeiculo(agora: Date = new Date()): void {
-    if (this._status !== StatusOS.FINALIZADA) {
-      throw new RetiradaNaoPermitidaError(
-        'A entrega só é permitida com a OS em FINALIZADA.',
-      );
+  /**
+   * Retirada única (D2.6): em FINALIZADA entrega o veículo; em cancelamento só
+   * registra a devolução física, sem mudar o status. Idempotente.
+   */
+  registrarRetirada(agora: Date = new Date()): void {
+    if (this._status === StatusOS.ENTREGUE) {
+      return;
     }
-    this.transicionarPara(StatusOS.ENTREGUE, agora);
-  }
-
-  registrarDevolucaoFisicaVeiculo(agora: Date = new Date()): void {
+    if (this._status === StatusOS.FINALIZADA) {
+      this.transicionarPara(StatusOS.ENTREGUE, agora);
+      return;
+    }
     if (
       this._status !== StatusOS.EM_CANCELAMENTO &&
       this._status !== StatusOS.CANCELADA
     ) {
       throw new RetiradaNaoPermitidaError(
-        'A devolução física só é permitida em cancelamento.',
+        `A retirada não é permitida no status ${this._status}.`,
       );
     }
     if (!this._veiculoLiberadoRetirada) {
@@ -281,10 +291,6 @@ export class OrdemServico {
 
   marcarVeiculoLiberadoParaRetirada(): void {
     this._veiculoLiberadoRetirada = true;
-  }
-
-  marcarDiagnosticoConcluido(agora: Date = new Date()): void {
-    this._diagnosticoConcluidoEm = agora;
   }
 
   alterarDescricaoProblema(descricaoProblema?: string | null): void {
@@ -307,7 +313,18 @@ export class OrdemServico {
         'Sugestões só podem ser informadas na abertura.',
       );
     }
-    this._sugestoes.push(sugestao);
+    if (!Number.isInteger(sugestao.quantidade) || sugestao.quantidade < 1) {
+      throw new QuantidadeItemInvalidaError();
+    }
+
+    const existente = this._sugestoes.find(
+      (item) => item.tipo === sugestao.tipo && item.itemId === sugestao.itemId,
+    );
+    if (existente) {
+      existente.quantidade += sugestao.quantidade;
+      return;
+    }
+    this._sugestoes.push({ ...sugestao });
   }
 
   adicionarServicoOficial(item: ItemServicoOrdem): void {
@@ -334,13 +351,10 @@ export class OrdemServico {
     this._itensOficiaisSubstituidos = true;
   }
 
+  // Os itens da rodada anterior ficam até a conclusão do novo diagnóstico, que os
+  // substitui: item mantido conserva o preço congelado e só assim dá para saber (D1.7).
   private abrirNovaRodada(): void {
     this._rodadaVigente += 1;
-    this._servicos = [];
-    this._pecas = [];
-    this._servicosAdicionados = [];
-    this._pecasAdicionadas = [];
-    this._itensOficiaisSubstituidos = true;
     this._diagnosticoConcluidoEm = null;
   }
 

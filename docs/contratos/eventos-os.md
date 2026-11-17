@@ -53,6 +53,51 @@ O formato segue o legado da Fase 3; os status novos da Fase 4 (`AGUARDANDO_PAGAM
 | `destinatario.nome` | `string` | sim | Nome do cliente |
 | `destinatario.email` | `string` | sim | E-mail do cliente |
 
+**Quando é gravado (E27):** na mesma transação que muda o status (`outbox_mensagens`, destino tópico de notificação), com o `correlationId` **persistido na OS** e o `eventId` igual ao da linha de `historico_status_os`. Na abertura, `statusAnterior` é `null`.
+
+---
+
+## execution.iniciar-diagnostico.v1
+
+Comando do OS para o Execution Service (fila `execution`, destino `DESTINO_FILA_EXECUTION`). Pede ao mecânico que faça o diagnóstico da rodada vigente.
+
+Quando é emitido, sempre na mesma transação da mudança de estado:
+
+- **abertura da OS** (rodada 1): `causationId` = `eventId` do `status-changed` da abertura; `sugestoes` = as sugestões informadas na abertura;
+- **recusa do orçamento** (rodada ≥ 2): `causationId` = `eventId` do `status-changed` de volta a `EM_DIAGNOSTICO`; `sugestoes` = os itens oficiais da rodada anterior (o mecânico parte deles).
+
+```json
+{
+  "eventId": "9f1c3a52-0b6e-4a43-8f55-3f4a1d2e7c10",
+  "eventType": "execution.iniciar-diagnostico.v1",
+  "version": 1,
+  "occurredAt": "2026-11-16T10:00:00.000Z",
+  "source": "os-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "veiculo": { "placa": "ABC1D23", "modelo": "Corolla" },
+    "descricaoProblema": "Barulho na suspensão dianteira",
+    "sugestoes": [
+      { "tipo": "SERVICO", "itemId": "uuid-do-servico", "quantidade": 1 },
+      { "tipo": "PECA", "itemId": "uuid-da-peca", "quantidade": 2 }
+    ]
+  }
+}
+```
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `veiculo.placa` / `veiculo.modelo` | `string` | sim | Identificação do veículo para o mecânico |
+| `descricaoProblema` | `string \| null` | não | Relato do cliente |
+| `sugestoes[].tipo` | `PECA \| SERVICO` | sim | Tipo do item sugerido |
+| `sugestoes[].itemId` | `string` | sim | Id do serviço ou da peça no catálogo |
+| `sugestoes[].quantidade` | `number` | sim | Inteiro ≥ 1 |
+
+Sugestões **não carregam preço**: o preço congela quando o diagnóstico é concluído e vira item oficial da OS.
+
 ---
 
 ## ordem-servico.pagamento-disponivel.v1

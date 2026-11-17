@@ -1,3 +1,4 @@
+import { UnitOfWorkFake } from '@/shared/database/unit-of-work-fake';
 import {
   ClienteDaOrdemNaoEncontradoError,
   PecaDaOrdemNaoEncontradaError,
@@ -6,16 +7,19 @@ import {
   VeiculoNaoPertenceAoClienteError,
 } from '../../domain/errors/ordem-servico.errors';
 import { StatusOS } from '../../domain/status-os';
+import { TransicaoOrdemServicoService } from '../services/transicao-ordem-servico.service';
 import { CriarOrdemServicoUseCase } from './criar-ordem-servico.use-case';
 import {
   criarCatalogoMock,
   criarDetalheFake,
   criarGatewayMock,
+  criarOrdemFake,
 } from './test-doubles';
 
 describe('CriarOrdemServicoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
   let catalogo: ReturnType<typeof criarCatalogoMock>;
+  let transicoes: jest.Mocked<TransicaoOrdemServicoService>;
   let useCase: CriarOrdemServicoUseCase;
 
   const input = { clienteId: 'uuid-c1', veiculoId: 'uuid-v1' };
@@ -23,46 +27,41 @@ describe('CriarOrdemServicoUseCase', () => {
   beforeEach(() => {
     gateway = criarGatewayMock();
     catalogo = criarCatalogoMock();
-    useCase = new CriarOrdemServicoUseCase(gateway, catalogo);
-    gateway.criar.mockImplementation((ordem) =>
-      Promise.resolve({ ...criarDetalheFake(), ordem }),
+    transicoes = {
+      abrir: jest.fn().mockResolvedValue({
+        ordem: criarOrdemFake({ id: 'uuid-os1' }),
+        cliente: { id: 'uuid-c1', nome: 'João', email: 'joao@email.com' },
+        veiculo: { placa: 'ABC1D23', modelo: 'Corolla' },
+      }),
+      registrarMetricasDaAbertura: jest.fn(),
+    } as unknown as jest.Mocked<TransicaoOrdemServicoService>;
+    useCase = new CriarOrdemServicoUseCase(
+      gateway,
+      catalogo,
+      new UnitOfWorkFake(),
+      transicoes,
     );
+    gateway.buscarDetalhePorId.mockResolvedValue(criarDetalheFake());
   });
 
-  it('abre a OS como RECEBIDA e registra a primeira entrada do histórico', async () => {
+  it('abre a OS como RECEBIDA via serviço de transição', async () => {
     const result = await useCase.execute(input);
 
     expect(result.status).toBe(StatusOS.RECEBIDA);
-    expect(gateway.criar).toHaveBeenCalledWith(expect.anything(), {
-      statusAnterior: null,
-      statusNovo: StatusOS.RECEBIDA,
-      observacao: 'OS criada',
-    });
+    expect(transicoes.abrir).toHaveBeenCalled();
+    expect(transicoes.registrarMetricasDaAbertura).toHaveBeenCalled();
   });
 
-  it('congela o preço vigente do catálogo nos itens da OS', async () => {
-    catalogo.buscarPrecoDoServico.mockResolvedValue(200);
-    catalogo.buscarPrecoDaPeca.mockResolvedValue(50);
-
-    const result = await useCase.execute({
+  it('registra sugestões sem preço e sem valor total na abertura', async () => {
+    await useCase.execute({
       ...input,
       servicos: [{ servicoId: 'uuid-s1', quantidade: 2 }],
       pecas: [{ pecaId: 'uuid-p1', quantidade: 3 }],
     });
 
-    // 2 × 200 + 3 × 50
-    expect(result.valorTotal).toBe(550);
-  });
-
-  it('assume quantidade 1 quando o serviço não a informa', async () => {
-    catalogo.buscarPrecoDoServico.mockResolvedValue(150);
-
-    const result = await useCase.execute({
-      ...input,
-      servicos: [{ servicoId: 'uuid-s1' }],
-    });
-
-    expect(result.valorTotal).toBe(150);
+    const ordemEnviada = transicoes.abrir.mock.calls[0][1];
+    expect(ordemEnviada.sugestoes).toHaveLength(2);
+    expect(ordemEnviada.valorTotal()).toBe(0);
   });
 
   it('recusa OS de cliente inexistente', async () => {
@@ -71,7 +70,7 @@ describe('CriarOrdemServicoUseCase', () => {
     await expect(useCase.execute(input)).rejects.toThrow(
       ClienteDaOrdemNaoEncontradoError,
     );
-    expect(gateway.criar).not.toHaveBeenCalled();
+    expect(transicoes.abrir).not.toHaveBeenCalled();
   });
 
   it('recusa OS de veículo inexistente', async () => {
@@ -91,20 +90,20 @@ describe('CriarOrdemServicoUseCase', () => {
     await expect(useCase.execute(input)).rejects.toThrow(
       VeiculoNaoPertenceAoClienteError,
     );
-    expect(gateway.criar).not.toHaveBeenCalled();
+    expect(transicoes.abrir).not.toHaveBeenCalled();
   });
 
   it('recusa serviço inexistente no catálogo', async () => {
-    catalogo.buscarPrecoDoServico.mockResolvedValue(null);
+    catalogo.servicoExiste.mockResolvedValue(false);
 
     await expect(
       useCase.execute({ ...input, servicos: [{ servicoId: 'fantasma' }] }),
     ).rejects.toThrow(ServicoDaOrdemNaoEncontradoError);
-    expect(gateway.criar).not.toHaveBeenCalled();
+    expect(transicoes.abrir).not.toHaveBeenCalled();
   });
 
   it('recusa peça inexistente no catálogo', async () => {
-    catalogo.buscarPrecoDaPeca.mockResolvedValue(null);
+    catalogo.pecaExiste.mockResolvedValue(false);
 
     await expect(
       useCase.execute({

@@ -1,121 +1,78 @@
-import {
-  OrdemServicoNaoEncontradaError,
-  TransicaoStatusInvalidaError,
-} from '../../domain/errors/ordem-servico.errors';
+import { UnitOfWorkFake } from '@/shared/database/unit-of-work-fake';
+import { PatchOrdemServicoNaoPermitidoError } from '../../domain/errors/ordem-servico.errors';
 import { StatusOS } from '../../domain/status-os';
+import { TransicaoOrdemServicoService } from '../services/transicao-ordem-servico.service';
 import { AtualizarOrdemServicoUseCase } from './atualizar-ordem-servico.use-case';
 import {
-  clienteFake,
-  criarCatalogoMock,
   criarDetalheFake,
   criarGatewayMock,
-  criarNotificadorMock,
   criarOrdemFake,
 } from './test-doubles';
 
 describe('AtualizarOrdemServicoUseCase', () => {
   let gateway: ReturnType<typeof criarGatewayMock>;
-  let catalogo: ReturnType<typeof criarCatalogoMock>;
-  let notificador: ReturnType<typeof criarNotificadorMock>;
+  let transicoes: jest.Mocked<TransicaoOrdemServicoService>;
   let useCase: AtualizarOrdemServicoUseCase;
 
   beforeEach(() => {
     gateway = criarGatewayMock();
-    catalogo = criarCatalogoMock();
-    notificador = criarNotificadorMock();
-    useCase = new AtualizarOrdemServicoUseCase(gateway, catalogo, notificador);
-    gateway.atualizar.mockImplementation((_id, ordem) =>
-      Promise.resolve({ ...criarDetalheFake(), ordem }),
+    transicoes = {
+      aplicar: jest.fn().mockImplementation((_ctx, input) => {
+        const ordem = criarOrdemFake();
+        input.aplicar(ordem, new Date());
+        return Promise.resolve({
+          bloqueada: {
+            ordem,
+            cliente: { id: 'uuid-c1', nome: 'João', email: 'joao@email.com' },
+            veiculo: { placa: 'ABC1D23', modelo: 'Corolla' },
+          },
+          statusAnterior: StatusOS.RECEBIDA,
+          statusNovo: StatusOS.RECEBIDA,
+          mudouStatus: false,
+        });
+      }),
+      registrarMetricasDaMudanca: jest.fn(),
+    } as unknown as jest.Mocked<TransicaoOrdemServicoService>;
+    useCase = new AtualizarOrdemServicoUseCase(
+      gateway,
+      new UnitOfWorkFake(),
+      transicoes,
     );
+    gateway.buscarDetalhePorId.mockResolvedValue(criarDetalheFake());
   });
 
-  it('grava o histórico quando o status muda', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-
-    await useCase.execute('uuid-os1', { status: StatusOS.EM_DIAGNOSTICO });
-
-    expect(gateway.atualizar).toHaveBeenCalledWith(
-      'uuid-os1',
-      expect.anything(),
-      {
-        statusAnterior: StatusOS.RECEBIDA,
-        statusNovo: StatusOS.EM_DIAGNOSTICO,
-      },
-    );
-  });
-
-  it('não grava histórico quando o status não muda', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-
-    await useCase.execute('uuid-os1', { diagnostico: 'Correia gasta' });
-
-    expect(gateway.atualizar).toHaveBeenCalledWith(
-      'uuid-os1',
-      expect.anything(),
-      undefined,
-    );
-  });
-
-  it('recusa transição inválida e não persiste nada', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-
-    await expect(
-      useCase.execute('uuid-os1', { status: StatusOS.FINALIZADA }),
-    ).rejects.toThrow(TransicaoStatusInvalidaError);
-    expect(gateway.atualizar).not.toHaveBeenCalled();
-  });
-
-  it('falha quando a OS não existe', async () => {
-    gateway.buscarPorId.mockResolvedValue(null);
-
-    await expect(
-      useCase.execute('inexistente', { diagnostico: 'x' }),
-    ).rejects.toThrow(OrdemServicoNaoEncontradaError);
-  });
-
-  it('acrescenta novos itens com o preço vigente do catálogo', async () => {
-    gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-    catalogo.buscarPrecoDaPeca.mockResolvedValue(80);
-
+  it('atualiza a descrição do problema em RECEBIDA', async () => {
     await useCase.execute('uuid-os1', {
-      pecas: [{ pecaId: 'uuid-p1', quantidade: 2 }],
+      descricaoProblema: 'Barulho no freio',
     });
 
-    const ordemPersistida = gateway.atualizar.mock.calls[0][1];
-    expect(ordemPersistida.pecasAdicionadas).toHaveLength(1);
-    expect(ordemPersistida.valorTotal()).toBe(160);
+    expect(transicoes.aplicar).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ordemServicoId: 'uuid-os1' }),
+    );
   });
 
-  describe('notificação de status', () => {
-    it('avisa o cliente quando o status muda', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
+  it('não altera nada quando descrição não é enviada', async () => {
+    await useCase.execute('uuid-os1', {});
 
-      await useCase.execute('uuid-os1', { status: StatusOS.EM_DIAGNOSTICO });
+    const aplicar = transicoes.aplicar.mock.calls[0][1];
+    const ordem = criarOrdemFake();
+    const antes = ordem.descricaoProblema;
+    aplicar.aplicar(ordem, new Date());
+    expect(ordem.descricaoProblema).toBe(antes);
+  });
 
-      expect(notificador.notificarMudancaDeStatus).toHaveBeenCalledWith({
-        ordemServicoId: 'uuid-os1',
-        destinatario: { nome: clienteFake.nome, email: clienteFake.email },
-        numeroOS: 1,
-        statusAnterior: StatusOS.RECEBIDA,
-        statusNovo: StatusOS.EM_DIAGNOSTICO,
-      });
+  it('propaga erro de domínio quando o PATCH não é permitido', async () => {
+    transicoes.aplicar.mockImplementation((_ctx, input) => {
+      const ordem = criarOrdemFake({ status: StatusOS.EM_EXECUCAO });
+      input.aplicar(ordem, new Date());
+      return Promise.reject(
+        new PatchOrdemServicoNaoPermitidoError('bloqueado'),
+      );
     });
 
-    it('não avisa o cliente quando só os dados mudam', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-
-      await useCase.execute('uuid-os1', { diagnostico: 'Correia gasta' });
-
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
-    });
-
-    it('não avisa o cliente quando a transição é recusada', async () => {
-      gateway.buscarPorId.mockResolvedValue(criarOrdemFake());
-
-      await expect(
-        useCase.execute('uuid-os1', { status: StatusOS.ENTREGUE }),
-      ).rejects.toThrow(TransicaoStatusInvalidaError);
-      expect(notificador.notificarMudancaDeStatus).not.toHaveBeenCalled();
-    });
+    await expect(
+      useCase.execute('uuid-os1', { descricaoProblema: 'Novo' }),
+    ).rejects.toThrow(PatchOrdemServicoNaoPermitidoError);
   });
 });

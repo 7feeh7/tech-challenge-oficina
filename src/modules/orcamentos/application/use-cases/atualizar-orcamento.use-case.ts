@@ -1,4 +1,8 @@
-import { NotificadorDeStatusGateway } from '@/modules/ordens-servico/application/ports/notificador-status.gateway';
+import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
+import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
+import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
+import { EstoqueInsuficienteReservaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { ReservarEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/reservar-estoque.use-case';
 import { Orcamento } from '../../domain/entities/orcamento.entity';
 import {
   EstoqueInsuficienteParaAprovacaoError,
@@ -10,12 +14,7 @@ import {
   OrcamentoOutput,
   OrcamentoOutputMapper,
 } from '../mappers/orcamento-output.mapper';
-import {
-  BaixaDeEstoque,
-  OrcamentoGateway,
-  ResultadoDaDecisao,
-} from '../ports/orcamento.gateway';
-import { notificarTransicao } from './notificar-transicao';
+import { OrcamentoGateway } from '../ports/orcamento.gateway';
 
 export interface AtualizarOrcamentoInput {
   valorTotal?: number;
@@ -27,7 +26,9 @@ export interface AtualizarOrcamentoInput {
 export class AtualizarOrcamentoUseCase {
   constructor(
     private readonly orcamentos: OrcamentoGateway,
-    private readonly notificador: NotificadorDeStatusGateway,
+    private readonly unitOfWork: UnitOfWork,
+    private readonly transicoes: TransicaoOrdemServicoService,
+    private readonly reservarEstoque: ReservarEstoqueUseCase,
   ) {}
 
   async execute(
@@ -39,8 +40,6 @@ export class AtualizarOrcamentoUseCase {
       throw new OrcamentoNaoEncontradoError(id);
     }
 
-    // A decisão do cliente só repercute na OS na primeira vez: reenviar o mesmo
-    // status é idempotente e não baixa estoque nem mexe no fluxo de novo.
     const aprovandoAgora =
       input.status === StatusOrcamento.APROVADO && !orcamento.estaAprovado();
     const rejeitandoAgora =
@@ -60,59 +59,85 @@ export class AtualizarOrcamentoUseCase {
     }
 
     if (aprovandoAgora) {
-      return await this.decidir(() => this.aprovar(orcamento));
+      return OrcamentoOutputMapper.toOutput(
+        await this.aprovarComReserva(orcamento),
+      );
     }
 
     if (rejeitandoAgora) {
-      return await this.decidir(() =>
-        this.orcamentos.rejeitarEDevolverParaDiagnostico(orcamento),
+      return OrcamentoOutputMapper.toOutput(
+        await this.rejeitarEDevolver(orcamento),
       );
     }
 
     return OrcamentoOutputMapper.toOutput(
-      await this.orcamentos.atualizar(id, orcamento),
+      await this.unitOfWork.executar((contexto) =>
+        this.orcamentos.atualizar(contexto, orcamento),
+      ),
     );
   }
 
-  /** Toda decisão que move a OS avisa o cliente da mudança de status. */
-  private async decidir(
-    aplicar: () => Promise<ResultadoDaDecisao>,
-  ): Promise<OrcamentoOutput> {
-    const resultado = await aplicar();
-
-    await notificarTransicao(this.notificador, resultado.transicao);
-
-    return OrcamentoOutputMapper.toOutput(resultado.orcamento);
+  private async rejeitarEDevolver(orcamento: Orcamento): Promise<Orcamento> {
+    return await this.unitOfWork.executar(async (contexto) => {
+      const atualizado = await this.orcamentos.atualizar(contexto, orcamento);
+      await this.transicoes.aplicar(contexto, {
+        ordemServicoId: orcamento.ordemServicoId,
+        aplicar: (os, ocorridoEm) => {
+          if (os.status === StatusOS.AGUARDANDO_APROVACAO) {
+            os.registrarOrcamentoRejeitado(ocorridoEm);
+          }
+        },
+        observacao: 'Orçamento recusado pelo cliente',
+      });
+      return atualizado;
+    });
   }
 
-  /**
-   * Aprovar consome o estoque das peças da OS. A checagem acontece antes da
-   * escrita: ou todas as baixas cabem, ou nenhuma é aplicada.
-   */
-  private async aprovar(orcamento: Orcamento): Promise<ResultadoDaDecisao> {
-    const ordem = await this.orcamentos.buscarOrdemComPecas(
+  private async aprovarComReserva(orcamento: Orcamento): Promise<Orcamento> {
+    const ordem = await this.orcamentos.buscarOrdemParaOrcamento(
       orcamento.ordemServicoId,
     );
     if (!ordem) {
       throw new OrdemDoOrcamentoNaoEncontradaError(orcamento.ordemServicoId);
     }
 
-    const baixas: BaixaDeEstoque[] = ordem.pecas.map((peca) => {
-      if (peca.saldoDisponivel < peca.quantidade) {
-        throw new EstoqueInsuficienteParaAprovacaoError(
-          peca.pecaId,
-          peca.saldoDisponivel,
-          peca.quantidade,
+    return await this.unitOfWork.executar(async (contexto) => {
+      try {
+        const reserva = await this.reservarEstoque.execute(
+          {
+            ordemServicoId: ordem.id,
+            rodada: ordem.rodadaVigente,
+            itens: ordem.pecas.map((peca) => ({
+              pecaId: peca.pecaId,
+              quantidade: peca.quantidade,
+            })),
+            prazoReferencia: null,
+          },
+          contexto,
         );
+
+        const atualizado = await this.orcamentos.atualizar(contexto, orcamento);
+        await this.transicoes.aplicar(contexto, {
+          ordemServicoId: orcamento.ordemServicoId,
+          aplicar: (os, ocorridoEm) =>
+            os.registrarReservaConfirmada(reserva.prazoReferencia, ocorridoEm),
+          observacao: 'Orçamento aprovado — reserva confirmada',
+        });
+        return atualizado;
+      } catch (erro) {
+        if (erro instanceof EstoqueInsuficienteReservaError) {
+          const primeira = erro.itensIndisponiveis[0];
+          if (primeira) {
+            throw new EstoqueInsuficienteParaAprovacaoError(
+              primeira.pecaId,
+              primeira.disponivelAtual,
+              primeira.solicitado,
+            );
+          }
+          throw new EstoqueInsuficienteParaAprovacaoError('desconhecida', 0, 0);
+        }
+        throw erro;
       }
-
-      return {
-        pecaId: peca.pecaId,
-        quantidade: peca.quantidade,
-        novoSaldo: peca.saldoDisponivel - peca.quantidade,
-      };
     });
-
-    return await this.orcamentos.aprovarComBaixaDeEstoque(orcamento, baixas);
   }
 }
