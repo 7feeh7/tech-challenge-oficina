@@ -99,6 +99,14 @@ export interface ReservaEstoqueGateway {
     rodada: number,
   ): Promise<LinhaReservaEstoque[]>;
 
+  /** Evidência de consumo já aplicado (E29): todas as peças informadas CONSUMIDAS. */
+  possuiConsumoAplicado(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    pecaIds: string[],
+  ): Promise<boolean>;
+
   ajustarFisicoAdministrativo(
     contexto: ContextoTransacao,
     input: {

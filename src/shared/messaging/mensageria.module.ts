@@ -1,10 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
 import { ObservabilityModule } from '@/shared/observability/observability.module';
 import {
   FILA_MENSAGENS,
   MENSAGEM_PROCESSADA_GATEWAY,
   OUTBOX_GATEWAY,
-  PROCESSADORES_MENSAGEM,
   PUBLICACAO_NOTIFICACAO,
 } from './application/ports/tokens';
 import { ProcessarMensagemEntradaService } from './application/services/processar-mensagem-entrada.service';
@@ -17,7 +17,7 @@ import { FilaSqsGateway } from './infra/sqs/fila-sqs.gateway';
 import { TopicoNotificacaoSnsGateway } from './infra/sns/topico-notificacao-sns.gateway';
 
 @Module({
-  imports: [ObservabilityModule],
+  imports: [ObservabilityModule, forwardRef(() => CoordenacaoSagaModule)],
   providers: [
     FilaSqsGateway,
     { provide: FILA_MENSAGENS, useExisting: FilaSqsGateway },
@@ -33,7 +33,6 @@ import { TopicoNotificacaoSnsGateway } from './infra/sns/topico-notificacao-sns.
     },
     PrismaOutboxGateway,
     { provide: OUTBOX_GATEWAY, useExisting: PrismaOutboxGateway },
-    { provide: PROCESSADORES_MENSAGEM, useValue: [] },
     RoteadorProcessadoresMensagemService,
     ProcessarMensagemEntradaService,
     PublicadorOutboxService,

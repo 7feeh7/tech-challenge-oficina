@@ -83,6 +83,49 @@ describe('ProcessarMensagemEntradaService', () => {
     expect(efeitos).toHaveLength(1);
   });
 
+  it('repete após P2002 em mensagem processada sem segundo efeito', async () => {
+    const efeitos: string[] = [];
+    const processador: ProcessadorMensagem = {
+      eventType: 'mensageria.teste-integracao.v1',
+      processar: () => {
+        efeitos.push('ok');
+        return Promise.resolve();
+      },
+    };
+    const hashes = new Map<string, string>();
+    let tentativasRegistrar = 0;
+    const mensagens: MensagemProcessadaGateway = {
+      jaProcessada: (_c, eventId) => Promise.resolve(hashes.has(eventId)),
+      registrar: (_c, eventId, hash) => {
+        tentativasRegistrar += 1;
+        if (tentativasRegistrar === 1) {
+          hashes.set(eventId, hash);
+          throw Object.assign(new Error('Unique'), {
+            code: 'P2002',
+            meta: { modelName: 'MensagemProcessada' },
+          });
+        }
+        return Promise.resolve();
+      },
+      buscarHash: (_c, eventId) => Promise.resolve(hashes.get(eventId) ?? null),
+    };
+    const uow = new UnitOfWorkFake();
+    const roteador = new RoteadorProcessadoresMensagemService([processador]);
+    const servico = new ProcessarMensagemEntradaService(
+      uow,
+      mensagens,
+      roteador,
+      logger,
+      mensageriaMetrics,
+      osMetrics,
+    );
+
+    await servico.executar(JSON.stringify(envelope));
+
+    expect(efeitos).toHaveLength(1);
+    expect(tentativasRegistrar).toBe(1);
+  });
+
   it('rejeita conteúdo divergente para mesmo eventId', async () => {
     const processador: ProcessadorMensagem = {
       eventType: 'mensageria.teste-integracao.v1',

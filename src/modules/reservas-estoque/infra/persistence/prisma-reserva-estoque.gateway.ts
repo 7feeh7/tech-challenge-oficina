@@ -466,6 +466,27 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     return linhas.map((raw) => PrismaReservaEstoqueMapper.toLinha(raw));
   }
 
+  async possuiConsumoAplicado(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    pecaIds: string[],
+  ): Promise<boolean> {
+    if (pecaIds.length === 0) {
+      return true;
+    }
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const consumidas = await cliente.reservaEstoque.count({
+      where: {
+        ordemServicoId,
+        rodada,
+        pecaId: { in: pecaIds },
+        situacao: SituacaoReservaEstoque.CONSUMIDA,
+      },
+    });
+    return consumidas === pecaIds.length;
+  }
+
   async ajustarFisicoAdministrativo(
     contexto: ContextoTransacao,
     input: {
