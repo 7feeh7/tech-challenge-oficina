@@ -125,14 +125,22 @@ describe('CompensacaoSagaService', () => {
     };
     const liberar = { execute: jest.fn() };
     const reservas = {
-      possuiConsumoAplicado: jest.fn().mockResolvedValue(true),
+      possuiConsumoAplicado: jest.fn().mockResolvedValue(false),
     };
     const prisma = {
       pendenciaOs: {
         findFirst: jest
           .fn()
           .mockResolvedValue(opts?.pendenciaAberta ? { id: 'p1' } : null),
+        findMany: jest
+          .fn()
+          .mockResolvedValue(
+            opts?.pendenciaAberta
+              ? [{ id: 'p1', detalhes: { motivo: 'teste' } }]
+              : [],
+          ),
         create: jest.fn(),
+        update: jest.fn(),
       },
       pedidoEmitido: {
         findFirst: jest
@@ -301,9 +309,12 @@ describe('CompensacaoSagaService', () => {
     expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.CONCLUIDO);
   });
 
-  it('pendência manual financeira não avança compensação', async () => {
-    const { service, prisma, liberar } = montar({
-      snapshot: snapshotInicial({ passo: PassoCompensacaoSaga.FINANCEIRO }),
+  it('pendência manual financeira libera aguardandoResposta e prepara estoque', async () => {
+    const { service, prisma, liberar, getSnapshot } = montar({
+      snapshot: snapshotInicial({
+        passo: PassoCompensacaoSaga.FINANCEIRO,
+        aguardandoResposta: true,
+      }),
     });
     await service.tratarRespostaCancelamentoFinanceiro(
       contexto,
@@ -315,6 +326,8 @@ describe('CompensacaoSagaService', () => {
       },
     );
     expect(prisma.pendenciaOs.create).toHaveBeenCalled();
+    expect(getSnapshot().aguardandoResposta).toBe(false);
+    expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.ESTOQUE);
     expect(liberar.execute).not.toHaveBeenCalled();
   });
 
@@ -342,6 +355,39 @@ describe('CompensacaoSagaService', () => {
       causationId: 'caus',
     });
     expect(comandos.emitirCancelarTarefa).toHaveBeenCalled();
+  });
+
+  it('supersede consulta de prazo ao entrar em compensação', async () => {
+    const { service, prisma, getSnapshot } = montar();
+    prisma.pendenciaOs.findMany.mockResolvedValue([
+      {
+        id: 'pc',
+        detalhes: { natureza: 'CONSULTA_PRAZO_REFERENCIA' },
+      },
+    ]);
+    await service.avancarAposEntradaEmCancelamento(contexto, {
+      ordemServicoId: 'os-1',
+      rodada: 1,
+      causationId: 'caus',
+    });
+    expect(prisma.pendenciaOs.update).toHaveBeenCalled();
+    expect(getSnapshot().consultaIdVigente).toBeNull();
+  });
+
+  it('ignora SituacaoFinanceira fora do passo CONSULTA_E10', async () => {
+    const { service, getSnapshot, logger } = montar({
+      snapshot: snapshotInicial({
+        passo: PassoCompensacaoSaga.FINANCEIRO,
+        consultaIdVigente: 'c-prazo',
+      }),
+    });
+    await service.tratarSituacaoFinanceiraE10(contexto, 'os-1', 'caus', {
+      consultaId: 'c-prazo',
+      situacaoPagamento: SituacaoPagamentoFinanceira.PAGO_NO_PRAZO,
+      situacaoEstorno: SituacaoEstornoFinanceira.NENHUM,
+    });
+    expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.FINANCEIRO);
+    expect(logger.logWithMeta).toHaveBeenCalled();
   });
 
   it('não encerra em CANCELADA com pendência aberta', async () => {

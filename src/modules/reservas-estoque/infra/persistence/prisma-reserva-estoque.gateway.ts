@@ -503,19 +503,34 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     }
 
     const cliente = obterClienteTransacao(contexto, this.prisma);
+    const referencia = await cliente.pendenciaOs.findUnique({
+      where: { id: input.pendenciaId },
+      select: {
+        id: true,
+        ordemServicoId: true,
+      },
+    });
+    if (!referencia) {
+      throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
+    }
+
+    const osBloqueada = await cliente.$queryRaw<{ id: string }[]>`
+      SELECT id FROM ordens_servico WHERE id = ${referencia.ordemServicoId}::uuid FOR UPDATE
+    `;
+    if (!osBloqueada[0]) {
+      throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
+    }
+
     const pendenciaRows = await cliente.$queryRaw<PendenciaBloqueadaRow[]>`
       SELECT id, ordem_servico_id, rodada, resolvida, detalhes
       FROM pendencias_os
       WHERE id = ${input.pendenciaId}::uuid
+        AND resolvida = false
       FOR UPDATE
     `;
 
     const pendencia = pendenciaRows[0];
     if (!pendencia) {
-      throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
-    }
-
-    if (pendencia.resolvida) {
       throw new PendenciaInventarioJaResolvidaError();
     }
 

@@ -3,7 +3,7 @@ import { PrismaConsultaPrazoOrdemGateway } from './prisma-consulta-prazo-ordem.g
 describe('PrismaConsultaPrazoOrdemGateway', () => {
   it('reivindica linhas elegíveis via transação', async () => {
     const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
+      $transaction: jest.fn((fn: (tx: unknown) => unknown) =>
         fn({
           $queryRaw: jest.fn().mockResolvedValue([{ id: 'os-1' }]),
           ordemServico: { updateMany: jest.fn() },
