@@ -1,7 +1,7 @@
 -- Seed mínimo para EXPLAIN ANALYZE. Idempotente via TRUNCATE CASCADE.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-TRUNCATE TABLE movimentacoes_estoque, historico_status_os, orcamentos,
+TRUNCATE TABLE movimentacoes_estoque, historico_status_os, projecoes_financeiras_os,
   ordens_servico_pecas, ordens_servico_servicos, ordens_servico,
   veiculos, clientes, pecas, servicos RESTART IDENTITY CASCADE;
 
@@ -48,13 +48,6 @@ SELECT gen_random_uuid(),
 FROM generate_series(1, 5000) g
 JOIN LATERAL (SELECT id FROM clientes ORDER BY random() LIMIT 1) c ON true
 JOIN LATERAL (SELECT id FROM veiculos ORDER BY random() LIMIT 1) v ON true;
-
-INSERT INTO orcamentos (id, ordem_servico_id, valor_total, status, criado_em, atualizado_em)
-SELECT gen_random_uuid(), os.id, 500.00,
-       CASE WHEN random() < 0.3 THEN 'AGUARDANDO_APROVACAO'::"StatusOrcamento" ELSE 'APROVADO'::"StatusOrcamento" END,
-       NOW(), NOW()
-FROM ordens_servico os
-LIMIT 2000;
 
 INSERT INTO movimentacoes_estoque (id, peca_id, tipo, quantidade, ordem_servico_id, criado_em)
 SELECT gen_random_uuid(), p.id, 'BAIXA'::"TipoMovimentacaoEstoque", 1,

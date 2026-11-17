@@ -200,11 +200,15 @@ describe('PrismaOrdemServicoGateway', () => {
           criadoEm: new Date(),
         },
       ],
-      orcamentos: [],
+      projecoesFinanceiras: [],
     });
 
     const detalhe = await gateway.buscarDetalhePorId('os-1');
 
+    expect(detalhe?.resumoFinanceiro).toEqual({
+      orcamento: null,
+      pagamento: null,
+    });
     expect(detalhe?.historicoStatus).toHaveLength(1);
     expect(detalhe?.historicoStatus[0].statusNovo).toBe(
       StatusOS.EM_DIAGNOSTICO,

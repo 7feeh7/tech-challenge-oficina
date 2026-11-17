@@ -6,7 +6,6 @@ import { OwnershipResource } from '../decorators/ownership.decorator';
 describe('OwnershipGuard', () => {
   const prisma = {
     ordemServico: { findUnique: jest.fn() },
-    orcamento: { findUnique: jest.fn() },
   };
 
   const reflector = {
@@ -79,7 +78,7 @@ describe('OwnershipGuard', () => {
   it('rejeita cliente sem id de recurso', async () => {
     reflector.getAllAndOverride = jest
       .fn()
-      .mockReturnValue(OwnershipResource.ORCAMENTO);
+      .mockReturnValue(OwnershipResource.ORDEM_SERVICO);
 
     const context = {
       getHandler: () => ({}),
@@ -95,50 +94,6 @@ describe('OwnershipGuard', () => {
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
-  });
-
-  it('bloqueia quando orçamento não está vinculado a cliente', async () => {
-    reflector.getAllAndOverride = jest
-      .fn()
-      .mockReturnValue(OwnershipResource.ORCAMENTO);
-    prisma.orcamento.findUnique.mockResolvedValue(null);
-
-    const context = {
-      getHandler: () => ({}),
-      getClass: () => ({}),
-      switchToHttp: () => ({
-        getRequest: () => ({
-          user: { sub: 'cliente-1', tipo: 'CLIENTE', perfil: 'CLIENTE' },
-          params: { id: 'orc-sem-cliente' },
-        }),
-      }),
-    } as never;
-
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-  });
-
-  it('valida posse de orçamento via cliente da OS', async () => {
-    reflector.getAllAndOverride = jest
-      .fn()
-      .mockReturnValue(OwnershipResource.ORCAMENTO);
-    prisma.orcamento.findUnique.mockResolvedValue({
-      ordemServico: { clienteId: 'cliente-1' },
-    });
-
-    const context = {
-      getHandler: () => ({}),
-      getClass: () => ({}),
-      switchToHttp: () => ({
-        getRequest: () => ({
-          user: { sub: 'cliente-1', tipo: 'CLIENTE', perfil: 'CLIENTE' },
-          params: { id: 'orc-1' },
-        }),
-      }),
-    } as never;
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
   });
 
   it('permite cliente acessando propria OS', async () => {

@@ -74,7 +74,9 @@ function criarPoolAjusteConcorrente(
     prismaB as unknown as PrismaService,
     { get: () => '15000' } as never,
   );
-  const reservas = nestModule.get<ReservaEstoqueGateway>(RESERVA_ESTOQUE_GATEWAY);
+  const reservas = nestModule.get<ReservaEstoqueGateway>(
+    RESERVA_ESTOQUE_GATEWAY,
+  );
   const compensacao = nestModule.get<CompensacaoAvancoPort>(COMPENSACAO_AVANCO);
   const ajustar = new AjustarEstoqueDivergenciaUseCase(
     reservas,
@@ -1097,7 +1099,9 @@ describe('Saga — compensação (integração)', () => {
       }),
     ).toBe(1);
     expect(
-      await prisma.mensagemProcessada.count({ where: { eventId: eventIdFinanceiro } }),
+      await prisma.mensagemProcessada.count({
+        where: { eventId: eventIdFinanceiro },
+      }),
     ).toBe(1);
 
     const reservasOs = await prisma.reservaEstoque.findMany({

@@ -9,11 +9,11 @@ WHERE status NOT IN ('FINALIZADA', 'ENTREGUE')
 ORDER BY status DESC, criado_em ASC
 LIMIT 20;
 
-\echo '=== Orçamento pendente ==='
+\echo '=== Projeção financeira da OS ==='
 EXPLAIN (ANALYZE, BUFFERS)
-SELECT id FROM orcamentos
+SELECT id FROM projecoes_financeiras_os
 WHERE ordem_servico_id = (SELECT id FROM ordens_servico LIMIT 1)
-  AND status = 'AGUARDANDO_APROVACAO'
+  AND natureza = 'PAGAMENTO'
 LIMIT 1;
 
 \echo '=== Movimentações por peça ==='

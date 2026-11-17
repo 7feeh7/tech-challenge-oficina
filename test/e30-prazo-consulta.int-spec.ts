@@ -318,6 +318,15 @@ describe('E30 — prazo, consulta e projeção (integração)', () => {
 
   it('reivindicação SKIP LOCKED evita sobreposição entre réplicas', async () => {
     const { os } = await prepararAguardandoPagamento();
+    const posseDistante = new Date(Date.now() + 3_600_000);
+    await prisma.ordemServico.updateMany({
+      where: {
+        status: StatusOS.AGUARDANDO_PAGAMENTO,
+        id: { not: os.id },
+        prazoReferenciaReserva: { not: null },
+      },
+      data: { consultaPrazoReivindicadoEm: posseDistante },
+    });
     await prisma.ordemServico.update({
       where: { id: os.id },
       data: {
@@ -327,9 +336,14 @@ describe('E30 — prazo, consulta e projeção (integração)', () => {
       },
     });
     const primeiro = await reivindicacao.reivindicarElegiveis(1, 300_000);
-    expect(primeiro).toContain(os.id);
+    expect(primeiro).toEqual([os.id]);
     const segundo = await reivindicacao.reivindicarElegiveis(1, 300_000);
     expect(segundo).not.toContain(os.id);
+    const apos = await prisma.ordemServico.findUniqueOrThrow({
+      where: { id: os.id },
+      select: { consultaPrazoReivindicadoEm: true },
+    });
+    expect(apos.consultaPrazoReivindicadoEm).not.toBeNull();
   });
 
   it('solicitação do administrador e verificador competem sem consultas duplicadas no mesmo instante', async () => {

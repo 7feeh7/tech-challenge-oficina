@@ -7,6 +7,12 @@ import {
   OrdemServicoDetalhe,
   OrdemServicoGateway,
 } from '../ports/ordem-servico.gateway';
+import type { ResumoFinanceiroOs } from '../mappers/resumo-financeiro-os.mapper';
+
+export const resumoFinanceiroVazio: ResumoFinanceiroOs = {
+  orcamento: null,
+  pagamento: null,
+};
 
 export const clienteFake = {
   id: 'uuid-c1',
@@ -38,7 +44,7 @@ export const criarDetalheFake = (
   servicos: [],
   pecas: [],
   sugestoes: [],
-  orcamentos: [],
+  resumoFinanceiro: resumoFinanceiroVazio,
   historicoStatus: [],
 });
 
