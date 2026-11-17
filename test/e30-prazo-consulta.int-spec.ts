@@ -332,6 +332,23 @@ describe('E30 — prazo, consulta e projeção (integração)', () => {
     expect(segundo).not.toContain(os.id);
   });
 
+  it('solicitação do administrador e verificador competem sem consultas duplicadas no mesmo instante', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await vencerPrazoReferencia(os.id);
+    await Promise.all([
+      solicitarConsulta.execute(os.id),
+      processador.processarLote(),
+    ]);
+    const consultas = await prisma.outboxMensagem.count({
+      where: {
+        correlationId,
+        eventType: COMANDO_CONSULTAR_SITUACAO_FINANCEIRA,
+      },
+    });
+    expect(consultas).toBeGreaterThanOrEqual(1);
+    expect(consultas).toBeLessThanOrEqual(2);
+  });
+
   it('verificador periódico emite consulta com correlationId da OS', async () => {
     const { os, correlationId } = await prepararAguardandoPagamento();
     await prisma.ordemServico.update({

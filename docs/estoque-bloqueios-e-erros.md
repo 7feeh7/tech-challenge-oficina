@@ -2,13 +2,14 @@
 
 Complemento da E26 (2026-11-16). Todas as operações que alteram reservas, pendências de inventário ou saldo físico seguem a **mesma ordem de bloqueio** no PostgreSQL, para evitar *deadlock*:
 
-1. **Pendência** (`pendencias_os`), quando a operação envolve ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da pendência.
-2. **Reservas ativas** da OS e rodada — `SELECT … FROM reservas_estoque WHERE situacao = 'ATIVA' … ORDER BY peca_id FOR UPDATE`.
-3. **Peças** — `SELECT … FROM pecas WHERE id = … FOR UPDATE`, sempre na ordem crescente de `peca_id`.
+1. **Ordem de serviço** (`ordens_servico`), quando a operação envolve compensação ou ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da OS.
+2. **Pendência** (`pendencias_os`), no ajuste administrativo — `SELECT … FOR UPDATE` pela `id` da pendência, **depois** da OS, com revalidação de `resolvida = false` na mesma transação.
+3. **Reservas ativas** da OS e rodada — `SELECT … FROM reservas_estoque WHERE situacao = 'ATIVA' … ORDER BY peca_id FOR UPDATE`.
+4. **Peças** — `SELECT … FROM pecas WHERE id = … FOR UPDATE`, sempre na ordem crescente de `peca_id`.
 
 Operações afetadas: reservar, liberar, consumir, entrada e baixa manual, atualização de peça com quantidade física e ajuste administrativo de divergência.
 
-Na rota interna `POST /internal/ordens-servico/{id}/reservas` (E28), a ordem de serviço é bloqueada **antes** das reservas e peças, na mesma transação do Unit of Work do chamador.
+Na rota interna `POST /internal/ordens-servico/{id}/reservas` (E28) e no ajuste administrativo com retomada da compensação (complemento E30), a ordem de serviço é bloqueada **antes** da pendência, reservas e peças, na mesma transação do Unit of Work do chamador.
 
 ## Transições de reserva
 

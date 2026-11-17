@@ -77,6 +77,11 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     contexto: ContextoTransacao,
     input: { ordemServicoId: string; rodada: number; causationId: string },
   ): Promise<void> {
+    await this.supersederConsultaPrazoReferencia(
+      contexto,
+      input.ordemServicoId,
+      input.rodada,
+    );
     await this.avancar(contexto, input.ordemServicoId, input.causationId);
   }
 
@@ -223,6 +228,19 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
       ordemServicoId,
       bloqueada.ordem.rodadaVigente,
     );
+    if (snapshot.passo !== PassoCompensacaoSaga.CONSULTA_E10) {
+      this.logger.logWithMeta(
+        'info',
+        'saga.consulta.financeira.ignorada',
+        {
+          consultaId: payload.consultaId,
+          passo: snapshot.passo,
+          motivo: 'consulta fora da exceção E10',
+        },
+        'CoordenacaoSaga',
+      );
+      return;
+    }
     if (
       !snapshot.consultaIdVigente ||
       snapshot.consultaIdVigente !== payload.consultaId
@@ -306,6 +324,14 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
           },
         },
       });
+      const snapshot = await this.estado.obterOuCriar(
+        contexto,
+        ordemServicoId,
+        bloqueada.ordem.rodadaVigente,
+      );
+      snapshot.aguardandoResposta = false;
+      snapshot.passo = PassoCompensacaoSaga.ESTOQUE;
+      await this.estado.salvar(contexto, snapshot);
       return;
     }
     const snapshot = await this.estado.obterOuCriar(
@@ -479,7 +505,16 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     const rodada = bloqueada.ordem.rodadaVigente;
     const pecas = snapshot.pecasUtilizadas ?? [];
     const idempotencyKeyConsumo = `estoque.consumir:compensacao:${ordemServicoId}:${rodada}`;
-    if (pecas.length > 0) {
+    const pecaIdsConsumo = pecas.map((p) => p.itemId);
+    const consumoJaAplicado =
+      pecaIdsConsumo.length > 0 &&
+      (await this.reservas.possuiConsumoAplicado(
+        contexto,
+        ordemServicoId,
+        rodada,
+        pecaIdsConsumo,
+      ));
+    if (pecas.length > 0 && !consumoJaAplicado) {
       try {
         const consumo = await this.consumir.execute(
           {
@@ -671,11 +706,49 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     ordemServicoId: string,
   ): Promise<boolean> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const aberta = await cliente.pendenciaOs.findFirst({
+    const abertas = await cliente.pendenciaOs.findMany({
       where: { ordemServicoId, resolvida: false },
-      select: { id: true },
+      select: { id: true, detalhes: true },
     });
-    return Boolean(aberta);
+    return abertas.some((pendencia) => {
+      const detalhes = pendencia.detalhes as Record<string, unknown>;
+      return detalhes.natureza !== 'CONSULTA_PRAZO_REFERENCIA';
+    });
+  }
+
+  private async supersederConsultaPrazoReferencia(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const abertas = await cliente.pendenciaOs.findMany({
+      where: {
+        ordemServicoId,
+        rodada,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+      },
+    });
+    const agora = new Date();
+    for (const pendencia of abertas) {
+      const detalhes = pendencia.detalhes as Record<string, unknown>;
+      if (detalhes.natureza === 'CONSULTA_PRAZO_REFERENCIA') {
+        await cliente.pendenciaOs.update({
+          where: { id: pendencia.id },
+          data: { resolvida: true, resolvidaEm: agora },
+        });
+      }
+    }
+    const snapshot = await this.estado.obterOuCriar(
+      contexto,
+      ordemServicoId,
+      rodada,
+    );
+    if (snapshot.passo !== PassoCompensacaoSaga.CONSULTA_E10) {
+      snapshot.consultaIdVigente = null;
+      await this.estado.salvar(contexto, snapshot);
+    }
   }
 }
 

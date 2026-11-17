@@ -7,7 +7,7 @@ jest.mock('@/shared/database/obter-cliente-transacao', () => ({
 }));
 
 jest.mock('@/shared/database/obter-instante-banco', () => ({
-  obterInstanteBanco: async () => new Date('2026-11-17T12:00:00Z'),
+  obterInstanteBanco: () => Promise.resolve(new Date('2026-11-17T12:00:00Z')),
 }));
 
 describe('ConsultaPrazoReferenciaService', () => {
@@ -52,7 +52,7 @@ describe('ConsultaPrazoReferenciaService', () => {
 
     const service = new ConsultaPrazoReferenciaService(
       ordens as never,
-      estado as never,
+      estado,
       comandos as never,
       pedidos as never,
       prisma as never,
@@ -73,7 +73,10 @@ describe('ConsultaPrazoReferenciaService', () => {
 
   it('emite consulta com prazo vencido', async () => {
     const passado = new Date('2026-11-17T11:00:00Z');
-    const { service, comandos } = montar(StatusOS.AGUARDANDO_PAGAMENTO, passado);
+    const { service, comandos } = montar(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+      passado,
+    );
     await expect(
       service.emitirConsultaVigente(contexto, 'os-1', 'caus', false),
     ).resolves.toBe('emitida');
@@ -81,7 +84,9 @@ describe('ConsultaPrazoReferenciaService', () => {
   });
 
   it('retorna indisponível quando OS não bloqueia', async () => {
-    const ordens = { bloquearParaAtualizacao: jest.fn().mockResolvedValue(null) };
+    const ordens = {
+      bloquearParaAtualizacao: jest.fn().mockResolvedValue(null),
+    };
     const service = new ConsultaPrazoReferenciaService(
       ordens as never,
       {} as never,

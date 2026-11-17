@@ -42,8 +42,10 @@ Referência para `decidir(fato, ordem)` e orquestração em `CompensacaoSagaServ
 | --- | --- | --- |
 | `RespostaCancelamento` | APLICAR | Atualiza passo / `resultadoExecucao` / dispara E10 se reparo `JA_CONCLUIDA` |
 | `RespostaCancelamentoFinanceiro` | APLICAR | Avança estoque ou abre pendência manual |
-| `SituacaoFinanceira` (consulta vigente, E10) | APLICAR | Valida condições E10; `INDETERMINADA` mantém espera |
-| `SituacaoFinanceira` (consultaId ≠ vigente) | IGNORAR | Log; sem usar projeção local |
+| `SituacaoFinanceira` (consulta vigente, passo `CONSULTA_E10`) | APLICAR | Valida condições E10; `INDETERMINADA` mantém espera |
+| `SituacaoFinanceira` (consultaId ≠ vigente ou passo ≠ `CONSULTA_E10`) | IGNORAR | Respostas atrasadas de consulta de prazo após `EM_CANCELAMENTO` não movem a OS |
+| Entrada em `EM_CANCELAMENTO` com consulta de prazo aberta | APLICAR | Supersede pendência `CONSULTA_PRAZO_REFERENCIA`; não conta como pendência bloqueante |
+| `RespostaCancelamentoFinanceiro` `PENDENCIA_MANUAL_ABERTA` | APLICAR | `aguardandoResposta = false`; retomada via `PendenciaResolvida` / `EstornoConcluido` |
 | `PagamentoConfirmado` | CONCILIAR | Projeção + `avancarSeEmCancelamento` |
 | `ReparoIniciado` | APLICAR | Marca `reparoIniciadoDuranteCancelamento` |
 | `ReparoFalhou` / `ReparoInterrompido` | APLICAR | Fato terminal + peças |

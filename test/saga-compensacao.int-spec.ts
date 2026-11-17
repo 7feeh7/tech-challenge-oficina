@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@/shared/generated/prisma/client';
+import { PrismaUnitOfWork } from '@/shared/database/prisma-unit-of-work';
+import { RESERVA_ESTOQUE_GATEWAY } from '@/modules/reservas-estoque/application/ports/tokens';
+import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
+import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
+import type { CompensacaoAvancoPort } from '@/shared/saga/compensacao-avanco.port';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
 import {
   consultaIdExcecaoE10,
@@ -14,6 +21,7 @@ import { ConcluirDiagnosticoInternoUseCase } from '@/modules/rotas-internas/appl
 import { ReservarOsInternoUseCase } from '@/modules/rotas-internas/application/use-cases/reservar-os-interno.use-case';
 import { RotasInternasModule } from '@/modules/rotas-internas/rotas-internas.module';
 import { ReservasEstoqueModule } from '@/modules/reservas-estoque/reservas-estoque.module';
+import { AjustarEstoqueDivergenciaUseCase } from '@/modules/reservas-estoque/application/use-cases/ajustar-estoque-divergencia.use-case';
 import { PrismaModule } from '@/shared/database/prisma.module';
 import { PrismaService } from '@/shared/database/prisma.service';
 import {
@@ -30,6 +38,7 @@ import {
   EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
   EVENTO_SITUACAO_FINANCEIRA,
   EVENTO_PENDENCIA_RESOLVIDA,
+  EVENTO_ESTORNO_CONCLUIDO,
 } from '@/shared/messaging/envelope';
 import { ProcessarMensagemEntradaService } from '@/shared/messaging/application/services/processar-mensagem-entrada.service';
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
@@ -47,6 +56,50 @@ import {
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
 
+function criarPrismaSegundoPool(databaseUrl: string): PrismaClient {
+  const adapter = new PrismaPg({
+    connectionString: databaseUrl,
+    max: 2,
+    connectionTimeoutMillis: 15_000,
+  });
+  return new PrismaClient({ adapter });
+}
+
+function criarPoolAjusteConcorrente(
+  databaseUrl: string,
+  nestModule: TestingModule,
+) {
+  const prismaB = criarPrismaSegundoPool(databaseUrl);
+  const uowB = new PrismaUnitOfWork(
+    prismaB as unknown as PrismaService,
+    { get: () => '15000' } as never,
+  );
+  const reservas = nestModule.get<ReservaEstoqueGateway>(RESERVA_ESTOQUE_GATEWAY);
+  const compensacao = nestModule.get<CompensacaoAvancoPort>(COMPENSACAO_AVANCO);
+  const ajustar = new AjustarEstoqueDivergenciaUseCase(
+    reservas,
+    uowB,
+    compensacao,
+  );
+  return { prismaB, ajustar };
+}
+
+async function somaReservasAtivasOs(
+  cliente: PrismaService,
+  ordemServicoId: string,
+  pecaId: string,
+): Promise<number> {
+  const agg = await cliente.reservaEstoque.aggregate({
+    where: {
+      ordemServicoId,
+      pecaId,
+      situacao: SituacaoReservaEstoque.ATIVA,
+    },
+    _sum: { quantidade: true },
+  });
+  return agg._sum.quantidade ?? 0;
+}
+
 describe('Saga — compensação (integração)', () => {
   let nestModule: TestingModule;
   let prisma: PrismaService;
@@ -56,6 +109,7 @@ describe('Saga — compensação (integração)', () => {
   let reservar: ReservarOsInternoUseCase;
   let processar: ProcessarMensagemEntradaService;
   let solicitarConsulta: SolicitarConsultaFinanceiraUseCase;
+  let ajustarInventario: AjustarEstoqueDivergenciaUseCase;
 
   const sufixo = randomUUID().slice(0, 8);
   let clienteId: string;
@@ -261,6 +315,7 @@ describe('Saga — compensação (integração)', () => {
     reservar = nestModule.get(ReservarOsInternoUseCase);
     processar = nestModule.get(ProcessarMensagemEntradaService);
     solicitarConsulta = nestModule.get(SolicitarConsultaFinanceiraUseCase);
+    ajustarInventario = nestModule.get(AjustarEstoqueDivergenciaUseCase);
 
     const cliente = await prisma.cliente.create({
       data: {
@@ -400,6 +455,18 @@ describe('Saga — compensação (integração)', () => {
         },
       }),
     ).toBe(1);
+    const estado = await prisma.estadoCompensacaoOs.findUnique({
+      where: { ordemServicoId: os.id },
+    });
+    expect(estado?.passo).toBe(PassoCompensacaoSaga.ESTOQUE);
+    expect(estado?.aguardandoResposta).toBe(false);
+    const reservasAtivas = await prisma.reservaEstoque.findMany({
+      where: {
+        ordemServicoId: os.id,
+        situacao: SituacaoReservaEstoque.ATIVA,
+      },
+    });
+    expect(reservasAtivas.length).toBeGreaterThan(0);
   });
 
   it('reentrega do mesmo eventId não duplica comandos nem estoque', async () => {
@@ -742,7 +809,165 @@ describe('Saga — compensação (integração)', () => {
         pendenciaId: `pend-${sufixo}`,
       }),
     );
+    const estado = await prisma.estadoCompensacaoOs.findUnique({
+      where: { ordemServicoId: os.id },
+    });
+    expect(estado?.aguardandoResposta).toBe(false);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('EstornoConcluido com cobrancaId retoma compensação sem segunda resposta financeira', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    const cobrancaId = randomUUID();
+    await desistir.execute(os.id, { motivo: 'Estorno manual' });
+    await processar.executar(
+      montarEnvelope(EVENTO_RESPOSTA_CANCELAMENTO, os.id, correlationId, 1, {
+        resultado: 'PENDENCIA_MANUAL_ABERTA',
+        pendenciaId: `pend-estorno-${sufixo}`,
+      }),
+    );
+    await prisma.pendenciaOs.updateMany({
+      where: {
+        ordemServicoId: os.id,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+      },
+      data: {
+        detalhes: {
+          cobrancaId,
+          pendenciaId: `pend-estorno-${sufixo}`,
+          motivo: 'Estorno',
+        },
+      },
+    });
+    await processar.executar(
+      montarEnvelope(EVENTO_ESTORNO_CONCLUIDO, os.id, correlationId, 1, {
+        cobrancaId,
+        orderId: `ORD-EST-${sufixo}`,
+        valorEstornadoCentavos: 20000,
+      }),
+    );
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('desistência com consulta INDETERMINADA inicia compensação até CANCELADA', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { prazoReferenciaReserva: new Date(Date.now() - 60_000) },
+    });
+    await solicitarConsulta.execute(os.id);
+    const consultaId = consultaIdPrazoReferencia(os.id, 1, 1);
+    await processar.executar(
+      montarEnvelope(EVENTO_SITUACAO_FINANCEIRA, os.id, correlationId, 1, {
+        consultaId,
+        situacaoPagamento: 'INDETERMINADA',
+        situacaoEstorno: 'NENHUM',
+      }),
+    );
+    await desistir.execute(os.id, { motivo: 'Desistência após indeterminada' });
     await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('desistência com consulta financeira pendente não bloqueia compensação', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { prazoReferenciaReserva: new Date(Date.now() - 60_000) },
+    });
+    await solicitarConsulta.execute(os.id);
+    await desistir.execute(os.id, { motivo: 'Sem resposta Billing' });
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('CobrancaExpirada com consulta pendente percorre compensação', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await solicitarConsulta.execute(os.id);
+    await processar.executar(
+      montarEnvelope(EVENTO_COBRANCA_EXPIRADA, os.id, correlationId, 1, {}),
+    );
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('resposta atrasada da consulta de prazo após EM_CANCELAMENTO não altera status', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento();
+    await prisma.ordemServico.update({
+      where: { id: os.id },
+      data: { prazoReferenciaReserva: new Date(Date.now() - 60_000) },
+    });
+    await solicitarConsulta.execute(os.id);
+    const consultaId = consultaIdPrazoReferencia(os.id, 1, 1);
+    await desistir.execute(os.id, { motivo: 'Antes da resposta' });
+    await processar.executar(
+      montarEnvelope(EVENTO_SITUACAO_FINANCEIRA, os.id, correlationId, 1, {
+        consultaId,
+        situacaoPagamento: 'PAGO_NO_PRAZO',
+        situacaoEstorno: 'NENHUM',
+      }),
+    );
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.EM_CANCELAMENTO);
+    await concluirCancelamentoPadrao(os.id, correlationId, 1);
+    expect(
+      (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
+    ).toBe(StatusOS.CANCELADA);
+  });
+
+  it('ajuste administrativo de inventário conclui compensação com divergência', async () => {
+    const { os, correlationId } = await prepararAguardandoPagamento(4);
+    await processar.executar(
+      montarEnvelope(EVENTO_PAGAMENTO_CONFIRMADO, os.id, correlationId, 1, {
+        cobrancaId: randomUUID(),
+        orderId: `ORD-DIV-${sufixo}`,
+        valorCentavos: 20000,
+      }),
+    );
+    await processar.executar(
+      montarEnvelope(EVENTO_REPARO_INICIADO, os.id, correlationId, 1, {
+        tarefaId: `${os.id}#1#REPARO`,
+      }),
+    );
+    const peca = await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } });
+    await prisma.peca.update({
+      where: { id: pecaId },
+      data: { quantidadeEstoque: peca.quantidadeReservada + 3 },
+    });
+    await desistir.execute(os.id, { motivo: 'Divergência estoque' });
+    await simularRespostaExecucao(os.id, correlationId, 1, {
+      tipoTarefa: 'REPARO',
+      resultado: 'CANCELADA_EM_ANDAMENTO',
+      pecasUtilizadas: [{ itemId: pecaId, quantidade: 7 }],
+    });
+    await simularRespostaFinanceiro(os.id, correlationId, 1, 'ESTORNADA');
+    const pendInv = await prisma.pendenciaOs.findFirst({
+      where: {
+        ordemServicoId: os.id,
+        tipo: TipoPendenciaOs.INVENTARIO,
+        resolvida: false,
+      },
+    });
+    expect(pendInv).toBeTruthy();
+    await ajustarInventario.execute({
+      pendenciaId: pendInv!.id,
+      pecaId,
+      quantidadeFisicaNova: 30,
+      motivo: 'Ajuste pós divergência na compensação',
+      responsavelId: randomUUID(),
+    });
     expect(
       (await prisma.ordemServico.findUnique({ where: { id: os.id } }))?.status,
     ).toBe(StatusOS.CANCELADA);
@@ -774,6 +999,136 @@ describe('Saga — compensação (integração)', () => {
       }),
     ).toBe(1);
   });
+
+  it('concorrência entre ajuste de inventário e fato da saga na mesma OS', async () => {
+    const databaseUrl = exigirDatabaseUrl();
+    const outra = await prepararAguardandoPagamento();
+    const reservadoOutraAntes = await somaReservasAtivasOs(
+      prisma,
+      outra.os.id,
+      pecaId,
+    );
+
+    const { os, correlationId } = await prepararAguardandoPagamento(4);
+    await processar.executar(
+      montarEnvelope(EVENTO_PAGAMENTO_CONFIRMADO, os.id, correlationId, 1, {
+        cobrancaId: randomUUID(),
+        orderId: `ORD-CONC-${sufixo}`,
+        valorCentavos: 20000,
+      }),
+    );
+    await processar.executar(
+      montarEnvelope(EVENTO_REPARO_INICIADO, os.id, correlationId, 1, {
+        tarefaId: `${os.id}#1#REPARO`,
+      }),
+    );
+    const peca = await prisma.peca.findUniqueOrThrow({ where: { id: pecaId } });
+    await prisma.peca.update({
+      where: { id: pecaId },
+      data: { quantidadeEstoque: peca.quantidadeReservada + 3 },
+    });
+    await desistir.execute(os.id, { motivo: 'Concorrência inventário saga' });
+    await simularRespostaExecucao(os.id, correlationId, 1, {
+      tipoTarefa: 'REPARO',
+      resultado: 'CANCELADA_EM_ANDAMENTO',
+      pecasUtilizadas: [{ itemId: pecaId, quantidade: 7 }],
+    });
+    const eventIdFinanceiro = randomUUID();
+    const corpoEstornada = montarEnvelope(
+      EVENTO_RESPOSTA_CANCELAMENTO,
+      os.id,
+      correlationId,
+      1,
+      { resultado: 'ESTORNADA' },
+      eventIdFinanceiro,
+    );
+    await processar.executar(corpoEstornada);
+
+    const pendInv = await prisma.pendenciaOs.findFirstOrThrow({
+      where: {
+        ordemServicoId: os.id,
+        tipo: TipoPendenciaOs.INVENTARIO,
+        resolvida: false,
+      },
+    });
+    const poolB = criarPoolAjusteConcorrente(databaseUrl, nestModule);
+    const corpoSagaConsultaAtrasada = montarEnvelope(
+      EVENTO_SITUACAO_FINANCEIRA,
+      os.id,
+      correlationId,
+      1,
+      {
+        consultaId: consultaIdPrazoReferencia(os.id, 1, 99),
+        situacaoPagamento: 'PAGO_NO_PRAZO',
+        situacaoEstorno: 'NENHUM',
+      },
+    );
+
+    const resultados = await Promise.allSettled([
+      poolB.ajustar.execute({
+        pendenciaId: pendInv.id,
+        pecaId,
+        quantidadeFisicaNova: 30,
+        motivo: 'Concorrência ajuste versus saga',
+        responsavelId: randomUUID(),
+      }),
+      processar.executar(corpoEstornada),
+      processar.executar(corpoSagaConsultaAtrasada),
+      processar.executar(corpoEstornada),
+    ]);
+    await poolB.prismaB.$disconnect();
+
+    const rejeicoes = resultados
+      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+      .map((r) =>
+        r.reason instanceof Error ? r.reason.message : String(r.reason),
+      );
+    expect(rejeicoes).toEqual([]);
+    expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true);
+
+    const ordem = await prisma.ordemServico.findUniqueOrThrow({
+      where: { id: os.id },
+    });
+    expect(ordem.status).toBe(StatusOS.CANCELADA);
+
+    expect(
+      await prisma.ajusteEstoqueAdministrativo.count({
+        where: { pendenciaId: pendInv.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.mensagemProcessada.count({ where: { eventId: eventIdFinanceiro } }),
+    ).toBe(1);
+
+    const reservasOs = await prisma.reservaEstoque.findMany({
+      where: { ordemServicoId: os.id },
+    });
+    expect(
+      reservasOs.every(
+        (r) =>
+          r.situacao === SituacaoReservaEstoque.LIBERADA ||
+          r.situacao === SituacaoReservaEstoque.CONSUMIDA,
+      ),
+    ).toBe(true);
+    expect(
+      reservasOs.filter((r) => r.situacao === SituacaoReservaEstoque.CONSUMIDA),
+    ).toHaveLength(1);
+
+    const pecaFinal = await prisma.peca.findUniqueOrThrow({
+      where: { id: pecaId },
+    });
+    expect(pecaFinal.quantidadeEstoque).toBeGreaterThanOrEqual(
+      pecaFinal.quantidadeReservada,
+    );
+
+    const reservadoOutraDepois = await somaReservasAtivasOs(
+      prisma,
+      outra.os.id,
+      pecaId,
+    );
+    expect(reservadoOutraDepois).toBe(reservadoOutraAntes);
+    expect(reservadoOutraDepois).toBeGreaterThan(0);
+  }, 60_000);
 
   it('concorrência entre desistência e ReparoConcluido com transações independentes', async () => {
     const { os, correlationId } = await prepararEmExecucao();

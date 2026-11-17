@@ -509,7 +509,7 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo recusa pendência ausente', async () => {
-    cliente.$queryRaw.mockResolvedValueOnce([]);
+    cliente.pendenciaOs.findUnique.mockResolvedValue(null);
 
     await expect(
       gateway.ajustarFisicoAdministrativo(contexto, {
@@ -535,15 +535,21 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo recusa peça fora da divergência', async () => {
-    cliente.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 'pend',
-        ordem_servico_id: 'os',
-        rodada: 1,
-        resolvida: false,
-        detalhes: { divergencias: [{ pecaId: 'outra' }] },
-      },
-    ]);
+    cliente.pendenciaOs.findUnique.mockResolvedValue({
+      id: 'pend',
+      ordemServicoId: 'os',
+    });
+    cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
+      .mockResolvedValueOnce([
+        {
+          id: 'pend',
+          ordem_servico_id: 'os',
+          rodada: 1,
+          resolvida: false,
+          detalhes: { divergencias: [{ pecaId: 'outra' }] },
+        },
+      ]);
     cliente.$queryRaw.mockResolvedValueOnce([]);
 
     await expect(
@@ -558,7 +564,12 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo falha quando UPDATE condicional do físico não aplica', async () => {
+    cliente.pendenciaOs.findUnique.mockResolvedValue({
+      id: 'pend',
+      ordemServicoId: 'os',
+    });
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'pend',
@@ -591,7 +602,12 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo recusa físico abaixo do reservado', async () => {
+    cliente.pendenciaOs.findUnique.mockResolvedValue({
+      id: 'pend',
+      ordemServicoId: 'os',
+    });
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'pend',
@@ -623,7 +639,12 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo resolve pendência e audita ajuste', async () => {
+    cliente.pendenciaOs.findUnique.mockResolvedValue({
+      id: 'pend',
+      ordemServicoId: 'os',
+    });
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'pend',
@@ -657,15 +678,13 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('ajustarFisicoAdministrativo recusa pendência já resolvida', async () => {
-    cliente.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 'pend',
-        ordem_servico_id: 'os',
-        rodada: 1,
-        resolvida: true,
-        detalhes: { divergencias: [{ pecaId: 'p1' }] },
-      },
-    ]);
+    cliente.pendenciaOs.findUnique.mockResolvedValue({
+      id: 'pend',
+      ordemServicoId: 'os',
+    });
+    cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
+      .mockResolvedValueOnce([]);
 
     await expect(
       gateway.ajustarFisicoAdministrativo(contexto, {
