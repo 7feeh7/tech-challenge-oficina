@@ -253,4 +253,21 @@ describe('TransicaoOrdemServicoService', () => {
     });
     expect(metricas.recordTransicao).toHaveBeenCalledTimes(1);
   });
+
+  it('registra IniciarReparo na outbox com correlationId da OS', async () => {
+    const bloqueada = criarBloqueada();
+    const uow = new UnitOfWorkFake();
+    const eventId = await uow.executar((ctx) =>
+      service.registrarIniciarReparoNaOutbox(ctx, bloqueada, 'causa-1'),
+    );
+    expect(eventId).toEqual(expect.any(String));
+    expect(outbox.registrar).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'execution.iniciar-reparo.v1',
+        correlationId: 'corr-os',
+        destino: 'execution-in',
+      }),
+    );
+  });
 });

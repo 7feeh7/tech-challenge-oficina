@@ -677,4 +677,15 @@ describe('PrismaReservaEstoqueGateway', () => {
       }),
     ).rejects.toThrow(PendenciaInventarioJaResolvidaError);
   });
+
+  it('possuiConsumoAplicado exige todas as peças CONSUMIDA', async () => {
+    cliente.reservaEstoque.count = jest.fn().mockResolvedValue(2);
+    await expect(
+      gateway.possuiConsumoAplicado(contexto, 'os', 1, ['p1', 'p2']),
+    ).resolves.toBe(true);
+    cliente.reservaEstoque.count = jest.fn().mockResolvedValue(1);
+    await expect(
+      gateway.possuiConsumoAplicado(contexto, 'os', 1, ['p1', 'p2']),
+    ).resolves.toBe(false);
+  });
 });

@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
-import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
+import type {
+  ContextoTransacao,
+  UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import {
   SCOPE_ESTOQUE_LIBERAR,
   hashCorpoEstoque,
@@ -28,12 +31,13 @@ export class LiberarReservaEstoqueUseCase {
 
   async execute(
     input: LiberarReservaEstoqueInput,
+    contextoExterno?: ContextoTransacao,
   ): Promise<LiberarReservaEstoqueOutput> {
     const requestHash = createHash('sha256')
       .update(hashCorpoEstoque(input))
       .digest('hex');
 
-    return this.unitOfWork.executar(async (contexto) => {
+    const trabalho = async (contexto: ContextoTransacao) => {
       if (input.idempotencyKey) {
         const replay =
           await this.reservas.buscarIdempotencia<LiberarReservaEstoqueOutput>(
@@ -69,6 +73,10 @@ export class LiberarReservaEstoqueUseCase {
       }
 
       return output;
-    });
+    };
+
+    return contextoExterno
+      ? trabalho(contextoExterno)
+      : this.unitOfWork.executar(trabalho);
   }
 }

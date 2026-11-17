@@ -20,6 +20,7 @@ import {
 } from '../../validar-envelope';
 import type { MensagemProcessadaGateway } from '../ports/mensagem-processada.gateway';
 import { MENSAGEM_PROCESSADA_GATEWAY } from '../ports/tokens';
+import { ehP2002MensagemProcessada } from '../../tratar-erro-prisma-mensageria';
 import { RoteadorProcessadoresMensagemService } from './roteador-processadores-mensagem.service';
 
 @Injectable()
@@ -50,14 +51,22 @@ export class ProcessarMensagemEntradaService {
     const contextoObservabilidade =
       criarContextoObservabilidadeMensagem(envelope);
 
-    try {
+    const executarTransacao = async (): Promise<void> => {
       await correlationIdStorage.run(contextoObservabilidade, async () => {
         tagActiveSpanWithCorrelation(envelope.correlationId);
         await this.unitOfWork.executar(async (contexto) => {
           await this.processarNaTransacao(contexto, envelope, hash);
         });
       });
+    };
+
+    try {
+      await executarTransacao();
     } catch (erro) {
+      if (ehP2002MensagemProcessada(erro)) {
+        await executarTransacao();
+        return;
+      }
       registrarFalhaTransicaoSeAplicavel(erro, this.osMetrics);
       throw erro;
     }

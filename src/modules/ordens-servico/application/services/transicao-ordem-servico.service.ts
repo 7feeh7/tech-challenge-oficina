@@ -5,6 +5,7 @@ import type { OutboxGateway } from '@/shared/messaging/application/ports/outbox.
 import {
   COMANDO_GERAR_ORCAMENTO,
   COMANDO_INICIAR_DIAGNOSTICO,
+  COMANDO_INICIAR_REPARO,
   DESTINO_FILA_BILLING,
   DESTINO_FILA_EXECUTION,
   DESTINO_TOPICO_NOTIFICACAO,
@@ -294,6 +295,51 @@ export class TransicaoOrdemServicoService {
       correlationId: bloqueada.ordem.correlationId,
       destino: DESTINO_FILA_EXECUTION,
     });
+  }
+
+  async registrarIniciarReparoNaOutbox(
+    contexto: ContextoTransacao,
+    bloqueada: OrdemServicoBloqueada,
+    causationId: string,
+  ): Promise<string> {
+    const eventId = randomUUID();
+    const ocorridoEm = new Date();
+    const envelope: EnvelopeMensagem = {
+      eventId,
+      eventType: COMANDO_INICIAR_REPARO,
+      version: 1,
+      occurredAt: ocorridoEm.toISOString(),
+      source: ORIGEM_OS,
+      correlationId: bloqueada.ordem.correlationId,
+      causationId,
+      ordemServicoId: bloqueada.ordem.id!,
+      rodada: bloqueada.ordem.rodadaVigente,
+      payload: {
+        itensOficiais: [
+          ...bloqueada.ordem.servicos.map((s) => ({
+            tipo: 'SERVICO' as const,
+            itemId: s.servicoId,
+            nome: s.servicoId,
+            quantidade: s.quantidade,
+          })),
+          ...bloqueada.ordem.pecas.map((p) => ({
+            tipo: 'PECA' as const,
+            itemId: p.pecaId,
+            nome: p.pecaId,
+            quantidade: p.quantidade,
+          })),
+        ],
+      },
+    };
+
+    await this.outbox.registrar(contexto, {
+      eventId,
+      eventType: COMANDO_INICIAR_REPARO,
+      envelope,
+      correlationId: bloqueada.ordem.correlationId,
+      destino: DESTINO_FILA_EXECUTION,
+    });
+    return eventId;
   }
 
   async registrarGerarOrcamentoNaOutbox(

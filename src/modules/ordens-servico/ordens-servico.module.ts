@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import {
   UNIT_OF_WORK,
   type UnitOfWork,
@@ -27,7 +27,7 @@ import { PrismaCatalogoGateway } from './infra/persistence/prisma-catalogo.gatew
 import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-servico.gateway';
 
 @Module({
-  imports: [PrismaModule, MensageriaModule],
+  imports: [PrismaModule, forwardRef(() => MensageriaModule)],
   controllers: [OrdensServicoController],
   providers: [
     PrismaOrdemServicoGateway,
