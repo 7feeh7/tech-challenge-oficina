@@ -10,12 +10,15 @@ import {
   PendenciaInventarioNaoEncontradaError,
   ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
+  ConsumoAplicadoIncompativelError,
 } from '../../domain/errors/reserva-estoque.errors';
 import { PrismaReservaEstoqueGateway } from './prisma-reserva-estoque.gateway';
 
 jest.mock('@/shared/database/obter-cliente-transacao', () => ({
   obterClienteTransacao: (_ctx: unknown, prisma: PrismaService) => prisma,
 }));
+
+const PECA_UUID = '11111111-1111-4111-8111-111111111111';
 
 describe('PrismaReservaEstoqueGateway', () => {
   const cliente = {
@@ -27,6 +30,12 @@ describe('PrismaReservaEstoqueGateway', () => {
     $executeRaw: jest.fn(),
     peca: {
       update: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    consumoAplicadoOs: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
       findUniqueOrThrow: jest.fn(),
     },
     reservaEstoque: {
@@ -174,11 +183,15 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('consumir sem divergências libera linhas não informadas', async () => {
+    cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
+    cliente.consumoAplicadoOs.create.mockResolvedValue({ id: 'ca1' });
+    cliente.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'r1',
-          peca_id: 'p1',
+          peca_id: PECA_UUID,
           quantidade: 2,
           ordem_servico_id: 'os',
           rodada: 1,
@@ -190,7 +203,7 @@ describe('PrismaReservaEstoqueGateway', () => {
       ])
       .mockResolvedValue([
         {
-          id: 'p1',
+          id: PECA_UUID,
           quantidade_estoque: 10,
           quantidade_reservada: 2,
           ativo: true,
@@ -202,7 +215,7 @@ describe('PrismaReservaEstoqueGateway', () => {
         grupoReservaId: 'g1',
         ordemServicoId: 'os',
         rodada: 1,
-        pecaId: 'p1',
+        pecaId: PECA_UUID,
         quantidade: 2,
         quantidadeConsumida: 1,
         situacao: 'CONSUMIDA',
@@ -214,7 +227,7 @@ describe('PrismaReservaEstoqueGateway', () => {
     const out = await gateway.consumir(contexto, {
       ordemServicoId: 'os',
       rodada: 1,
-      itensUtilizados: [{ pecaId: 'p1', quantidade: 1 }],
+      itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
     });
 
     expect(out.divergencias).toHaveLength(0);
@@ -327,12 +340,18 @@ describe('PrismaReservaEstoqueGateway', () => {
     ).rejects.toThrow(EstoqueInsuficienteReservaError);
   });
 
-  it('consumir com divergência cria pendência de inventário', async () => {
+  it('não duplica pendência INVENTARIO aberta na mesma rodada', async () => {
+    cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
+    cliente.consumoAplicadoOs.create.mockResolvedValue({ id: 'ca1' });
+    cliente.pendenciaOs.findFirst = jest
+      .fn()
+      .mockResolvedValue({ id: 'pend-existente' });
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'r1',
-          peca_id: 'p1',
+          peca_id: PECA_UUID,
           quantidade: 2,
           ordem_servico_id: 'os',
           rodada: 1,
@@ -344,7 +363,45 @@ describe('PrismaReservaEstoqueGateway', () => {
       ])
       .mockResolvedValue([
         {
-          id: 'p1',
+          id: PECA_UUID,
+          quantidade_estoque: 10,
+          quantidade_reservada: 2,
+          ativo: true,
+        },
+      ]);
+    cliente.$executeRaw.mockResolvedValue(1);
+    cliente.reservaEstoque.findMany.mockResolvedValueOnce([]);
+    const out = await gateway.consumir(contexto, {
+      ordemServicoId: 'os',
+      rodada: 1,
+      itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 5 }],
+    });
+    expect(out.pendenciaInventarioId).toBe('pend-existente');
+    expect(cliente.pendenciaOs.create).not.toHaveBeenCalled();
+  });
+
+  it('consumir com divergência cria pendência de inventário', async () => {
+    cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
+    cliente.consumoAplicadoOs.create.mockResolvedValue({ id: 'ca1' });
+    cliente.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
+    cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
+      .mockResolvedValueOnce([
+        {
+          id: 'r1',
+          peca_id: PECA_UUID,
+          quantidade: 2,
+          ordem_servico_id: 'os',
+          rodada: 1,
+          grupo_reserva_id: 'g1',
+          quantidade_consumida: 0,
+          situacao: 'ATIVA',
+          prazo_referencia: null,
+        },
+      ])
+      .mockResolvedValue([
+        {
+          id: PECA_UUID,
           quantidade_estoque: 10,
           quantidade_reservada: 2,
           ativo: true,
@@ -357,7 +414,7 @@ describe('PrismaReservaEstoqueGateway', () => {
     const out = await gateway.consumir(contexto, {
       ordemServicoId: 'os',
       rodada: 1,
-      itensUtilizados: [{ pecaId: 'p1', quantidade: 5 }],
+      itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 5 }],
     });
 
     expect(out.divergencias.length).toBeGreaterThan(0);
@@ -437,11 +494,13 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('consumir falha quando UPDATE de peça não aplica', async () => {
+    cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
     cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
         {
           id: 'r1',
-          peca_id: 'p1',
+          peca_id: PECA_UUID,
           quantidade: 2,
           ordem_servico_id: 'os',
           rodada: 1,
@@ -465,13 +524,15 @@ describe('PrismaReservaEstoqueGateway', () => {
       gateway.consumir(contexto, {
         ordemServicoId: 'os',
         rodada: 1,
-        itensUtilizados: [{ pecaId: 'p1', quantidade: 1 }],
+        itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
       }),
     ).rejects.toThrow(ReservaJaProcessadaError);
   });
 
   it('consumir sem reserva alguma na rodada retorna 404', async () => {
-    cliente.$queryRaw.mockResolvedValueOnce([]);
+    cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
+      .mockResolvedValueOnce([]);
     cliente.reservaEstoque.findFirst.mockResolvedValue(null);
 
     await expect(
@@ -484,7 +545,9 @@ describe('PrismaReservaEstoqueGateway', () => {
   });
 
   it('consumir sem reserva ativa mas já processada recusa com 409', async () => {
-    cliente.$queryRaw.mockResolvedValueOnce([]);
+    cliente.$queryRaw
+      .mockResolvedValueOnce([{ id: 'os' }])
+      .mockResolvedValueOnce([]);
     cliente.reservaEstoque.findFirst.mockResolvedValue({ id: 'r1' });
 
     await expect(
@@ -697,7 +760,63 @@ describe('PrismaReservaEstoqueGateway', () => {
     ).rejects.toThrow(PendenciaInventarioJaResolvidaError);
   });
 
+  it('consumir rejeita fato incompatível na mesma rodada', async () => {
+    cliente.consumoAplicadoOs.findUnique.mockResolvedValue({
+      id: 'ca-existente',
+      eventId: 'evt-antigo',
+    });
+    cliente.$queryRaw.mockResolvedValueOnce([{ id: 'os' }]);
+    await expect(
+      gateway.consumir(contexto, {
+        ordemServicoId: 'os',
+        rodada: 1,
+        itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
+        contextoFato: {
+          eventId: 'evt-novo',
+          fatoOcorridoEm: new Date(),
+          tipoFato: 'REPARO_CONCLUIDO',
+        },
+      }),
+    ).rejects.toThrow(ConsumoAplicadoIncompativelError);
+  });
+
+  it('consumir reutiliza registro existente do mesmo eventId', async () => {
+    cliente.consumoAplicadoOs.findUnique.mockResolvedValue({
+      id: 'ca-existente',
+      eventId: 'evt-1',
+      situacaoReconciliacao: 'APLICADO',
+      divergencias: [],
+    });
+    cliente.consumoAplicadoOs.findUniqueOrThrow.mockResolvedValue({
+      id: 'ca-existente',
+      situacaoReconciliacao: 'APLICADO',
+      divergencias: [],
+    });
+    cliente.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
+    cliente.reservaEstoque.findMany.mockResolvedValue([]);
+    const out = await gateway.consumir(contexto, {
+      ordemServicoId: 'os',
+      rodada: 1,
+      itensUtilizados: [{ pecaId: PECA_UUID, quantidade: 1 }],
+      contextoFato: {
+        eventId: 'evt-1',
+        fatoOcorridoEm: new Date(),
+        tipoFato: 'REPARO_CONCLUIDO',
+      },
+    });
+    expect(out.reutilizado).toBe(true);
+    expect(out.consumoAplicadoId).toBe('ca-existente');
+  });
+
+  it('possuiConsumoAplicadoNaRodada usa registro persistente', async () => {
+    cliente.consumoAplicadoOs.findUnique.mockResolvedValue({ id: 'ca' });
+    await expect(
+      gateway.possuiConsumoAplicadoNaRodada(contexto, 'os', 1),
+    ).resolves.toBe(true);
+  });
+
   it('possuiConsumoAplicado exige todas as peças CONSUMIDA', async () => {
+    cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
     cliente.reservaEstoque.count = jest.fn().mockResolvedValue(2);
     await expect(
       gateway.possuiConsumoAplicado(contexto, 'os', 1, ['p1', 'p2']),

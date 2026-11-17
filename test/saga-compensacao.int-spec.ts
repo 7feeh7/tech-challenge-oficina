@@ -6,8 +6,8 @@ import { PrismaClient } from '@/shared/generated/prisma/client';
 import { PrismaUnitOfWork } from '@/shared/database/prisma-unit-of-work';
 import { RESERVA_ESTOQUE_GATEWAY } from '@/modules/reservas-estoque/application/ports/tokens';
 import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
-import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
-import type { CompensacaoAvancoPort } from '@/shared/saga/compensacao-avanco.port';
+import type { RetomadaSagaInventarioPort } from '@/shared/saga/retomada-saga-inventario.port';
+import { RETOMADA_SAGA_INVENTARIO } from '@/shared/saga/retomada-saga-inventario.port';
 import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
 import {
   consultaIdExcecaoE10,
@@ -77,11 +77,13 @@ function criarPoolAjusteConcorrente(
   const reservas = nestModule.get<ReservaEstoqueGateway>(
     RESERVA_ESTOQUE_GATEWAY,
   );
-  const compensacao = nestModule.get<CompensacaoAvancoPort>(COMPENSACAO_AVANCO);
+  const retomada = nestModule.get<RetomadaSagaInventarioPort>(
+    RETOMADA_SAGA_INVENTARIO,
+  );
   const ajustar = new AjustarEstoqueDivergenciaUseCase(
     reservas,
     uowB,
-    compensacao,
+    retomada,
   );
   return { prismaB, ajustar };
 }

@@ -84,10 +84,24 @@ interface PagamentoConfirmadoPayload {
   valorCentavos?: number;
 }
 
-interface ReparoConcluidoPayload {
-  pecasUtilizadas?: { itemId: string; quantidade: number }[];
-  concluidoEm?: string;
+interface DivergenciaReparoPayload {
+  itemId: string;
+  tipo?: string;
+  quantidadePrevista?: number;
+  quantidadeUtilizada?: number;
+  observacao?: string;
+  justificativa?: string;
 }
+
+interface ReparoExecucaoPayload {
+  pecasUtilizadas?: { itemId: string; quantidade: number }[];
+  divergencias?: DivergenciaReparoPayload[];
+  responsavelId?: string;
+  concluidoEm?: string;
+  falhouEm?: string;
+}
+
+type ReparoConcluidoPayload = ReparoExecucaoPayload;
 
 export class ReagirFatoSagaUseCase {
   constructor(
@@ -503,7 +517,7 @@ export class ReagirFatoSagaUseCase {
     envelope: EnvelopeMensagem,
     ocorridoEm: Date,
   ): Promise<void> {
-    const payload = envelope.payload as ReparoConcluidoPayload;
+    const payload = envelope.payload as ReparoExecucaoPayload;
     const pecas =
       payload.pecasUtilizadas?.map((p) => ({
         itemId: p.itemId,
@@ -516,18 +530,47 @@ export class ReagirFatoSagaUseCase {
     if (!bloqueada) {
       return;
     }
+    if (
+      envelope.eventType === EVENTO_REPARO_FALHOU &&
+      (await this.reservas.possuiConsumoAplicadoNaRodada(
+        contexto,
+        envelope.ordemServicoId,
+        envelope.rodada,
+      ))
+    ) {
+      return;
+    }
+    const tipoFato =
+      envelope.eventType === EVENTO_REPARO_FALHOU
+        ? 'REPARO_FALHOU'
+        : 'REPARO_INTERROMPIDO';
+    const quandoFato =
+      tipoFato === 'REPARO_FALHOU' && payload.falhouEm
+        ? new Date(payload.falhouEm)
+        : ocorridoEm;
     if (bloqueada.ordem.status !== StatusOS.EM_CANCELAMENTO) {
+      const motivoCompensacao =
+        tipoFato === 'REPARO_FALHOU'
+          ? 'Falha do reparo'
+          : 'Interrupção do reparo';
       await this.transicoes.aplicar(contexto, {
         ordemServicoId: envelope.ordemServicoId,
         aplicar: (os, quando) =>
-          os.registrarCompensacaoIniciada(
-            'Falha ou interrupção do reparo',
-            quando,
-          ),
-        ocorridoEm,
-        observacao: 'Compensação por falha/interrupção',
+          os.registrarCompensacaoIniciada(motivoCompensacao, quando),
+        ocorridoEm: quandoFato,
+        observacao:
+          tipoFato === 'REPARO_FALHOU'
+            ? 'Compensação por falha do reparo'
+            : 'Compensação por interrupção do reparo',
       });
     }
+    await this.aplicarConsumoEfetivo(
+      contexto,
+      envelope,
+      payload,
+      tipoFato,
+      quandoFato,
+    );
     await this.compensacao.registrarFatoTerminalExecucao(
       contexto,
       envelope.ordemServicoId,
@@ -745,19 +788,34 @@ export class ReagirFatoSagaUseCase {
     });
   }
 
-  private async tratarReparoConcluido(
+  private async aplicarConsumoEfetivo(
     contexto: ContextoTransacao,
     envelope: EnvelopeMensagem,
+    payload: ReparoExecucaoPayload,
+    tipoFato: 'REPARO_CONCLUIDO' | 'REPARO_FALHOU' | 'REPARO_INTERROMPIDO',
     ocorridoEm: Date,
-  ): Promise<void> {
-    const payload = envelope.payload as ReparoConcluidoPayload;
+  ): Promise<{ impedimentoInventario: boolean; reutilizado: boolean }> {
     const pecas =
       payload.pecasUtilizadas?.map((p) => ({
         pecaId: p.itemId,
         quantidade: p.quantidade,
       })) ?? [];
-
-    let divergenciasPendentes = false;
+    const divergenciasFato =
+      payload.divergencias?.map((d) => ({
+        pecaId: d.itemId,
+        itemId: d.itemId,
+        quantidadePrevista: d.quantidadePrevista ?? 0,
+        quantidadeUtilizada: d.quantidadeUtilizada ?? 0,
+        quantidadeReservada: d.quantidadePrevista ?? 0,
+        quantidadeInformada: d.quantidadeUtilizada ?? 0,
+        tipo: d.tipo ?? null,
+        observacao: d.observacao ?? null,
+        justificativa: d.justificativa ?? null,
+        motivo: d.observacao ?? '',
+      })) ?? [];
+    const concluidoEm = payload.concluidoEm
+      ? new Date(payload.concluidoEm)
+      : null;
     const idempotencyKey = `estoque.consumir:${envelope.eventId}`;
 
     try {
@@ -767,27 +825,61 @@ export class ReagirFatoSagaUseCase {
           rodada: envelope.rodada,
           itensUtilizados: pecas,
           idempotencyKey,
+          contextoFato: {
+            eventId: envelope.eventId,
+            fatoOcorridoEm: ocorridoEm,
+            concluidoEm,
+            responsavelId: payload.responsavelId ?? null,
+            tipoFato,
+            divergenciasFato,
+            consumoEfetivo: payload.pecasUtilizadas ?? [],
+            aguardandoFinalizacao: tipoFato === 'REPARO_CONCLUIDO',
+          },
         },
         contexto,
       );
-      divergenciasPendentes = consumo.divergencias.length > 0;
+      return {
+        impedimentoInventario: consumo.impedimentoInventario,
+        reutilizado: consumo.reutilizado,
+      };
     } catch (erro) {
       if (erro instanceof ReservaJaProcessadaError) {
-        const consumoJaAplicado = await this.reservas.possuiConsumoAplicado(
-          contexto,
-          envelope.ordemServicoId,
-          envelope.rodada,
-          pecas.map((p) => p.pecaId),
-        );
+        const consumoJaAplicado =
+          (await this.reservas.possuiConsumoAplicadoNaRodada(
+            contexto,
+            envelope.ordemServicoId,
+            envelope.rodada,
+          )) ||
+          (await this.reservas.possuiConsumoAplicado(
+            contexto,
+            envelope.ordemServicoId,
+            envelope.rodada,
+            pecas.map((p) => p.pecaId),
+          ));
         if (!consumoJaAplicado) {
           throw erro;
         }
-      } else {
-        throw erro;
+        return { impedimentoInventario: false, reutilizado: true };
       }
+      throw erro;
     }
+  }
 
-    if (divergenciasPendentes) {
+  private async tratarReparoConcluido(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    ocorridoEm: Date,
+  ): Promise<void> {
+    const payload = envelope.payload as ReparoConcluidoPayload;
+    const { impedimentoInventario } = await this.aplicarConsumoEfetivo(
+      contexto,
+      envelope,
+      payload,
+      'REPARO_CONCLUIDO',
+      ocorridoEm,
+    );
+
+    if (impedimentoInventario) {
       return;
     }
 

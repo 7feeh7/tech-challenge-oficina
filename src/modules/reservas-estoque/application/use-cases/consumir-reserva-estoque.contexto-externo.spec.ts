@@ -18,6 +18,7 @@ describe('ConsumirReservaEstoqueUseCase (contexto externo)', () => {
       consumir,
       listarLinhasAtivas: jest.fn(),
       possuiConsumoAplicado: jest.fn(),
+      possuiConsumoAplicadoNaRodada: jest.fn(),
       ajustarFisicoAdministrativo: jest.fn(),
     };
     const uow = new UnitOfWorkFake();

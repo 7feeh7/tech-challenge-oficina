@@ -14,7 +14,13 @@ import {
   PecaNaoConstaDivergenciaError,
   ReservaEstoqueNaoEncontradaError,
   ReservaJaProcessadaError,
+  ConsumoAplicadoIncompativelError,
 } from '../../domain/errors/reserva-estoque.errors';
+import { conciliarConsumoEfetivo } from '../../domain/conciliar-consumo-efetivo';
+import type {
+  ContextoConsumoEstoque,
+  DivergenciaInventarioDetalhe,
+} from '../../application/ports/reserva-estoque.gateway';
 import type { Prisma } from '@/shared/generated/prisma/client';
 import { SituacaoReservaEstoque } from '@/shared/generated/prisma/enums';
 import type {
@@ -300,9 +306,37 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       ordemServicoId: string;
       rodada: number;
       itensUtilizados: ItemReservaEstoque[];
+      contextoFato?: ContextoConsumoEstoque;
     },
   ): Promise<ResultadoConsumoReserva> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
+    await cliente.$queryRaw`
+      SELECT id FROM ordens_servico WHERE id = ${input.ordemServicoId}::uuid FOR UPDATE
+    `;
+
+    const existente = await cliente.consumoAplicadoOs.findUnique({
+      where: {
+        ordemServicoId_rodada: {
+          ordemServicoId: input.ordemServicoId,
+          rodada: input.rodada,
+        },
+      },
+    });
+    if (existente) {
+      if (!input.contextoFato) {
+        throw new ReservaJaProcessadaError();
+      }
+      if (existente.eventId !== input.contextoFato.eventId) {
+        throw new ConsumoAplicadoIncompativelError();
+      }
+      return this.montarResultadoDeConsumoAplicado(
+        cliente,
+        input,
+        existente.id,
+        true,
+      );
+    }
+
     const linhasAtivas = await this.bloquearReservasAtivas(
       cliente,
       input.ordemServicoId,
@@ -326,18 +360,79 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       throw new ReservaJaProcessadaError();
     }
 
-    const mapaReservas = new Map(linhasAtivas.map((l) => [l.peca_id, l]));
-    const divergencias: ResultadoConsumoReserva['divergencias'] = [];
+    const pecasUtilizadas =
+      input.contextoFato?.consumoEfetivo?.map((p) => ({
+        itemId: p.itemId,
+        quantidade: p.quantidade,
+      })) ??
+      input.itensUtilizados.map((p) => ({
+        itemId: p.pecaId,
+        quantidade: p.quantidade,
+      }));
 
-    const itensOrdenados = [...input.itensUtilizados].sort((a, b) =>
-      a.pecaId.localeCompare(b.pecaId),
+    const divergenciasFato =
+      input.contextoFato?.divergenciasFato?.map((d) => {
+        const n = this.normalizarDivergencia(d);
+        return {
+          itemId: n.pecaId,
+          quantidadePrevista: n.quantidadePrevista ?? n.quantidadeReservada,
+          quantidadeUtilizada: n.quantidadeUtilizada ?? n.quantidadeInformada,
+          tipo: n.tipo ?? undefined,
+          observacao: n.observacao ?? undefined,
+          justificativa: n.justificativa ?? undefined,
+          motivo: n.motivo,
+          quantidadeReservada: n.quantidadeReservada,
+          quantidadeInformada: n.quantidadeInformada,
+        };
+      }) ?? [];
+
+    const pecaIdsValidos = [
+      ...new Set(
+        pecasUtilizadas
+          .map((p) => p.itemId)
+          .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
+      ),
+    ];
+    const pecasCatalogo = new Set(
+      pecaIdsValidos.length === 0
+        ? []
+        : (
+            await cliente.peca.findMany({
+              where: { id: { in: pecaIdsValidos } },
+              select: { id: true },
+            })
+          ).map((p) => p.id),
     );
+
+    const conciliacao = conciliarConsumoEfetivo(
+      linhasAtivas.map((l) => ({
+        pecaId: l.peca_id,
+        quantidadeReservada: l.quantidade,
+      })),
+      pecasUtilizadas,
+      divergenciasFato,
+      (pecaId) => pecasCatalogo.has(pecaId),
+    );
+
+    const mapaReservas = new Map(linhasAtivas.map((l) => [l.peca_id, l]));
+    const divergenciasInventario = conciliacao.divergenciasInventario.map((d) =>
+      this.paraDivergenciaDetalhe(d),
+    );
+    const divergenciasAuditoria = conciliacao.divergenciasAuditoria.map((d) =>
+      this.paraDivergenciaDetalhe(d),
+    );
+
     const pecasProcessadas = new Set<string>();
+    const itensAutomaticos = [...conciliacao.itensAutomaticos].sort((a, b) =>
+      a.itemId.localeCompare(b.itemId),
+    );
 
     const pecaIdsOrdenados = [
       ...new Set<string>([
         ...linhasAtivas.map((l) => l.peca_id),
-        ...itensOrdenados.map((i) => i.pecaId),
+        ...itensAutomaticos
+          .map((i) => i.itemId)
+          .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
       ]),
     ].sort((a, b) => a.localeCompare(b));
 
@@ -345,29 +440,13 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       await this.bloquearPeca(cliente, pecaId);
     }
 
-    for (const item of itensOrdenados) {
-      const linha = mapaReservas.get(item.pecaId);
+    for (const item of itensAutomaticos) {
+      const linha = mapaReservas.get(item.itemId);
       if (!linha) {
-        divergencias.push({
-          pecaId: item.pecaId,
-          quantidadeReservada: 0,
-          quantidadeInformada: item.quantidade,
-          motivo: 'Peça não consta na reserva ativa.',
-        });
         continue;
       }
-
-      if (item.quantidade > linha.quantidade) {
-        divergencias.push({
-          pecaId: item.pecaId,
-          quantidadeReservada: linha.quantidade,
-          quantidadeInformada: item.quantidade,
-          motivo: 'Quantidade informada excede a reservada.',
-        });
-      }
-
       const utilizada = Math.min(item.quantidade, linha.quantidade);
-      pecasProcessadas.add(item.pecaId);
+      pecasProcessadas.add(item.itemId);
 
       const consumoFisico = await cliente.$executeRaw`
         UPDATE pecas
@@ -427,27 +506,87 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       },
     });
 
+    const impedimentoInventario = divergenciasInventario.length > 0;
     let pendenciaInventarioId: string | null = null;
-    if (divergencias.length > 0) {
-      const pendencia = await cliente.pendenciaOs.create({
-        data: {
-          id: randomUUID(),
+    if (impedimentoInventario) {
+      const jaExiste = await cliente.pendenciaOs.findFirst({
+        where: {
           ordemServicoId: input.ordemServicoId,
           rodada: input.rodada,
           tipo: 'INVENTARIO',
-          detalhes: { divergencias } as unknown as Prisma.InputJsonValue,
+          resolvida: false,
         },
       });
-      pendenciaInventarioId = pendencia.id;
+      if (!jaExiste) {
+        const pendencia = await cliente.pendenciaOs.create({
+          data: {
+            id: randomUUID(),
+            ordemServicoId: input.ordemServicoId,
+            rodada: input.rodada,
+            tipo: 'INVENTARIO',
+            detalhes: {
+              divergencias: divergenciasInventario,
+              divergenciasAuditoria,
+              eventId: input.contextoFato?.eventId ?? null,
+              responsavelId: input.contextoFato?.responsavelId ?? null,
+              fatoOcorridoEm: input.contextoFato?.fatoOcorridoEm ?? null,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+        pendenciaInventarioId = pendencia.id;
+      } else {
+        pendenciaInventarioId = jaExiste.id;
+      }
     }
+
+    const consumoAplicadoId = randomUUID();
+    const situacao = impedimentoInventario
+      ? 'DIVERGENCIA_PENDENTE'
+      : 'APLICADO';
+
+    await cliente.consumoAplicadoOs.create({
+      data: {
+        id: consumoAplicadoId,
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        eventId: input.contextoFato?.eventId ?? randomUUID(),
+        fatoOcorridoEm: input.contextoFato?.fatoOcorridoEm ?? new Date(),
+        concluidoEm: input.contextoFato?.concluidoEm ?? null,
+        tipoFato: input.contextoFato?.tipoFato ?? 'REPARO_CONCLUIDO',
+        responsavelId: input.contextoFato?.responsavelId ?? null,
+        consumoEfetivo: pecasUtilizadas,
+        divergencias: divergenciasAuditoria as unknown as Prisma.InputJsonValue,
+        situacaoReconciliacao: situacao,
+        aguardandoFinalizacao: Boolean(
+          input.contextoFato?.aguardandoFinalizacao && impedimentoInventario,
+        ),
+      },
+    });
 
     return {
       linhasAtualizadas: linhasAtualizadas.map((raw) =>
         PrismaReservaEstoqueMapper.toLinha(raw),
       ),
-      divergencias,
+      divergencias: divergenciasInventario,
+      divergenciasAuditoria,
       pendenciaInventarioId,
+      impedimentoInventario,
+      consumoAplicadoId,
+      reutilizado: false,
     };
+  }
+
+  async possuiConsumoAplicadoNaRodada(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+  ): Promise<boolean> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const registro = await cliente.consumoAplicadoOs.findUnique({
+      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
+      select: { id: true },
+    });
+    return registro !== null;
   }
 
   async listarLinhasAtivas(
@@ -472,8 +611,13 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     rodada: number,
     pecaIds: string[],
   ): Promise<boolean> {
-    if (pecaIds.length === 0) {
+    if (
+      await this.possuiConsumoAplicadoNaRodada(contexto, ordemServicoId, rodada)
+    ) {
       return true;
+    }
+    if (pecaIds.length === 0) {
+      return false;
     }
     const cliente = obterClienteTransacao(contexto, this.prisma);
     const consumidas = await cliente.reservaEstoque.count({
@@ -602,6 +746,89 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     });
 
     return { ordemServicoId: pendencia.ordem_servico_id };
+  }
+
+  private normalizarDivergencia(
+    d: DivergenciaInventarioDetalhe,
+  ): DivergenciaInventarioDetalhe {
+    return {
+      pecaId: d.pecaId ?? (d as { itemId?: string }).itemId ?? '',
+      quantidadeReservada: d.quantidadeReservada ?? d.quantidadePrevista ?? 0,
+      quantidadeInformada: d.quantidadeInformada ?? d.quantidadeUtilizada ?? 0,
+      quantidadePrevista: d.quantidadePrevista,
+      quantidadeUtilizada: d.quantidadeUtilizada,
+      tipo: d.tipo,
+      observacao: d.observacao,
+      justificativa: d.justificativa,
+      motivo: d.motivo ?? '',
+    };
+  }
+
+  private paraDivergenciaDetalhe(d: {
+    itemId: string;
+    quantidadePrevista?: number;
+    quantidadeUtilizada?: number;
+    quantidadeReservada?: number;
+    quantidadeInformada?: number;
+    tipo?: string;
+    observacao?: string;
+    justificativa?: string | null;
+    motivo?: string;
+  }): DivergenciaInventarioDetalhe {
+    return {
+      pecaId: d.itemId,
+      quantidadeReservada: d.quantidadeReservada ?? 0,
+      quantidadeInformada: d.quantidadeInformada ?? d.quantidadeUtilizada ?? 0,
+      quantidadePrevista: d.quantidadePrevista,
+      quantidadeUtilizada: d.quantidadeUtilizada,
+      tipo: d.tipo ?? null,
+      observacao: d.observacao ?? null,
+      justificativa: d.justificativa ?? null,
+      motivo: d.motivo ?? '',
+    };
+  }
+
+  private async montarResultadoDeConsumoAplicado(
+    cliente: ClienteTransacao,
+    input: {
+      ordemServicoId: string;
+      rodada: number;
+    },
+    consumoAplicadoId: string,
+    reutilizado: boolean,
+  ): Promise<ResultadoConsumoReserva> {
+    const registro = await cliente.consumoAplicadoOs.findUniqueOrThrow({
+      where: { id: consumoAplicadoId },
+    });
+    const pendencia = await cliente.pendenciaOs.findFirst({
+      where: {
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        tipo: 'INVENTARIO',
+        resolvida: false,
+      },
+    });
+    const divergenciasAuditoria = (registro.divergencias ??
+      []) as unknown as DivergenciaInventarioDetalhe[];
+    const divergencias = divergenciasAuditoria.filter((d) => Boolean(d.motivo));
+    const linhasAtualizadas = await cliente.reservaEstoque.findMany({
+      where: {
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+      },
+    });
+    return {
+      linhasAtualizadas: linhasAtualizadas.map((raw) =>
+        PrismaReservaEstoqueMapper.toLinha(raw),
+      ),
+      divergencias,
+      divergenciasAuditoria,
+      pendenciaInventarioId: pendencia?.id ?? null,
+      impedimentoInventario:
+        registro.situacaoReconciliacao === 'DIVERGENCIA_PENDENTE',
+      consumoAplicadoId,
+      reutilizado,
+    };
   }
 
   private async bloquearReservasAtivas(

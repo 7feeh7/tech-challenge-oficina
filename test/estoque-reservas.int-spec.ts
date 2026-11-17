@@ -22,6 +22,7 @@ import { ReservarEstoqueUseCase } from '../src/modules/reservas-estoque/applicat
 import { LiberarReservaEstoqueUseCase } from '../src/modules/reservas-estoque/application/use-cases/liberar-reserva-estoque.use-case';
 import { ConsumirReservaEstoqueUseCase } from '../src/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
 import { AjustarEstoqueDivergenciaUseCase } from '../src/modules/reservas-estoque/application/use-cases/ajustar-estoque-divergencia.use-case';
+import { RetomadaSagaInventarioNoop } from '../src/shared/saga/retomada-saga-inventario.port';
 import {
   EstoqueInsuficienteReservaError,
   ReservaJaProcessadaError,
@@ -62,7 +63,11 @@ function criarPoolB(
     prismaB,
     liberar: new LiberarReservaEstoqueUseCase(deps.reservaGateway, uowB),
     consumir: new ConsumirReservaEstoqueUseCase(deps.reservaGateway, uowB),
-    ajustar: new AjustarEstoqueDivergenciaUseCase(deps.reservaGateway, uowB),
+    ajustar: new AjustarEstoqueDivergenciaUseCase(
+      deps.reservaGateway,
+      uowB,
+      new RetomadaSagaInventarioNoop(),
+    ),
     reservar: new ReservarEstoqueUseCase(deps.reservaGateway, uowB),
     registrar: new RegistrarMovimentacaoUseCase(deps.movimentacaoGateway, uowB),
     atualizarPeca: new AtualizarPecaUseCase(deps.pecaGateway, uowB),

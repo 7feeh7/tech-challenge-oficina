@@ -126,6 +126,7 @@ describe('CompensacaoSagaService', () => {
     const liberar = { execute: jest.fn() };
     const reservas = {
       possuiConsumoAplicado: jest.fn().mockResolvedValue(false),
+      possuiConsumoAplicadoNaRodada: jest.fn().mockResolvedValue(false),
     };
     const prisma = {
       pendenciaOs: {
@@ -437,9 +438,38 @@ describe('CompensacaoSagaService', () => {
     });
     ctx.consumir.execute.mockResolvedValue({
       divergencias: [{ pecaId: 'peca-1' }],
+      impedimentoInventario: true,
     });
     await ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
     expect(ctx.liberar.execute).not.toHaveBeenCalled();
+  });
+
+  it('pula novo consumo quando há registro persistente na rodada', async () => {
+    const ctx = montar({
+      snapshot: snapshotInicial({
+        passo: PassoCompensacaoSaga.ESTOQUE,
+        pecasUtilizadas: [{ itemId: 'peca-1', quantidade: 1 }],
+      }),
+    });
+    ctx.reservas.possuiConsumoAplicadoNaRodada.mockResolvedValue(true);
+    await ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
+    expect(ctx.consumir.execute).not.toHaveBeenCalled();
+    expect(ctx.liberar.execute).toHaveBeenCalled();
+  });
+
+  it('ReservaJaProcessada com consumo na rodada libera sem novo consumir', async () => {
+    const ctx = montar({
+      snapshot: snapshotInicial({
+        passo: PassoCompensacaoSaga.ESTOQUE,
+        pecasUtilizadas: [{ itemId: 'peca-1', quantidade: 1 }],
+      }),
+    });
+    ctx.consumir.execute.mockRejectedValue(
+      new ReservaJaProcessadaError('os-1'),
+    );
+    ctx.reservas.possuiConsumoAplicadoNaRodada.mockResolvedValue(true);
+    await ctx.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
+    expect(ctx.liberar.execute).toHaveBeenCalled();
   });
 
   it('repropaga ReservaJaProcessada quando consumo não está aplicado', async () => {

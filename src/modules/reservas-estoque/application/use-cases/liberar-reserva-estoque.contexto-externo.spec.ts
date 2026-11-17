@@ -14,6 +14,7 @@ describe('LiberarReservaEstoqueUseCase (contexto externo)', () => {
       consumir: jest.fn(),
       listarLinhasAtivas: jest.fn(),
       possuiConsumoAplicado: jest.fn(),
+      possuiConsumoAplicadoNaRodada: jest.fn(),
       ajustarFisicoAdministrativo: jest.fn(),
     };
     const useCase = new LiberarReservaEstoqueUseCase(
