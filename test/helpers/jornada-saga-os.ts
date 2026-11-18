@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Type } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -29,6 +27,7 @@ import { ProcessarMensagemEntradaService } from '@/shared/messaging/application/
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
 import { ObservabilityModule } from '@/shared/observability/observability.module';
 import { montarEnvelopeE42 } from './e42-envelope';
+import { carregarExemplo } from './exemplos-contrato';
 import {
   exigirDatabaseUrl,
   verificarConexaoPostgres,
@@ -302,24 +301,10 @@ export const contarPendenciasFinanceiras = (
     where: { ordemServicoId: osId, tipo: 'FINANCEIRA', resolvida },
   });
 
-/** Payload de um exemplo `execution.*` publicado pelo Execution (commit b8d52c6). */
-export function payloadDoExemploExecution(
-  nome: string,
-): Record<string, unknown> {
-  const arquivo = join(__dirname, '../fixtures/execution', `${nome}.json`);
-  return (
-    JSON.parse(readFileSync(arquivo, 'utf8')) as {
-      payload: Record<string, unknown>;
-    }
-  ).payload;
-}
+/** Payload de um exemplo `execution.*` publicado pelo Execution (test/contratos/execution). */
+export const payloadDoExemploExecution = (nome: string) =>
+  carregarExemplo('execution', nome).envelope.payload;
 
-/** Payload de um exemplo `billing.*` publicado pelo Billing (commit 568e04e). */
-export function payloadDoExemploBilling(nome: string): Record<string, unknown> {
-  const arquivo = join(__dirname, '../fixtures/billing', `${nome}.json`);
-  return (
-    JSON.parse(readFileSync(arquivo, 'utf8')) as {
-      payload: Record<string, unknown>;
-    }
-  ).payload;
-}
+/** Payload de um exemplo `billing.*` publicado pelo Billing (test/contratos/billing). */
+export const payloadDoExemploBilling = (nome: string) =>
+  carregarExemplo('billing', nome).envelope.payload;

@@ -63,3 +63,6 @@ docs/local/
 .claude
 .cursor
 spec
+
+# Relatórios de cobertura temporários (a cobertura oficial fica em /coverage)
+coverage-tmp*/

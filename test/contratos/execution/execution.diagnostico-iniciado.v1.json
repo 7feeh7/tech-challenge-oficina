@@ -1,0 +1,15 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440013",
+  "eventType": "execution.diagnostico-iniciado.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T10:30:00.000Z",
+  "source": "execution",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "550e8400-e29b-41d4-a716-446655440010",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "tarefaId": "550e8400-e29b-41d4-a716-446655440000#1#DIAGNOSTICO",
+    "iniciadoEm": "2026-11-15T10:30:00.000Z"
+  }
+}

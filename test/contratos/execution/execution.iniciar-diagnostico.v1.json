@@ -1,0 +1,22 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440010",
+  "eventType": "execution.iniciar-diagnostico.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T10:00:00.000Z",
+  "source": "os-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": null,
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "veiculo": { "placa": "ABC1D23", "modelo": "Sedan 2020" },
+    "descricaoProblema": "Barulho ao frear",
+    "sugestoes": [
+      {
+        "tipo": "PECA",
+        "itemId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "quantidade": 2
+      }
+    ]
+  }
+}
