@@ -34,6 +34,11 @@ import {
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
 import { contextoFatoIntegracao } from './helpers/contexto-fato-estoque';
+import {
+  arbitroConcorrente,
+  assertOperacaoAindaPendente,
+  operacaoConcorrente,
+} from './helpers/assert-operacao-pendente';
 import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
 describe('Resolução manual de consumo (integração E42)', () => {
@@ -95,7 +100,14 @@ describe('Resolução manual de consumo (integração E42)', () => {
     exigirDatabaseUrl();
     nestModule = await Test.createTestingModule({
       imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
+        ConfigModule.forRoot({
+          isGlobal: true,
+          load: [
+            () => ({
+              DATABASE_POOL_CONNECTION_TIMEOUT_MS: '120000',
+            }),
+          ],
+        }),
         ObservabilityModule,
         IdempotencyModule,
         PrismaModule,
@@ -365,8 +377,6 @@ describe('Resolução manual de consumo (integração E42)', () => {
     expect(reserva.situacao).toBe(SituacaoReservaEstoque.ATIVA);
   });
 
-  const PAUSA_BLOQUEIO_MS = 120;
-
   const montarFatoFalhouResolucao = (
     osId: string,
     correlationId: string,
@@ -418,20 +428,28 @@ describe('Resolução manual de consumo (integração E42)', () => {
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
     try {
       await sessao.adquirir();
-      const pFato = processar.executar(
-        montarFatoFalhouResolucao(os.id, os.correlationId, peca.id, fatoId),
+      const pFato = operacaoConcorrente(
+        processar.executar(
+          montarFatoFalhouResolucao(os.id, os.correlationId, peca.id, fatoId),
+        ),
       );
-      const pResolucao = resolver.execute({
-        pendenciaId: pendencia.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'perde disputa',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:cf:perde:${pendencia.id}`,
-      });
-      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+      const pResolucao = operacaoConcorrente(
+        resolver.execute({
+          pendenciaId: pendencia.id,
+          itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+          itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+          motivo: 'perde disputa',
+          responsavelId: randomUUID(),
+          idempotencyKey: `resolucao:cf:perde:${pendencia.id}`,
+        }),
+      );
+      const arbitro = arbitroConcorrente(pFato, pResolucao);
+      await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+      await assertOperacaoAindaPendente(pFato);
+      await assertOperacaoAindaPendente(pResolucao);
       await sessao.liberar();
-      await Promise.allSettled([pFato, pResolucao]);
+      await arbitro;
       expect(
         await prisma.consumoAplicadoOs.count({
           where: { ordemServicoId: os.id, rodada: 1 },
@@ -501,7 +519,7 @@ describe('Resolução manual de consumo (integração E42)', () => {
         responsavelId: randomUUID(),
         idempotencyKey: `resolucao:cm:vence:${pendencia.id}`,
       });
-      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.aguardarDisputaBloqueio(1);
       await sessao.liberar();
       await pResolucao;
       expect(
@@ -611,26 +629,34 @@ describe('Resolução manual de consumo (integração E42)', () => {
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
     try {
       await sessao.adquirir();
-      const pResposta = processar.executar(
-        montarEnvelopeE42(
-          EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
-          os.id,
-          os.correlationId,
-          1,
-          payloadReparoEncerradoE42(peca.id, 1, 'FALHOU', fatoId),
+      const pResposta = operacaoConcorrente(
+        processar.executar(
+          montarEnvelopeE42(
+            EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO,
+            os.id,
+            os.correlationId,
+            1,
+            payloadReparoEncerradoE42(peca.id, 1, 'FALHOU', fatoId),
+          ),
         ),
       );
-      const pResolucao = resolver.execute({
-        pendenciaId: pendencia.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'perde para resposta',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:cr:perde:${pendencia.id}`,
-      });
-      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+      const pResolucao = operacaoConcorrente(
+        resolver.execute({
+          pendenciaId: pendencia.id,
+          itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+          itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+          motivo: 'perde para resposta',
+          responsavelId: randomUUID(),
+          idempotencyKey: `resolucao:cr:perde:${pendencia.id}`,
+        }),
+      );
+      const arbitro = arbitroConcorrente(pResposta, pResolucao);
+      await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+      await assertOperacaoAindaPendente(pResposta);
+      await assertOperacaoAindaPendente(pResolucao);
       await sessao.liberar();
-      await Promise.allSettled([pResposta, pResolucao]);
+      await arbitro;
       expect(
         await prisma.consumoAplicadoOs.count({
           where: { ordemServicoId: os.id, rodada: 1 },
@@ -691,7 +717,7 @@ describe('Resolução manual de consumo (integração E42)', () => {
         responsavelId: randomUUID(),
         idempotencyKey: `resolucao:cr2:vence:${pendencia.id}`,
       });
-      await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+      await sessao.aguardarDisputaBloqueio(1);
       await sessao.liberar();
       await pResolucao;
       expect(
@@ -753,25 +779,33 @@ describe('Resolução manual de consumo (integração E42)', () => {
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
     try {
       await sessao.adquirir();
-      const pVencedor = resolver.execute({
-        pendenciaId: pendA.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'após liberação do bloqueio',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:conc:vence:${pendA.id}`,
-      });
-      const pBloqueada = resolver.execute({
-        pendenciaId: pendA.id,
-        itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
-        itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
-        motivo: 'bloqueada na OS',
-        responsavelId: randomUUID(),
-        idempotencyKey: `resolucao:conc:perde:${pendA.id}`,
-      });
-      await new Promise((r) => setTimeout(r, 80));
+      const pVencedor = operacaoConcorrente(
+        resolver.execute({
+          pendenciaId: pendA.id,
+          itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+          itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+          motivo: 'após liberação do bloqueio',
+          responsavelId: randomUUID(),
+          idempotencyKey: `resolucao:conc:vence:${pendA.id}`,
+        }),
+      );
+      const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+      const pBloqueada = operacaoConcorrente(
+        resolver.execute({
+          pendenciaId: pendA.id,
+          itensConsumidos: [{ pecaId: peca.id, quantidade: 1 }],
+          itensLiberados: [{ pecaId: peca.id, quantidade: 1 }],
+          motivo: 'bloqueada na OS',
+          responsavelId: randomUUID(),
+          idempotencyKey: `resolucao:conc:perde:${pendA.id}`,
+        }),
+      );
+      const arbitro = arbitroConcorrente(pBloqueada, pVencedor);
+      await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+      await assertOperacaoAindaPendente(pVencedor);
+      await assertOperacaoAindaPendente(pBloqueada);
       await sessao.liberar();
-      const resultados = await Promise.allSettled([pBloqueada, pVencedor]);
+      const resultados = await arbitro;
       const sucesso = resultados.filter((r) => r.status === 'fulfilled').length;
       const falha = resultados.filter((r) => r.status === 'rejected').length;
       expect(sucesso).toBe(1);

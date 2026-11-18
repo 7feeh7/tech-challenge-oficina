@@ -39,9 +39,12 @@ import {
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
+import {
+  arbitroConcorrente,
+  assertOperacaoAindaPendente,
+  operacaoConcorrente,
+} from './helpers/assert-operacao-pendente';
 import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
-
-const PAUSA_SOBREPOSICAO_MS = 120;
 
 describe('Compensação — ReparoFalhou (integração)', () => {
   let nestModule: TestingModule;
@@ -169,6 +172,7 @@ describe('Compensação — ReparoFalhou (integração)', () => {
             () => ({
               OUTBOX_PUBLISHER_HABILITADO: 'false',
               SQS_CONSUMER_HABILITADO: 'false',
+              DATABASE_POOL_CONNECTION_TIMEOUT_MS: '120000',
             }),
           ],
         }),
@@ -701,25 +705,36 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       falhouEm,
     };
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    const pendentes: Promise<unknown>[] = [];
     try {
       await sessao.adquirir();
-      const pFalha = processar.executar(
-        montarEnvelope(
-          EVENTO_REPARO_FALHOU,
-          os.id,
-          correlationId,
-          1,
-          falhouPayload,
-          eventId,
-          falhouEm,
+      const pFalha = operacaoConcorrente(
+        processar.executar(
+          montarEnvelope(
+            EVENTO_REPARO_FALHOU,
+            os.id,
+            correlationId,
+            1,
+            falhouPayload,
+            eventId,
+            falhouEm,
+          ),
         ),
       );
-      const pDesistir = desistir.execute(os.id, {
-        motivo: 'C6-A concorrente',
-      });
-      await new Promise((r) => setTimeout(r, PAUSA_SOBREPOSICAO_MS));
+      pendentes.push(pFalha);
+      const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+      const pDesistir = operacaoConcorrente(
+        desistir.execute(os.id, {
+          motivo: 'C6-A concorrente',
+        }),
+      );
+      pendentes.push(pDesistir);
+      const arbitro = arbitroConcorrente(...pendentes);
+      await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+      await assertOperacaoAindaPendente(pFalha);
+      await assertOperacaoAindaPendente(pDesistir);
       await sessao.liberar();
-      const resultados = await Promise.allSettled([pFalha, pDesistir]);
+      const resultados = await arbitro;
       expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true);
       await assertEfeitosC6OrdemUnica(
         os.id,
@@ -732,6 +747,7 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       );
     } finally {
       await sessao.descartar();
+      await Promise.allSettled(pendentes);
     }
   }, 90_000);
 
@@ -755,25 +771,36 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       falhouEm,
     };
     const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
+    const pendentes: Promise<unknown>[] = [];
     try {
       await sessao.adquirir();
-      const pDesistir = desistir.execute(os.id, {
-        motivo: 'C6-B concorrente',
-      });
-      const pFalha = processar.executar(
-        montarEnvelope(
-          EVENTO_REPARO_FALHOU,
-          os.id,
-          correlationId,
-          1,
-          falhouPayload,
-          eventId,
-          falhouEm,
+      const pDesistir = operacaoConcorrente(
+        desistir.execute(os.id, {
+          motivo: 'C6-B concorrente',
+        }),
+      );
+      pendentes.push(pDesistir);
+      const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+      const pFalha = operacaoConcorrente(
+        processar.executar(
+          montarEnvelope(
+            EVENTO_REPARO_FALHOU,
+            os.id,
+            correlationId,
+            1,
+            falhouPayload,
+            eventId,
+            falhouEm,
+          ),
         ),
       );
-      await new Promise((r) => setTimeout(r, PAUSA_SOBREPOSICAO_MS));
+      pendentes.push(pFalha);
+      const arbitro = arbitroConcorrente(...pendentes);
+      await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+      await assertOperacaoAindaPendente(pDesistir);
+      await assertOperacaoAindaPendente(pFalha);
       await sessao.liberar();
-      const resultados = await Promise.allSettled([pDesistir, pFalha]);
+      const resultados = await arbitro;
       expect(resultados.every((r) => r.status === 'fulfilled')).toBe(true);
       await assertEfeitosC6OrdemUnica(
         os.id,
@@ -786,6 +813,7 @@ describe('Compensação — ReparoFalhou (integração)', () => {
       );
     } finally {
       await sessao.descartar();
+      await Promise.allSettled(pendentes);
     }
   }, 90_000);
 });

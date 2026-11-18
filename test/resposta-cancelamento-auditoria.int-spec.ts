@@ -43,6 +43,11 @@ import {
   payloadReparoEncerradoE42,
   QUANDO_ENCERRAMENTO_E42,
 } from './helpers/e42-envelope';
+import {
+  arbitroConcorrente,
+  assertOperacaoAindaPendente,
+  operacaoConcorrente,
+} from './helpers/assert-operacao-pendente';
 import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
 describe('E42 — resposta cancelamento e auditoria (integração)', () => {
@@ -130,6 +135,7 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
             () => ({
               OUTBOX_PUBLISHER_HABILITADO: 'false',
               SQS_CONSUMER_HABILITADO: 'false',
+              DATABASE_POOL_CONNECTION_TIMEOUT_MS: '120000',
             }),
           ],
         }),
@@ -1057,8 +1063,6 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
   });
 
   describe('concorrência', () => {
-    const PAUSA_BLOQUEIO_MS = 120;
-
     async function assertFatoRespostaConvergem(
       osId: string,
       estoqueAntes: number,
@@ -1086,31 +1090,39 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
       const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
       try {
         await sessao.adquirir();
-        const pFato = processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
-            os.id,
-            correlationId,
-            1,
-            {
-              pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
-              concluidoEm: QUANDO_ENCERRAMENTO_E42,
-            },
-            fatoId,
+        const pFato = operacaoConcorrente(
+          processar.executar(
+            montarEnvelopeE42(
+              EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
+              os.id,
+              correlationId,
+              1,
+              {
+                pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
+                concluidoEm: QUANDO_ENCERRAMENTO_E42,
+              },
+              fatoId,
+            ),
           ),
         );
-        const pResposta = processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.RESPOSTA,
-            os.id,
-            correlationId,
-            1,
-            payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+        const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+        const pResposta = operacaoConcorrente(
+          processar.executar(
+            montarEnvelopeE42(
+              EVENTOS_TERMINAIS_E42.RESPOSTA,
+              os.id,
+              correlationId,
+              1,
+              payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+            ),
           ),
         );
-        await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+        const arbitro = arbitroConcorrente(pFato, pResposta);
+        await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+        await assertOperacaoAindaPendente(pFato);
+        await assertOperacaoAindaPendente(pResposta);
         await sessao.liberar();
-        await Promise.allSettled([pFato, pResposta]);
+        await arbitro;
         await assertFatoRespostaConvergem(os.id, estoqueAntes, qtd);
       } finally {
         await sessao.descartar();
@@ -1128,31 +1140,39 @@ describe('E42 — resposta cancelamento e auditoria (integração)', () => {
       const sessao = new SessaoBloqueioOrdemServico(databaseUrl, os.id);
       try {
         await sessao.adquirir();
-        const pResposta = processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.RESPOSTA,
-            os.id,
-            correlationId,
-            1,
-            payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+        const pResposta = operacaoConcorrente(
+          processar.executar(
+            montarEnvelopeE42(
+              EVENTOS_TERMINAIS_E42.RESPOSTA,
+              os.id,
+              correlationId,
+              1,
+              payloadReparoConcluidoE42(pecaId, qtd, fatoId),
+            ),
           ),
         );
-        const pFato = processar.executar(
-          montarEnvelopeE42(
-            EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
-            os.id,
-            correlationId,
-            1,
-            {
-              pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
-              concluidoEm: QUANDO_ENCERRAMENTO_E42,
-            },
-            fatoId,
+        const pidsAposPrimeira = await sessao.aguardarDisputaBloqueio(1);
+        const pFato = operacaoConcorrente(
+          processar.executar(
+            montarEnvelopeE42(
+              EVENTOS_TERMINAIS_E42.REPARO_CONCLUIDO,
+              os.id,
+              correlationId,
+              1,
+              {
+                pecasUtilizadas: [{ itemId: pecaId, quantidade: qtd }],
+                concluidoEm: QUANDO_ENCERRAMENTO_E42,
+              },
+              fatoId,
+            ),
           ),
         );
-        await new Promise((r) => setTimeout(r, PAUSA_BLOQUEIO_MS));
+        const arbitro = arbitroConcorrente(pResposta, pFato);
+        await sessao.aguardarAcrescimoDisputa(pidsAposPrimeira);
+        await assertOperacaoAindaPendente(pResposta);
+        await assertOperacaoAindaPendente(pFato);
         await sessao.liberar();
-        await Promise.allSettled([pResposta, pFato]);
+        await arbitro;
         await assertFatoRespostaConvergem(os.id, estoqueAntes, qtd);
       } finally {
         await sessao.descartar();
