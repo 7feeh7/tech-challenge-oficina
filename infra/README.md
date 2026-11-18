@@ -10,3 +10,5 @@ O Terraform que vivia em `infra/` foi segregado na Fase 3:
 Manifests Kubernetes permanecem em [`k8s/`](../k8s/).
 
 Consulte [`docs/local/arquitetura/infraestrutura.md`](../docs/local/arquitetura/infraestrutura.md) e [`docs/local/operacao/ci-cd.md`](../docs/local/operacao/ci-cd.md) para a ordem de deploy e contratos SSM.
+
+A fila de entrada `os-in` e a DLQ do OS são provisionadas em [`terraform/`](../terraform/README.md) (E41).
