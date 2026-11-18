@@ -7,6 +7,7 @@ export const OBSERVABILITY = {
 export const METRIC_NAMES = {
   osCriada: 'oficina.ordem_servico.criada',
   osTempoPorStatus: 'oficina.ordem_servico.tempo_por_status',
+  osIdadeMaisAntigaSegundos: 'oficina.ordem_servico.idade_mais_antiga_segundos',
   osTransicaoFalha: 'oficina.ordem_servico.transicao_falha',
   integracaoFalha: 'oficina.integracao.falha',
   integracaoLatencia: 'oficina.integracao.latencia',
