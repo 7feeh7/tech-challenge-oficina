@@ -159,7 +159,7 @@ describe('validarRespostaCancelamento', () => {
   });
 
   describe('exemplos publicados pelo Execution (b8d52c6)', () => {
-    const pasta = join(__dirname, '../../../../test/fixtures/execution');
+    const pasta = join(__dirname, '../../../../test/contratos/execution');
     const payloadDe = (arquivo: string): unknown =>
       (
         JSON.parse(readFileSync(join(pasta, arquivo), 'utf8')) as {
