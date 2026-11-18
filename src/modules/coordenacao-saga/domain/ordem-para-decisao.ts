@@ -5,8 +5,8 @@ export interface OrdemParaDecisao {
   rodadaVigente: number;
   rodadaFato: number;
   orderIdFato: string | null;
-  orderIdJaRegistrado: string | null;
-  mesmoOrderId: boolean;
+  /** Orders da rodada com pagamento confirmado (order só criada não entra). */
+  ordersPagas: string[];
   consultaIdVigente: string | null;
   consultaIdFato: string | null;
   emCompensacaoConsultaE10: boolean;

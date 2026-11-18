@@ -671,7 +671,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       motivo: string;
       responsavelId: string;
     },
-  ): Promise<{ ordemServicoId: string }> {
+  ): Promise<{ ordemServicoId: string; pendenciaResolvida: boolean }> {
     const motivoNormalizado = input.motivo.trim();
     if (!motivoNormalizado) {
       throw new MotivoAjusteAdministrativoInvalidoError();
@@ -753,6 +753,26 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       },
     });
 
+    if (
+      !(await this.todasPecasDivergentesAjustadas(
+        cliente,
+        pendencia.id,
+        divergencias,
+      ))
+    ) {
+      this.logger.log({
+        message: 'estoque.ajuste_administrativo_parcial',
+        pendenciaId: pendencia.id,
+        pecaId: input.pecaId,
+        ordemServicoId: pendencia.ordem_servico_id,
+        responsavelId: input.responsavelId,
+      });
+      return {
+        ordemServicoId: pendencia.ordem_servico_id,
+        pendenciaResolvida: false,
+      };
+    }
+
     const resolvida = await cliente.$executeRaw`
       UPDATE pendencias_os
       SET resolvida = true,
@@ -776,7 +796,42 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       responsavelId: input.responsavelId,
     });
 
-    return { ordemServicoId: pendencia.ordem_servico_id };
+    return {
+      ordemServicoId: pendencia.ordem_servico_id,
+      pendenciaResolvida: true,
+    };
+  }
+
+  /**
+   * A pendência só é resolvida com ajuste registrado para toda peça divergente
+   * (D4.8, decisão de 2026-11-18). Peça fora do catálogo não tem estoque físico
+   * a ajustar e fica só na auditoria da pendência.
+   */
+  private async todasPecasDivergentesAjustadas(
+    cliente: ClienteTransacao,
+    pendenciaId: string,
+    divergencias: { pecaId: string }[],
+  ): Promise<boolean> {
+    const candidatas = [
+      ...new Set(
+        divergencias
+          .map((d) => d.pecaId)
+          .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
+      ),
+    ];
+    const noCatalogo = await cliente.peca.findMany({
+      where: { id: { in: candidatas } },
+      select: { id: true },
+    });
+    const ajustadas = new Set(
+      (
+        await cliente.ajusteEstoqueAdministrativo.findMany({
+          where: { pendenciaId },
+          select: { pecaId: true },
+        })
+      ).map((a) => a.pecaId),
+    );
+    return noCatalogo.every((peca) => ajustadas.has(peca.id));
   }
 
   async resolverConsumoManualInicial(

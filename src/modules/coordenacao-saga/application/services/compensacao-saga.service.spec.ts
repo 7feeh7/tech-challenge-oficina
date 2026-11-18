@@ -525,11 +525,12 @@ describe('CompensacaoSagaService', () => {
     expect(ctx.comandos.emitirCancelarTarefa).not.toHaveBeenCalled();
   });
 
-  it('resposta de reparo em andamento segue para financeiro com REPARO_INICIADO', async () => {
+  it('resposta de reparo já encerrado segue para financeiro com REPARO_INICIADO', async () => {
     const { service, getSnapshot } = montar({ pedidoReparoEmitido: true });
     await service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
       tipoTarefa: TipoTarefaCancelamento.REPARO,
-      resultado: ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO,
+      resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      situacaoTarefa: SituacaoTarefaCancelamento.INTERROMPIDA,
       pecasUtilizadas: [{ itemId: 'p1', quantidade: 1 }],
     });
     expect(getSnapshot().resultadoExecucao).toBe(
@@ -633,5 +634,80 @@ describe('CompensacaoSagaService', () => {
     expect(getSnapshot().passo).toBe(PassoCompensacaoSaga.FINANCEIRO);
     expect(pedidos.marcarConcluidoPorTipo).toHaveBeenCalled();
     expect(comandos.emitirCancelarTarefa).not.toHaveBeenCalled();
+  });
+
+  describe('resultadoExecucao do reparo cancelado (D1.20)', () => {
+    const responder = async (
+      resultado: ResultadoCancelamentoExecucao,
+      snapshot?: Partial<EstadoCompensacaoSnapshot>,
+    ) => {
+      const montado = montar({
+        bloquearEmissaoFinanceira: true,
+        pedidoReparoEmitido: true,
+        snapshot: snapshotInicial(snapshot),
+      });
+      await montado.service.tratarRespostaCancelamento(
+        contexto,
+        'os-1',
+        'caus',
+        { tipoTarefa: TipoTarefaCancelamento.REPARO, resultado },
+      );
+      return montado.getSnapshot();
+    };
+
+    it.each([
+      ResultadoCancelamentoExecucao.CANCELADA_SEM_INICIO,
+      ResultadoCancelamentoExecucao.CANCELADA_SEM_EXISTIR,
+    ])('%s resulta em REPARO_NAO_INICIADO', async (resultado) => {
+      const snapshot = await responder(resultado);
+      expect(snapshot.resultadoExecucao).toBe(
+        ResultadoExecucaoCompensacao.REPARO_NAO_INICIADO,
+      );
+      expect(snapshot.passo).toBe(PassoCompensacaoSaga.FINANCEIRO);
+    });
+
+    it('JA_ENCERRADA resulta em REPARO_INICIADO', async () => {
+      const snapshot = await responder(
+        ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      );
+      expect(snapshot.resultadoExecucao).toBe(
+        ResultadoExecucaoCompensacao.REPARO_INICIADO,
+      );
+    });
+
+    it('ReparoIniciado já recebido mantém REPARO_INICIADO mesmo com CANCELADA_SEM_INICIO', async () => {
+      const snapshot = await responder(
+        ResultadoCancelamentoExecucao.CANCELADA_SEM_INICIO,
+        { reparoIniciadoDuranteCancelamento: true },
+      );
+      expect(snapshot.resultadoExecucao).toBe(
+        ResultadoExecucaoCompensacao.REPARO_INICIADO,
+      );
+    });
+  });
+
+  describe('pendência aberta e avanço da compensação', () => {
+    const avancarComPendencia = async (detalhes: Record<string, unknown>) => {
+      const montado = montar();
+      montado.prisma.pendenciaOs.findMany.mockResolvedValue([
+        { id: 'p1', detalhes },
+      ]);
+      await montado.service.avancarSeEmCancelamento(contexto, 'os-1', 'caus');
+      return montado;
+    };
+
+    it('a pendência informativa SEGUNDO_PAGAMENTO não bloqueia o avanço', async () => {
+      const { comandos } = await avancarComPendencia({
+        natureza: 'SEGUNDO_PAGAMENTO',
+      });
+      expect(comandos.emitirCancelarTarefa).toHaveBeenCalledTimes(1);
+    });
+
+    it('outra pendência, com ou sem natureza, continua bloqueando', async () => {
+      for (const detalhes of [{ motivo: 'sem natureza' }, { natureza: 'X' }]) {
+        const { comandos } = await avancarComPendencia(detalhes);
+        expect(comandos.emitirCancelarTarefa).not.toHaveBeenCalled();
+      }
+    });
   });
 });

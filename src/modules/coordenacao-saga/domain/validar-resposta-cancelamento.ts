@@ -22,15 +22,19 @@ function listaConsumo(payload: Record<string, unknown>): boolean {
 
 function validarDivergencias(
   divergencias: RespostaCancelamentoContrato['divergencias'],
+  contratoAditivo: boolean,
 ): void {
   if (!divergencias) {
     return;
   }
   for (const d of divergencias) {
     if (!presente(d.tipo)) {
-      throw new ErroMensagemPermanente(
-        'divergencias[].tipo obrigatório no contrato aditivo.',
-      );
+      if (contratoAditivo) {
+        throw new ErroMensagemPermanente(
+          'divergencias[].tipo obrigatório no contrato aditivo.',
+        );
+      }
+      continue;
     }
     if (
       JUSTIFICATIVA_OBRIGATORIA.has(d.tipo!) &&
@@ -83,6 +87,15 @@ export function validarRespostaCancelamento(
   }
 
   if (
+    tipoTarefa === TipoTarefaCancelamento.REPARO &&
+    resultado === ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO
+  ) {
+    throw new ErroMensagemPermanente(
+      'CANCELADA_EM_ANDAMENTO só vale para diagnóstico.',
+    );
+  }
+
+  if (
     tipoTarefa === TipoTarefaCancelamento.DIAGNOSTICO &&
     listaConsumo(payload)
   ) {
@@ -103,6 +116,10 @@ export function validarRespostaCancelamento(
   const situacao = payload.situacaoTarefa as
     | SituacaoTarefaCancelamento
     | undefined;
+  // Resposta sem `situacaoTarefa` é anterior aos campos aditivos (D3.12): não é
+  // erro permanente, e a falta de auditoria vira pendência INFORMACAO_INSUFICIENTE
+  // na reconciliação (03, regra (c)).
+  const contratoAditivo = presente(situacao);
 
   if (
     resultado === ResultadoCancelamentoExecucao.JA_CONCLUIDA &&
@@ -140,6 +157,7 @@ export function validarRespostaCancelamento(
     }
     validarDivergencias(
       payload.divergencias as RespostaCancelamentoContrato['divergencias'],
+      contratoAditivo,
     );
   }
 
@@ -154,7 +172,7 @@ export function validarRespostaCancelamento(
     (resultado === ResultadoCancelamentoExecucao.JA_CONCLUIDA &&
       tipoTarefa === TipoTarefaCancelamento.DIAGNOSTICO);
 
-  if (precisaEncerrada && !presente(payload.encerradaEm)) {
+  if (precisaEncerrada && contratoAditivo && !presente(payload.encerradaEm)) {
     throw new ErroMensagemPermanente(
       'encerradaEm obrigatório para o resultado.',
     );

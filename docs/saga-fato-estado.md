@@ -14,8 +14,13 @@ Referência para `decidir(fato, ordem)` e orquestração em `CompensacaoSagaServ
 | `ReparoIniciado` | `AGUARDANDO_EXECUCAO` | APLICAR |
 | `ReparoConcluido` | `EM_EXECUCAO` | APLICAR |
 | Fato de rodada antiga | Qualquer | IGNORAR |
-| Pagamento repetido (mesmo `orderId`) | pós-pagamento | IGNORAR |
-| Pagamento concorrente (`orderId` novo) | `AGUARDANDO_EXECUCAO` / `EM_EXECUCAO` / `FINALIZADA` | CONCILIAR |
+| Pagamento repetido (`orderId` de order já paga da rodada) | Qualquer | IGNORAR |
+| Pagamento concorrente (`orderId` diferente das orders já pagas) | `AGUARDANDO_EXECUCAO` / `EM_EXECUCAO` / `FINALIZADA` | CONCILIAR |
+| `PagamentoTardioRegistrado` | `CANCELADA` / `ENTREGUE` | APLICAR: pendência financeira por `cobrancaId`, sem mudar o status |
+
+O segundo pagamento (`CONCILIAR` em `AGUARDANDO_EXECUCAO`, `EM_EXECUCAO` e `FINALIZADA`) abre uma pendência `FINANCEIRA` **informativa**, com `detalhes.natureza = 'SEGUNDO_PAGAMENTO'` (além de `orderId`, `cobrancaId` e `motivo`). Ela fica visível e aberta até o tratamento manual: não bloqueia a compensação (`temPendenciasAbertas` a ignora) nem a retomada da finalização após a resolução do inventário, e nenhum fato novo a resolve. Qualquer outra pendência `FINANCEIRA`, inclusive sem `natureza`, continua impedindo a retomada da finalização. A pendência de `PagamentoConfirmado` ou `PagamentoTardioRegistrado` em `CANCELADA` e `ENTREGUE` não leva essa natureza.
+
+Order só criada (`CobrancaCriada`) ou reemitida na mesma rodada (D1.15) não conta como paga. `projecoes_financeiras_os` guarda a order emitida em `natureza = PAGAMENTO` e cada pagamento confirmado em uma linha `natureza = CONFIRMACAO` com `order_id = confirmado:<orderId>` (a unicidade da tabela é por OS, rodada e `order_id`). O resumo financeiro mostra a primeira order paga da rodada ou, sem pagamento, a order emitida mais recente.
 | `OrcamentoRejeitado` | `EM_CANCELAMENTO` | IGNORAR |
 
 ## Gatilhos de compensação (E42)
@@ -40,7 +45,7 @@ Referência para `decidir(fato, ordem)` e orquestração em `CompensacaoSagaServ
 
 | Fato | Decisão | Efeito |
 | --- | --- | --- |
-| `RespostaCancelamento` | APLICAR | Atualiza passo / `resultadoExecucao` / dispara E10 se reparo `JA_CONCLUIDA` |
+| `RespostaCancelamento` | APLICAR | Atualiza passo / `resultadoExecucao` (reparo `CANCELADA_SEM_INICIO` ou `CANCELADA_SEM_EXISTIR` → `REPARO_NAO_INICIADO`, D1.20) / dispara E10 se reparo `JA_CONCLUIDA`. Resposta sem os campos aditivos (sem `situacaoTarefa`) abre `INFORMACAO_INSUFICIENTE`; com o consumo da rodada já registrado, converge sem reabrir a pendência |
 | `RespostaCancelamentoFinanceiro` | APLICAR | Avança estoque ou abre pendência manual |
 | `SituacaoFinanceira` (consulta vigente, passo `CONSULTA_E10`) | APLICAR | Valida condições E10; `INDETERMINADA` mantém espera |
 | `SituacaoFinanceira` (consultaId ≠ vigente ou passo ≠ `CONSULTA_E10`) | IGNORAR | Respostas atrasadas de consulta de prazo após `EM_CANCELAMENTO` não movem a OS |
@@ -48,7 +53,7 @@ Referência para `decidir(fato, ordem)` e orquestração em `CompensacaoSagaServ
 | `RespostaCancelamentoFinanceiro` `PENDENCIA_MANUAL_ABERTA` | APLICAR | `aguardandoResposta = false`; retomada via `PendenciaResolvida` / `EstornoConcluido` |
 | `PagamentoConfirmado` | CONCILIAR | Projeção + `avancarSeEmCancelamento` |
 | `ReparoIniciado` | APLICAR | Marca `reparoIniciadoDuranteCancelamento` |
-| `ReparoFalhou` / `ReparoInterrompido` | APLICAR | Fato terminal + peças |
+| `ReparoFalhou` / `ReparoInterrompido` | APLICAR | Fato terminal + peças; fica registrado mesmo com divergência de inventário pendente, e depois do ajuste a compensação segue ao financeiro sem reenviar `CancelarTarefa` (D4.3) |
 | `EstornoConcluido` / `PendenciaResolvida` | APLICAR | Fecha pendências financeiras pós-encerramento |
 | Fato de rodada antiga | IGNORAR | Sem regressão |
 

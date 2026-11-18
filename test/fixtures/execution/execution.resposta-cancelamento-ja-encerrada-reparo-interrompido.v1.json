@@ -1,0 +1,33 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440026",
+  "eventType": "execution.resposta-cancelamento.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T16:00:00.000Z",
+  "source": "execution",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "550e8400-e29b-41d4-a716-446655440019",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "tipoTarefa": "REPARO",
+    "resultado": "JA_ENCERRADA",
+    "situacaoTarefa": "INTERROMPIDA",
+    "encerradaEm": "2026-11-15T15:00:00.000Z",
+    "responsavelId": "mecanico-1",
+    "motivo": "Cliente desistiu",
+    "fatoTerminalEventId": "550e8400-e29b-41d4-a716-446655440020",
+    "servicosRealizados": [
+      { "itemId": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "quantidade": 1 }
+    ],
+    "pecasUtilizadas": [],
+    "divergencias": [
+      {
+        "itemId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        "tipo": "CONSUMO_ZERO",
+        "quantidadePrevista": 2,
+        "quantidadeUtilizada": 0,
+        "observacao": "Peça autorizada não consumida na interrupção."
+      }
+    ]
+  }
+}

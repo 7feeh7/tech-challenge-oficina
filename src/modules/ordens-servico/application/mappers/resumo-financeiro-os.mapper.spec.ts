@@ -51,4 +51,52 @@ describe('montarResumoFinanceiro', () => {
       pagamento: null,
     });
   });
+
+  describe('orders da mesma rodada', () => {
+    const order = (orderId: string, hora: number) => ({
+      rodada: 1,
+      natureza: 'PAGAMENTO',
+      orcamentoId: null,
+      cobrancaId: 'cob-1',
+      orderId,
+      valorCentavos: 15000,
+      linkPagamento: `https://pay/${orderId}`,
+      criadoEm: new Date(`2026-01-01T${hora}:00:00Z`),
+    });
+    const confirmacao = (orderId: string, hora: number) => ({
+      ...order(`confirmado:${orderId}`, hora),
+      natureza: 'CONFIRMACAO',
+      linkPagamento: null,
+    });
+
+    it('sem order paga mostra a mais recente (reemissão)', () => {
+      const resumo = montarResumoFinanceiro(1, [
+        order('ORD-1', 10),
+        order('ORD-2', 11),
+      ]);
+      expect(resumo.pagamento?.orderId).toBe('ORD-2');
+    });
+
+    it('com order paga mostra a primeira paga, mesmo que haja order mais recente', () => {
+      const resumo = montarResumoFinanceiro(1, [
+        order('ORD-1', 10),
+        order('ORD-2', 11),
+        confirmacao('ORD-1', 12),
+      ]);
+      expect(resumo.pagamento).toMatchObject({
+        orderId: 'ORD-1',
+        linkPagamento: 'https://pay/ORD-1',
+      });
+    });
+
+    it('com duas orders pagas mostra a que foi paga primeiro', () => {
+      const resumo = montarResumoFinanceiro(1, [
+        order('ORD-1', 10),
+        order('ORD-2', 11),
+        confirmacao('ORD-2', 12),
+        confirmacao('ORD-1', 13),
+      ]);
+      expect(resumo.pagamento?.orderId).toBe('ORD-2');
+    });
+  });
 });

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ErroMensagemPermanente } from '@/shared/messaging/domain/mensageria.errors';
 import {
   ResultadoCancelamentoExecucao,
@@ -154,5 +156,114 @@ describe('validarRespostaCancelamento', () => {
         divergencias: [],
       }),
     ).toThrow(ErroMensagemPermanente);
+  });
+
+  describe('exemplos publicados pelo Execution (b8d52c6)', () => {
+    const pasta = join(__dirname, '../../../../test/fixtures/execution');
+    const payloadDe = (arquivo: string): unknown =>
+      (
+        JSON.parse(readFileSync(join(pasta, arquivo), 'utf8')) as {
+          payload: unknown;
+        }
+      ).payload;
+
+    it.each(
+      readdirSync(pasta).filter((arquivo) =>
+        arquivo.startsWith('execution.resposta-cancelamento'),
+      ),
+    )('aceita %s', (arquivo) => {
+      expect(() =>
+        validarRespostaCancelamento(payloadDe(arquivo)),
+      ).not.toThrow();
+    });
+
+    it('aceita a resposta de retrocompatibilidade sem os campos aditivos', () => {
+      const resposta = validarRespostaCancelamento(
+        payloadDe(
+          'execution.resposta-cancelamento-retrocompatibilidade.v1.json',
+        ),
+      );
+      expect(resposta.situacaoTarefa).toBeUndefined();
+      expect(resposta.encerradaEm).toBeUndefined();
+      expect(resposta.divergencias?.[0]?.tipo).toBeUndefined();
+      expect(resposta.pecasUtilizadas).toHaveLength(1);
+    });
+  });
+
+  describe('conteúdo realmente inválido continua recusado', () => {
+    it('exige encerradaEm quando a resposta traz situacaoTarefa', () => {
+      const { encerradaEm, ...semEncerradaEm } = baseReparoConcluido;
+      void encerradaEm;
+      expect(() => validarRespostaCancelamento(semEncerradaEm)).toThrow(
+        ErroMensagemPermanente,
+      );
+    });
+
+    it('exige tipo da divergência quando a resposta traz situacaoTarefa', () => {
+      expect(() =>
+        validarRespostaCancelamento({
+          ...baseReparoConcluido,
+          divergencias: [{ itemId: 'p1', quantidadePrevista: 2 }],
+        }),
+      ).toThrow(ErroMensagemPermanente);
+    });
+
+    it('recusa JA_ENCERRADA sem situacaoTarefa mesmo sem campos aditivos', () => {
+      expect(() =>
+        validarRespostaCancelamento({
+          tipoTarefa: TipoTarefaCancelamento.REPARO,
+          resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+          encerradaEm: '2026-01-01T12:00:00.000Z',
+          pecasUtilizadas: [],
+          servicosRealizados: [],
+          divergencias: [],
+        }),
+      ).toThrow(ErroMensagemPermanente);
+    });
+
+    it('recusa reparo concluído sem as listas de consumo', () => {
+      expect(() =>
+        validarRespostaCancelamento({
+          tipoTarefa: TipoTarefaCancelamento.REPARO,
+          resultado: ResultadoCancelamentoExecucao.JA_CONCLUIDA,
+          concluidaEm: '2026-01-01T12:00:00.000Z',
+        }),
+      ).toThrow(ErroMensagemPermanente);
+    });
+
+    it('recusa reparo concluído sem concluidaEm', () => {
+      expect(() =>
+        validarRespostaCancelamento({
+          tipoTarefa: TipoTarefaCancelamento.REPARO,
+          resultado: ResultadoCancelamentoExecucao.JA_CONCLUIDA,
+          pecasUtilizadas: [],
+          servicosRealizados: [],
+          divergencias: [],
+        }),
+      ).toThrow(ErroMensagemPermanente);
+    });
+  });
+
+  describe('CANCELADA_EM_ANDAMENTO só vale para diagnóstico (03, 06-saga)', () => {
+    it('recusa a combinação com reparo como erro permanente', () => {
+      expect(() =>
+        validarRespostaCancelamento({
+          tipoTarefa: TipoTarefaCancelamento.REPARO,
+          resultado: ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO,
+        }),
+      ).toThrow(ErroMensagemPermanente);
+    });
+
+    it('aceita com diagnóstico', () => {
+      expect(
+        validarRespostaCancelamento({
+          tipoTarefa: TipoTarefaCancelamento.DIAGNOSTICO,
+          resultado: ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO,
+        }),
+      ).toMatchObject({
+        tipoTarefa: TipoTarefaCancelamento.DIAGNOSTICO,
+        resultado: ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO,
+      });
+    });
   });
 });

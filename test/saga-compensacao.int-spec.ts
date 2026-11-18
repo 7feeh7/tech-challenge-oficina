@@ -55,6 +55,7 @@ import {
   exigirDatabaseUrl,
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
+import { payloadDoExemploExecution } from './helpers/jornada-saga-os';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
 
 function criarPrismaSegundoPool(databaseUrl: string): PrismaClient {
@@ -464,13 +465,34 @@ describe('Saga — compensação (integração)', () => {
     const { os, correlationId } = await prepararEmExecucao();
     await desistir.execute(os.id, { motivo: 'Durante reparo' });
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_TAREFA)).toBe(1);
-    await simularRespostaExecucao(os.id, correlationId, 1, {
-      tipoTarefa: 'REPARO',
-      resultado: 'CANCELADA_EM_ANDAMENTO',
-    });
+    // Reparo em andamento: o Execution pede a interrupção e o OS segue com o
+    // fato terminal (a resposta CANCELADA_EM_ANDAMENTO só vale para diagnóstico).
+    await simularRespostaExecucao(
+      os.id,
+      correlationId,
+      1,
+      payloadDoExemploExecution(
+        'execution.resposta-cancelamento-interrupcao-solicitada-reparo.v1',
+      ),
+    );
+    expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
+      0,
+    );
+    await processar.executar(
+      montarEnvelope(EVENTO_REPARO_INTERROMPIDO, os.id, correlationId, 1, {
+        pecasUtilizadas: [],
+      }),
+    );
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_FINANCEIRO)).toBe(
       1,
     );
+    const comandoFinanceiro = await prisma.outboxMensagem.findFirstOrThrow({
+      where: { correlationId, eventType: COMANDO_CANCELAR_FINANCEIRO },
+    });
+    expect(
+      (comandoFinanceiro.envelope as { payload: { resultadoExecucao: string } })
+        .payload.resultadoExecucao,
+    ).toBe('REPARO_INICIADO');
     const sequencia = await ordemOutbox(correlationId);
     expect(sequencia).toEqual([
       COMANDO_CANCELAR_TAREFA,
@@ -559,10 +581,9 @@ describe('Saga — compensação (integração)', () => {
         os.id,
         correlationId,
         0,
-        {
-          tipoTarefa: 'REPARO',
-          resultado: 'CANCELADA_EM_ANDAMENTO',
-        },
+        payloadDoExemploExecution(
+          'execution.resposta-cancelamento-ja-encerrada-reparo-falhou.v1',
+        ),
       ),
     );
     expect(await contarOutbox(correlationId, COMANDO_CANCELAR_TAREFA)).toBe(

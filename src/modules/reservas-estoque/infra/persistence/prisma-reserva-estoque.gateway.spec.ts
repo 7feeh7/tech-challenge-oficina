@@ -73,6 +73,7 @@ describe('PrismaReservaEstoqueGateway', () => {
     },
     ajusteEstoqueAdministrativo: {
       create: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
 
@@ -768,15 +769,99 @@ describe('PrismaReservaEstoqueGateway', () => {
     cliente.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
     cliente.ajusteEstoqueAdministrativo.create.mockResolvedValue({ id: 'aj' });
 
-    await gateway.ajustarFisicoAdministrativo(contexto, {
-      pendenciaId: 'pend',
-      pecaId: 'p1',
-      quantidadeFisicaNova: 9,
-      motivo: 'Conferência',
-      responsavelId: 'admin',
-    });
+    await expect(
+      gateway.ajustarFisicoAdministrativo(contexto, {
+        pendenciaId: 'pend',
+        pecaId: 'p1',
+        quantidadeFisicaNova: 9,
+        motivo: 'Conferência',
+        responsavelId: 'admin',
+      }),
+    ).resolves.toEqual({ ordemServicoId: 'os', pendenciaResolvida: true });
 
     expect(cliente.ajusteEstoqueAdministrativo.create).toHaveBeenCalled();
+  });
+
+  describe('ajuste por peça com duas peças divergentes', () => {
+    const PECA_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const PECA_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    const prepararAjusteDaPecaA = () => {
+      cliente.pendenciaOs.findUnique.mockResolvedValue({
+        id: 'pend',
+        ordemServicoId: 'os',
+      });
+      cliente.$queryRaw
+        .mockResolvedValueOnce([{ id: 'os' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'pend',
+            ordem_servico_id: 'os',
+            rodada: 1,
+            resolvida: false,
+            detalhes: {
+              divergencias: [{ pecaId: PECA_A }, { pecaId: PECA_B }],
+            },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([
+          {
+            id: PECA_A,
+            quantidade_estoque: 8,
+            quantidade_reservada: 0,
+            ativo: true,
+          },
+        ]);
+      cliente.peca.findMany.mockResolvedValueOnce([
+        { id: PECA_A },
+        { id: PECA_B },
+      ]);
+      cliente.$executeRaw.mockResolvedValue(1);
+      cliente.ajusteEstoqueAdministrativo.create.mockResolvedValue({
+        id: 'aj',
+      });
+    };
+
+    const ajustarPecaA = () =>
+      gateway.ajustarFisicoAdministrativo(contexto, {
+        pendenciaId: 'pend',
+        pecaId: PECA_A,
+        quantidadeFisicaNova: 7,
+        motivo: 'Contagem',
+        responsavelId: 'admin',
+      });
+
+    it('registra o ajuste e mantém a pendência aberta enquanto falta a outra peça', async () => {
+      prepararAjusteDaPecaA();
+      cliente.ajusteEstoqueAdministrativo.findMany.mockResolvedValueOnce([
+        { pecaId: PECA_A },
+      ]);
+
+      await expect(ajustarPecaA()).resolves.toEqual({
+        ordemServicoId: 'os',
+        pendenciaResolvida: false,
+      });
+      expect(cliente.ajusteEstoqueAdministrativo.create).toHaveBeenCalledTimes(
+        1,
+      );
+      // Só o UPDATE do estoque físico: nenhuma resolução da pendência.
+      expect(cliente.$executeRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('resolve a pendência quando a outra peça já tem ajuste', async () => {
+      prepararAjusteDaPecaA();
+      cliente.ajusteEstoqueAdministrativo.findMany.mockResolvedValueOnce([
+        { pecaId: PECA_B },
+        { pecaId: PECA_A },
+      ]);
+
+      await expect(ajustarPecaA()).resolves.toEqual({
+        ordemServicoId: 'os',
+        pendenciaResolvida: true,
+      });
+      expect(cliente.$executeRaw).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('ajustarFisicoAdministrativo recusa pendência já resolvida', async () => {

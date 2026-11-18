@@ -39,6 +39,7 @@ import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/applicati
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ConsumirReservaEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
 import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
+import { NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO } from '../../domain/natureza-pendencia-financeira';
 import { AcaoDecisao } from '../../domain/acao-decisao';
 import { decidir } from '../../domain/decidir';
 import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
@@ -103,6 +104,20 @@ interface ReparoExecucaoPayload {
 
 type ReparoConcluidoPayload = ReparoExecucaoPayload;
 
+const STATUS_ENCERRADOS = [
+  StatusOS.FINALIZADA,
+  StatusOS.CANCELADA,
+  StatusOS.ENTREGUE,
+];
+
+// O segundo pagamento abre pendência financeira visível (06-saga, conciliar),
+// com a OS em execução ou já encerrada, sem mudar o status.
+const STATUS_COM_SEGUNDO_PAGAMENTO = [
+  StatusOS.AGUARDANDO_EXECUCAO,
+  StatusOS.EM_EXECUCAO,
+  ...STATUS_ENCERRADOS,
+];
+
 export class ReagirFatoSagaUseCase {
   constructor(
     private readonly ordens: OrdemServicoGateway,
@@ -148,7 +163,7 @@ export class ReagirFatoSagaUseCase {
     });
 
     const payloadPagamento = envelope.payload as PagamentoConfirmadoPayload;
-    const orderIdPrincipal = await this.projecao.buscarOrderIdPrincipal(
+    const ordersPagas = await this.projecao.buscarOrdersPagas(
       contexto,
       envelope.ordemServicoId,
       envelope.rodada,
@@ -170,10 +185,7 @@ export class ReagirFatoSagaUseCase {
       rodadaVigente: bloqueada.ordem.rodadaVigente,
       rodadaFato: envelope.rodada,
       orderIdFato: payloadPagamento.orderId ?? null,
-      orderIdJaRegistrado: orderIdPrincipal,
-      mesmoOrderId:
-        Boolean(payloadPagamento.orderId) &&
-        payloadPagamento.orderId === orderIdPrincipal,
+      ordersPagas,
       consultaIdVigente: estadoSnap?.consultaIdVigente ?? null,
       consultaIdFato: payloadConsulta.consultaId ?? null,
       emCompensacaoConsultaE10:
@@ -214,14 +226,19 @@ export class ReagirFatoSagaUseCase {
       }
       if (
         fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
-        [StatusOS.FINALIZADA, StatusOS.CANCELADA, StatusOS.ENTREGUE].includes(
-          bloqueada.ordem.status,
-        )
+        STATUS_COM_SEGUNDO_PAGAMENTO.includes(bloqueada.ordem.status)
       ) {
         await this.abrirPendenciaFinanceira(
           contexto,
           envelope,
           payloadPagamento,
+          STATUS_ENCERRADOS.includes(bloqueada.ordem.status)
+            ? 'Segundo pagamento após encerramento'
+            : 'Segundo pagamento antes do encerramento',
+          bloqueada.ordem.status === StatusOS.CANCELADA ||
+            bloqueada.ordem.status === StatusOS.ENTREGUE
+            ? undefined
+            : NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO,
         );
       }
       return;
@@ -394,6 +411,7 @@ export class ReagirFatoSagaUseCase {
           contexto,
           envelope,
           envelope.payload as PagamentoConfirmadoPayload,
+          'Pagamento tardio registrado após encerramento',
         );
         break;
       default:
@@ -564,11 +582,17 @@ export class ReagirFatoSagaUseCase {
     );
     if (
       bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO &&
-      resultadoConsumo.impedimentoInventario
+      resultadoConsumo.conflitoRegistrado
     ) {
       return;
     }
-    if (bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO) {
+    // Com divergência de inventário pendente o fato terminal fica registrado
+    // mesmo assim: depois do ajuste a compensação segue ao financeiro sem
+    // reenviar CancelarTarefa (D4.3). A pendência impede o avanço até lá.
+    if (
+      bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO &&
+      !resultadoConsumo.impedimentoInventario
+    ) {
       await this.reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada(
         contexto,
         envelope.ordemServicoId,
@@ -601,6 +625,10 @@ export class ReagirFatoSagaUseCase {
     });
     const alvo = abertas.find((pendencia) => {
       const detalhes = pendencia.detalhes as Record<string, unknown>;
+      // Pendência informativa do segundo pagamento só sai por tratamento manual.
+      if (detalhes.natureza === NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO) {
+        return false;
+      }
       if (payload.pendenciaId) {
         return detalhes.pendenciaId === payload.pendenciaId;
       }
@@ -660,7 +688,7 @@ export class ReagirFatoSagaUseCase {
     if (!payload.orderId) {
       return;
     }
-    const criado = await this.projecao.registrarPagamento(contexto, {
+    const criado = await this.projecao.registrarCobranca(contexto, {
       ordemServicoId: envelope.ordemServicoId,
       rodada: envelope.rodada,
       cobrancaId: payload.cobrancaId ?? null,
@@ -759,19 +787,23 @@ export class ReagirFatoSagaUseCase {
   private async abrirPendenciaFinanceira(
     contexto: ContextoTransacao,
     envelope: EnvelopeMensagem,
-    payload: PagamentoConfirmadoPayload,
+    payload: Partial<PagamentoConfirmadoPayload>,
+    motivo: string,
+    natureza?: string,
   ): Promise<void> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
+    // O pagamento tardio não traz orderId: a cobrança identifica a pendência,
+    // que EstornoConcluido e PendenciaResolvida resolvem por cobrancaId.
+    const chave = payload.orderId
+      ? { campo: 'orderId', valor: payload.orderId }
+      : { campo: 'cobrancaId', valor: payload.cobrancaId };
     const duplicada = await cliente.pendenciaOs.findFirst({
       where: {
         ordemServicoId: envelope.ordemServicoId,
         rodada: envelope.rodada,
         tipo: TipoPendenciaOs.FINANCEIRA,
         resolvida: false,
-        detalhes: {
-          path: ['orderId'],
-          equals: payload.orderId,
-        },
+        detalhes: { path: [chave.campo], equals: chave.valor ?? '' },
       },
     });
     if (duplicada) {
@@ -784,9 +816,11 @@ export class ReagirFatoSagaUseCase {
         rodada: envelope.rodada,
         tipo: TipoPendenciaOs.FINANCEIRA,
         detalhes: {
-          orderId: payload.orderId,
+          ...(natureza ? { natureza } : {}),
+          ...(payload.orderId ? { orderId: payload.orderId } : {}),
+          ...(payload.cobrancaId ? { cobrancaId: payload.cobrancaId } : {}),
           eventId: envelope.eventId,
-          motivo: 'Segundo pagamento após encerramento',
+          motivo,
         },
       },
     });
@@ -798,7 +832,11 @@ export class ReagirFatoSagaUseCase {
     payload: ReparoExecucaoPayload,
     tipoFato: 'REPARO_CONCLUIDO' | 'REPARO_FALHOU' | 'REPARO_INTERROMPIDO',
     ocorridoEm: Date,
-  ): Promise<{ impedimentoInventario: boolean; reutilizado: boolean }> {
+  ): Promise<{
+    impedimentoInventario: boolean;
+    reutilizado: boolean;
+    conflitoRegistrado: boolean;
+  }> {
     const divergenciasFato =
       payload.divergencias?.map((d) => ({
         pecaId: d.itemId,
@@ -853,14 +891,23 @@ export class ReagirFatoSagaUseCase {
       resultado === 'pendencia_conflito' ||
       resultado === 'pendencia_informacao'
     ) {
-      return { impedimentoInventario: true, reutilizado: false };
+      return {
+        impedimentoInventario: true,
+        reutilizado: false,
+        conflitoRegistrado: true,
+      };
     }
     if (resultado === 'impedimento_inventario') {
-      return { impedimentoInventario: true, reutilizado: false };
+      return {
+        impedimentoInventario: true,
+        reutilizado: false,
+        conflitoRegistrado: false,
+      };
     }
     return {
       impedimentoInventario: false,
       reutilizado: resultado === 'reutilizado',
+      conflitoRegistrado: false,
     };
   }
 

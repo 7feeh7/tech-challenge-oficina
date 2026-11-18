@@ -53,9 +53,9 @@ export function decidir(
   }
 
   if (
-    ordem.mesmoOrderId &&
     fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
-    ordem.orderIdJaRegistrado
+    ordem.orderIdFato &&
+    ordem.ordersPagas.includes(ordem.orderIdFato)
   ) {
     return AcaoDecisao.IGNORAR;
   }
@@ -65,6 +65,13 @@ export function decidir(
     ordem.status === StatusOS.EM_CANCELAMENTO
   ) {
     return AcaoDecisao.IGNORAR;
+  }
+
+  if (
+    fato === TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO &&
+    [StatusOS.CANCELADA, StatusOS.ENTREGUE].includes(ordem.status)
+  ) {
+    return AcaoDecisao.APLICAR;
   }
 
   if (
@@ -160,8 +167,7 @@ export function decidir(
   if (
     fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
     ordem.orderIdFato &&
-    ordem.orderIdJaRegistrado &&
-    ordem.orderIdFato !== ordem.orderIdJaRegistrado &&
+    ordem.ordersPagas.length > 0 &&
     [
       StatusOS.AGUARDANDO_EXECUCAO,
       StatusOS.EM_EXECUCAO,

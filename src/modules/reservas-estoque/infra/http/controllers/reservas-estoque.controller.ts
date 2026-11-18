@@ -38,7 +38,8 @@ export class ReservasEstoqueController {
   })
   @ApiResponse({
     status: 204,
-    description: 'Ajuste registrado e pendência resolvida.',
+    description:
+      'Ajuste da peça registrado. A pendência só é resolvida quando todas as peças divergentes tiverem ajuste.',
   })
   async registrarAjusteDivergencia(
     @Body() body: AjustarEstoqueDivergenciaDto,

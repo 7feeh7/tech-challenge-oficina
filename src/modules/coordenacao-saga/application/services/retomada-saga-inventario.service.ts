@@ -5,6 +5,7 @@ import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { OrdemServicoGateway } from '@/modules/ordens-servico/application/ports/ordem-servico.gateway';
 import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
 import { TipoPendenciaOs } from '@/shared/generated/prisma/enums';
+import { NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO } from '../../domain/natureza-pendencia-financeira';
 import type { CompensacaoSagaService } from './compensacao-saga.service';
 
 export class RetomadaSagaInventarioService {
@@ -64,14 +65,24 @@ export class RetomadaSagaInventarioService {
       consumo.aguardandoFinalizacao &&
       consumo.tipoFato === 'REPARO_CONCLUIDO'
     ) {
-      const outrasPendencias = await cliente.pendenciaOs.count({
+      const naoInventario = {
+        ordemServicoId,
+        resolvida: false,
+        tipo: { not: TipoPendenciaOs.INVENTARIO },
+      };
+      const abertas = await cliente.pendenciaOs.count({ where: naoInventario });
+      // Contagem positiva por natureza: o filtro JSON negado descartaria a
+      // pendência sem `natureza` em `detalhes`, que precisa continuar bloqueando.
+      const informativas = await cliente.pendenciaOs.count({
         where: {
-          ordemServicoId,
-          resolvida: false,
-          tipo: { not: TipoPendenciaOs.INVENTARIO },
+          ...naoInventario,
+          detalhes: {
+            path: ['natureza'],
+            equals: NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO,
+          },
         },
       });
-      if (outrasPendencias > 0) {
+      if (abertas - informativas > 0) {
         return;
       }
       const quando = consumo.concluidoEm ?? consumo.fatoOcorridoEm;

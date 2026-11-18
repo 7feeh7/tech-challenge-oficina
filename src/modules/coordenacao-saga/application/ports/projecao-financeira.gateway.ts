@@ -19,12 +19,20 @@ export interface RegistrarOrcamentoInput {
 }
 
 export interface ProjecaoFinanceiraGateway {
-  buscarOrderIdPrincipal(
+  /** Orders da rodada com pagamento confirmado; order só criada não conta. */
+  buscarOrdersPagas(
     contexto: ContextoTransacao,
     ordemServicoId: string,
     rodada: number,
-  ): Promise<string | null>;
+  ): Promise<string[]>;
 
+  /** Registra a order emitida (`CobrancaCriada`) sem marcá-la como paga. */
+  registrarCobranca(
+    contexto: ContextoTransacao,
+    input: RegistrarPagamentoInput,
+  ): Promise<'criado' | 'duplicado'>;
+
+  /** Registra a order (se ausente) e a marca como paga. */
   registrarPagamento(
     contexto: ContextoTransacao,
     input: RegistrarPagamentoInput,

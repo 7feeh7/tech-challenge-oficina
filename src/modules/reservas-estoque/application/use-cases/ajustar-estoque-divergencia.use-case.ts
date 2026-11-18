@@ -24,6 +24,10 @@ export class AjustarEstoqueDivergenciaUseCase {
         contexto,
         input,
       );
+      // Com peças divergentes ainda sem ajuste a pendência segue aberta (D4.8).
+      if (!resultado.pendenciaResolvida) {
+        return;
+      }
       await this.retomadaInventario.retomarAposResolucaoInventario(
         contexto,
         resultado.ordemServicoId,

@@ -13,6 +13,10 @@ Operações afetadas: reservar, liberar, consumir, entrada e baixa manual, atual
 
 Na rota interna `POST /internal/ordens-servico/{id}/reservas` (E28) e no ajuste administrativo com retomada da compensação (complemento E30), a ordem de serviço é bloqueada **antes** da pendência, reservas e peças, na mesma transação do Unit of Work do chamador.
 
+## Ajuste administrativo por peça (D4.8)
+
+O ajuste do estoque físico é feito por peça: cada ajuste registra peça, quantidade, motivo e o ADMINISTRADOR responsável. A pendência de inventário só é resolvida, e a saga só é retomada, quando toda peça divergente dela que existe no catálogo tem ajuste registrado; ajustes parciais ficam gravados e a pendência continua aberta. A resolução usa a mesma ordem de bloqueios acima, dentro da mesma transação do ajuste.
+
 ## Transições de reserva
 
 Liberação e consumo só alteram linhas lidas sob bloqueio com situação `ATIVA`. A mudança de situação usa `UPDATE … WHERE situacao = 'ATIVA'`; se a contagem de linhas afetadas for diferente de 1, a transação é desfeita antes de alterar a peça.

@@ -5,7 +5,11 @@ import {
   ReservaJaProcessadaError,
 } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import { OrdemServicoNaoEncontradaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
-import { EVENTO_REPARO_INTERROMPIDO } from '@/shared/messaging/envelope';
+import {
+  EVENTO_ESTORNO_CONCLUIDO,
+  EVENTO_PAGAMENTO_TARDIO_REGISTRADO,
+  EVENTO_REPARO_INTERROMPIDO,
+} from '@/shared/messaging/envelope';
 import {
   EVENTO_COBRANCA_CRIADA,
   EVENTO_COBRANCA_EXPIRADA,
@@ -69,7 +73,8 @@ describe('ReagirFatoSagaUseCase', () => {
       marcarConcluidoPorTipo: jest.fn(),
     };
     const projecao = {
-      buscarOrderIdPrincipal: jest.fn().mockResolvedValue(null),
+      buscarOrdersPagas: jest.fn().mockResolvedValue([]),
+      registrarCobranca: jest.fn().mockResolvedValue('criado'),
       registrarPagamento: jest.fn().mockResolvedValue('criado'),
       registrarOrcamento: jest.fn().mockResolvedValue('criado'),
       jaNotificouPagamentoDisponivel: jest.fn().mockResolvedValue(false),
@@ -610,7 +615,7 @@ describe('ReagirFatoSagaUseCase', () => {
     const { useCase, projecao, outbox, prisma } = montarUseCase(
       StatusOS.AGUARDANDO_PAGAMENTO,
     );
-    projecao.registrarPagamento = jest.fn().mockResolvedValue('criado');
+    projecao.registrarCobranca = jest.fn().mockResolvedValue('criado');
     projecao.jaNotificouPagamentoDisponivel = jest
       .fn()
       .mockResolvedValue(false);
@@ -638,7 +643,7 @@ describe('ReagirFatoSagaUseCase', () => {
     const { useCase, projecao, outbox } = montarUseCase(
       StatusOS.AGUARDANDO_PAGAMENTO,
     );
-    projecao.registrarPagamento = jest.fn().mockResolvedValue('duplicado');
+    projecao.registrarCobranca = jest.fn().mockResolvedValue('duplicado');
     projecao.jaNotificouPagamentoDisponivel = jest.fn().mockResolvedValue(true);
     await useCase.executar(contexto, {
       eventId: 'e-cob',
@@ -1102,6 +1107,201 @@ describe('ReagirFatoSagaUseCase', () => {
       expect.objectContaining({
         ocorridoEm: new Date(concluidoEm),
       }),
+    );
+  });
+
+  describe('fato terminal em EM_CANCELAMENTO com pendência de inventário (D4.3)', () => {
+    const entregarFalha = (
+      useCase: ReagirFatoSagaUseCase,
+      eventId = 'falha-pendente',
+    ) =>
+      useCase.executar(contexto, {
+        eventId,
+        eventType: EVENTO_REPARO_FALHOU,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'execution',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload: { pecasUtilizadas: [{ itemId: 'p1', quantidade: 3 }] },
+      });
+
+    it('registra o fato terminal mesmo com divergência de inventário pendente', async () => {
+      const { useCase, consumirReserva, compensacao, reconciliacao } =
+        montarUseCase(StatusOS.EM_CANCELAMENTO);
+      consumirReserva.execute = jest.fn().mockResolvedValue({
+        impedimentoInventario: true,
+        reutilizado: false,
+      });
+
+      await entregarFalha(useCase);
+
+      expect(compensacao.registrarFatoTerminalExecucao).toHaveBeenCalledWith(
+        contexto,
+        'uuid-os1',
+        [{ itemId: 'p1', quantidade: 3 }],
+      );
+      expect(
+        reconciliacao.resolverPendenciaInformacaoInsuficienteSeCausaEliminada,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('não registra o fato quando o consumo abre conflito ou informação insuficiente', async () => {
+      const { useCase, compensacao, reconciliacao } = montarUseCase(
+        StatusOS.EM_CANCELAMENTO,
+      );
+      reconciliacao.reconciliarFatoTerminal = jest
+        .fn()
+        .mockResolvedValue('pendencia_conflito');
+
+      await entregarFalha(useCase);
+
+      expect(compensacao.registrarFatoTerminalExecucao).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PagamentoTardioRegistrado (D4.10)', () => {
+    const entregarTardio = (useCase: ReagirFatoSagaUseCase) =>
+      useCase.executar(contexto, {
+        eventId: 'tardio-1',
+        eventType: EVENTO_PAGAMENTO_TARDIO_REGISTRADO,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'billing',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload: {
+          cobrancaId: 'cob-1',
+          aprovadoEm: '2026-06-15T15:00:00.000Z',
+          tratamento: 'PENDENCIA_MANUAL',
+        },
+      });
+
+    it.each([StatusOS.CANCELADA, StatusOS.ENTREGUE])(
+      'em %s abre pendência financeira identificada pela cobrança, sem mudar o status',
+      async (status) => {
+        const { useCase, prisma, transicoes } = montarUseCase(status);
+
+        await entregarTardio(useCase);
+
+        expect(prisma.pendenciaOs.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              detalhes: { path: ['cobrancaId'], equals: 'cob-1' },
+            }),
+          }),
+        );
+        expect(prisma.pendenciaOs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            tipo: 'FINANCEIRA',
+            detalhes: expect.objectContaining({
+              cobrancaId: 'cob-1',
+              motivo: 'Pagamento tardio registrado após encerramento',
+            }),
+          }),
+        });
+        expect(transicoes.aplicar).not.toHaveBeenCalled();
+      },
+    );
+
+    it('não duplica a pendência da mesma cobrança', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.CANCELADA);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({ id: 'p1' });
+
+      await entregarTardio(useCase);
+
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+    });
+
+    it('ignora o fato com a OS fora de CANCELADA e ENTREGUE', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.AGUARDANDO_PAGAMENTO);
+
+      await entregarTardio(useCase);
+
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('natureza da pendência financeira', () => {
+    const pagamentoDeOutraOrder = (useCase: ReagirFatoSagaUseCase) =>
+      useCase.executar(contexto, {
+        eventId: 'e-segundo',
+        eventType: EVENTO_PAGAMENTO_CONFIRMADO,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'billing',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload: { cobrancaId: 'cob-1', orderId: 'ORD-2', valorCentavos: 500 },
+      });
+
+    it.each([
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_EXECUCAO,
+      StatusOS.FINALIZADA,
+    ])(
+      'segundo pagamento em %s grava natureza SEGUNDO_PAGAMENTO',
+      async (status) => {
+        const { useCase, prisma, projecao } = montarUseCase(status);
+        projecao.buscarOrdersPagas.mockResolvedValue(['ORD-1']);
+
+        await pagamentoDeOutraOrder(useCase);
+
+        expect(prisma.pendenciaOs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            detalhes: expect.objectContaining({
+              natureza: 'SEGUNDO_PAGAMENTO',
+              orderId: 'ORD-2',
+              cobrancaId: 'cob-1',
+            }),
+          }),
+        });
+      },
+    );
+
+    it.each([StatusOS.CANCELADA, StatusOS.ENTREGUE])(
+      'pagamento em %s não grava natureza',
+      async (status) => {
+        const { useCase, prisma } = montarUseCase(status);
+
+        await pagamentoDeOutraOrder(useCase);
+
+        const { detalhes } = prisma.pendenciaOs.create.mock.calls[0][0].data;
+        expect(detalhes).not.toHaveProperty('natureza');
+      },
+    );
+  });
+
+  it('EstornoConcluido não resolve a pendência SEGUNDO_PAGAMENTO, mesmo com a mesma cobrança', async () => {
+    const { useCase, prisma } = montarUseCase(StatusOS.FINALIZADA);
+    prisma.pendenciaOs.findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'p1',
+        detalhes: { natureza: 'SEGUNDO_PAGAMENTO', cobrancaId: 'cob-a' },
+      },
+      { id: 'p2', detalhes: { cobrancaId: 'cob-a' } },
+    ]);
+    await useCase.executar(contexto, {
+      eventId: 'e-estorno',
+      eventType: EVENTO_ESTORNO_CONCLUIDO,
+      version: 1,
+      occurredAt: new Date().toISOString(),
+      source: 'billing',
+      correlationId: 'corr-1',
+      causationId: null,
+      ordemServicoId: 'uuid-os1',
+      rodada: 1,
+      payload: { cobrancaId: 'cob-a' },
+    });
+    expect(prisma.pendenciaOs.update).toHaveBeenCalledTimes(1);
+    expect(prisma.pendenciaOs.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'p2' } }),
     );
   });
 });

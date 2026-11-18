@@ -639,4 +639,121 @@ describe('ReconciliacaoConsumoSagaService', () => {
     );
     expect(out).toBe('pendencia_conflito');
   });
+
+  describe('resposta sem identidade do fato terminal com o consumo já registrado', () => {
+    const respostaSemIdentidade = (
+      pecas: { itemId: string; quantidade: number }[],
+    ) => ({
+      tipoTarefa: TipoTarefaCancelamento.REPARO,
+      resultado: ResultadoCancelamentoExecucao.JA_ENCERRADA,
+      situacaoTarefa: SituacaoTarefaCancelamento.FALHOU,
+      encerradaEm: '2026-01-01T12:00:00.000Z',
+      motivo: 'falha',
+      pecasUtilizadas: pecas,
+      servicosRealizados: [],
+      divergencias: [],
+    });
+    const gravado = (
+      consumoEfetivo: { itemId: string; quantidade: number }[],
+    ) => ({
+      eventId: 'evt-gravado',
+      consumoEfetivo,
+    });
+
+    it('reutiliza quando o consumo efetivo recebido é o gravado, sem pendência', async () => {
+      prisma.consumoAplicadoOs.findUnique.mockResolvedValue(
+        gravado([{ itemId: 'p1', quantidade: 2 }]),
+      );
+      const out = await service.reconciliarRespostaCancelamento(
+        contexto,
+        'os-1',
+        1,
+        'env-1',
+        respostaSemIdentidade([
+          { itemId: 'p1', quantidade: 1 },
+          { itemId: 'p1', quantidade: 1 },
+        ]),
+      );
+      expect(out).toBe('reutilizado');
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+      expect(consumir.execute).not.toHaveBeenCalled();
+    });
+
+    it('reutiliza quando já existe resolução manual', async () => {
+      prisma.resolucaoConsumoManual.findUnique.mockResolvedValue({ id: 'r1' });
+      const out = await service.reconciliarRespostaCancelamento(
+        contexto,
+        'os-1',
+        1,
+        'env-1',
+        respostaSemIdentidade([]),
+      );
+      expect(out).toBe('reutilizado');
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+    });
+
+    it('abre CONFLITO_CONSUMO quando o consumo efetivo difere do gravado', async () => {
+      prisma.consumoAplicadoOs.findUnique.mockResolvedValue(
+        gravado([{ itemId: 'p1', quantidade: 2 }]),
+      );
+      const out = await service.reconciliarRespostaCancelamento(
+        contexto,
+        'os-1',
+        1,
+        'env-1',
+        respostaSemIdentidade([{ itemId: 'p1', quantidade: 1 }]),
+      );
+      expect(out).toBe('pendencia_conflito');
+      expect(prisma.pendenciaOs.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('compara a auditoria gravada (pecaId, com divergências geradas pelo OS) sem erro', async () => {
+    const quando = new Date('2026-01-01T12:00:00.000Z');
+    const informada = {
+      itemId: 'p1',
+      tipo: 'CONSUMO_ACIMA',
+      quantidadePrevista: 2,
+      quantidadeUtilizada: 3,
+      justificativa: 'peça extra',
+    };
+    const gravada = (pecaId: string, justificativa: string | null) => ({
+      pecaId,
+      tipo: 'CONSUMO_ACIMA',
+      quantidadePrevista: 2,
+      quantidadeUtilizada: 3,
+      justificativa,
+    });
+    prisma.consumoAplicadoOs.findUnique.mockResolvedValue({
+      eventId: 'evt-1',
+      tipoFato: 'REPARO_FALHOU',
+      fatoOcorridoEm: quando,
+      concluidoEm: null,
+      responsavelId: null,
+      consumoEfetivo: [
+        { itemId: 'p1', quantidade: 3 },
+        { itemId: 'p2', quantidade: 3 },
+      ],
+      divergencias: [
+        gravada('p1', 'peça extra'),
+        gravada('p1', null),
+        gravada('p2', 'peça extra'),
+        gravada('p2', null),
+      ],
+    });
+    const out = await service.reconciliarFatoTerminal(
+      contexto,
+      'os-1',
+      1,
+      { eventId: 'evt-1', fatoOcorridoEm: quando, tipoFato: 'REPARO_FALHOU' },
+      [
+        { itemId: 'p1', quantidade: 3 },
+        { itemId: 'p2', quantidade: 3 },
+      ],
+      [informada, { ...informada, itemId: 'p2' }],
+      null,
+      'estoque.consumir:evt-1',
+    );
+    expect(out).toBe('reutilizado');
+  });
 });

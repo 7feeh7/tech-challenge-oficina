@@ -1,0 +1,15 @@
+{
+  "eventId": "4b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bf0",
+  "eventType": "billing.resposta-cancelamento-financeiro.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T11:05:00.000Z",
+  "source": "billing",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "3b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bef",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "resultado": "ESTORNADA",
+    "pendenciaId": null
+  }
+}

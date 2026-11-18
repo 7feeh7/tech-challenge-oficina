@@ -5,7 +5,7 @@ import { AjustarEstoqueDivergenciaUseCase } from './ajustar-estoque-divergencia.
 describe('AjustarEstoqueDivergenciaUseCase', () => {
   const uow = new UnitOfWorkFake();
 
-  it('delega ajuste administrativo no gateway', async () => {
+  const montar = (pendenciaResolvida: boolean) => {
     const gateway: jest.Mocked<ReservaEstoqueGateway> = {
       buscarIdempotencia: jest.fn(),
       gravarIdempotencia: jest.fn(),
@@ -15,7 +15,7 @@ describe('AjustarEstoqueDivergenciaUseCase', () => {
       listarLinhasAtivas: jest.fn(),
       ajustarFisicoAdministrativo: jest
         .fn()
-        .mockResolvedValue({ ordemServicoId: 'os-1' }),
+        .mockResolvedValue({ ordemServicoId: 'os-1', pendenciaResolvida }),
       possuiConsumoAplicado: jest.fn(),
       possuiConsumoAplicadoNaRodada: jest.fn(),
     };
@@ -28,14 +28,34 @@ describe('AjustarEstoqueDivergenciaUseCase', () => {
       uow,
       retomadaInventario,
     );
-    await useCase.execute({
-      pendenciaId: 'pend',
-      pecaId: 'p1',
-      quantidadeFisicaNova: 10,
-      motivo: 'Contagem física',
-      responsavelId: 'admin',
-    });
+    const executar = () =>
+      useCase.execute({
+        pendenciaId: 'pend',
+        pecaId: 'p1',
+        quantidadeFisicaNova: 10,
+        motivo: 'Contagem física',
+        responsavelId: 'admin',
+      });
+    return { gateway, retomadaInventario, executar };
+  };
+
+  it('delega ajuste administrativo no gateway e retoma a saga com a pendência resolvida', async () => {
+    const { gateway, retomadaInventario, executar } = montar(true);
+    await executar();
 
     expect(gateway.ajustarFisicoAdministrativo).toHaveBeenCalled();
+    expect(
+      retomadaInventario.retomarAposResolucaoInventario,
+    ).toHaveBeenCalled();
+  });
+
+  it('não retoma a saga enquanto há peça divergente sem ajuste', async () => {
+    const { gateway, retomadaInventario, executar } = montar(false);
+    await executar();
+
+    expect(gateway.ajustarFisicoAdministrativo).toHaveBeenCalled();
+    expect(
+      retomadaInventario.retomarAposResolucaoInventario,
+    ).not.toHaveBeenCalled();
   });
 });

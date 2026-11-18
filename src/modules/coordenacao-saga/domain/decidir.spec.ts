@@ -11,8 +11,7 @@ function ordem(
     rodadaVigente: 1,
     rodadaFato: 1,
     orderIdFato: null,
-    orderIdJaRegistrado: null,
-    mesmoOrderId: false,
+    ordersPagas: [],
     consultaIdVigente: null,
     consultaIdFato: null,
     emCompensacaoConsultaE10: false,
@@ -50,8 +49,7 @@ describe('decidir (fluxo principal E29)', () => {
         ordem({
           status: StatusOS.AGUARDANDO_EXECUCAO,
           orderIdFato: 'ORD-2',
-          orderIdJaRegistrado: 'ORD-1',
-          mesmoOrderId: false,
+          ordersPagas: ['ORD-1'],
         }),
       ),
     ).toBe(AcaoDecisao.CONCILIAR);
@@ -64,8 +62,7 @@ describe('decidir (fluxo principal E29)', () => {
         ordem({
           status: StatusOS.AGUARDANDO_EXECUCAO,
           orderIdFato: 'ORD-1',
-          orderIdJaRegistrado: 'ORD-1',
-          mesmoOrderId: true,
+          ordersPagas: ['ORD-1'],
         }),
       ),
     ).toBe(AcaoDecisao.IGNORAR);
@@ -176,7 +173,7 @@ describe('decidir (fluxo principal E29)', () => {
         ordem({
           status: StatusOS.FINALIZADA,
           orderIdFato: 'ORD-2',
-          orderIdJaRegistrado: 'ORD-1',
+          ordersPagas: ['ORD-1'],
         }),
       ),
     ).toBe(AcaoDecisao.CONCILIAR);
@@ -354,5 +351,65 @@ describe('decidir (fluxo principal E29)', () => {
         ordem({ status: StatusOS.EM_DIAGNOSTICO }),
       ),
     ).toBe(AcaoDecisao.CONCILIAR);
+  });
+
+  it('ignora PagamentoConfirmado repetido de order já paga em qualquer estado', () => {
+    for (const status of [
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_EXECUCAO,
+      StatusOS.FINALIZADA,
+      StatusOS.EM_CANCELAMENTO,
+    ]) {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status,
+            orderIdFato: 'ORD-1',
+            ordersPagas: ['ORD-1', 'ORD-2'],
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    }
+  });
+
+  it('aplica o primeiro pagamento de uma order só criada (sem order paga na rodada)', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+        ordem({
+          status: StatusOS.AGUARDANDO_PAGAMENTO,
+          orderIdFato: 'ORD-1',
+          ordersPagas: [],
+        }),
+      ),
+    ).toBe(AcaoDecisao.APLICAR);
+  });
+
+  it('concilia o pagamento de outra order quando já há order paga', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+        ordem({
+          status: StatusOS.EM_EXECUCAO,
+          orderIdFato: 'ORD-2',
+          ordersPagas: ['ORD-1'],
+        }),
+      ),
+    ).toBe(AcaoDecisao.CONCILIAR);
+  });
+
+  it('aplica PagamentoTardioRegistrado em CANCELADA e ENTREGUE e ignora nos demais estados', () => {
+    for (const status of [StatusOS.CANCELADA, StatusOS.ENTREGUE]) {
+      expect(
+        decidir(TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO, ordem({ status })),
+      ).toBe(AcaoDecisao.APLICAR);
+    }
+    expect(
+      decidir(
+        TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO,
+        ordem({ status: StatusOS.AGUARDANDO_PAGAMENTO }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
   });
 });
