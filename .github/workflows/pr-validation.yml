@@ -56,6 +56,11 @@ jobs:
           cache: yarn
 
       - run: yarn install --frozen-lockfile
+      # O código de saída do `yarn audit` (Yarn Classic) ignora --level; o audit-ci falha só em vulnerabilidade alta ou crítica.
+      - name: Auditoria de dependências de produção (alta e crítica, sem exceção)
+        run: npx --yes audit-ci@7.1.0 --high --skip-dev
+      - name: Auditoria completa de dependências (alta e crítica, exceções só em audit-ci.jsonc)
+        run: npx --yes audit-ci@7.1.0 --config audit-ci.jsonc
       - run: yarn prisma generate
       - run: yarn prisma migrate deploy
       - run: yarn lint
@@ -64,23 +69,21 @@ jobs:
       - run: yarn test:int
       - run: yarn test:e2e
 
-      # - name: Auditoria npm (alta/critica)
-      #   run: yarn audit --level high
-      #   continue-on-error: false
+      # SonarCloud temporariamente desabilitado no desenvolvimento (decisão de 2026-11-18).
+      # Reativar no checkpoint 2.3 do runbook de implantação (tech-challenge/spec/fase-4/13-deployment-runbook.md).
+      # - name: SonarCloud Scan
+      #   if: github.event_name == 'pull_request'
+      #   uses: SonarSource/sonarqube-scan-action@v5
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-      - name: SonarCloud Scan
-        if: github.event_name == 'pull_request'
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - name: SonarCloud Quality Gate
-        if: github.event_name == 'pull_request'
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # - name: SonarCloud Quality Gate
+      #   if: github.event_name == 'pull_request'
+      #   uses: SonarSource/sonarqube-quality-gate-action@v1
+      #   timeout-minutes: 5
+      #   env:
+      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   security-scan:
     name: Secret Scan

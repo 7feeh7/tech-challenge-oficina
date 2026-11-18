@@ -138,6 +138,17 @@ BDD e testes de contrato em [`docs/testes-bdd-e-contratos.md`](docs/testes-bdd-e
 
 Cobertura mínima, padrão dos testes e SonarQube em [`docs/local/operacao/testes-e-qualidade.md`](docs/local/operacao/testes-e-qualidade.md).
 
+## Auditoria de dependências no CI
+
+O `pr-validation.yml` roda duas auditorias com `audit-ci@7.1.0`, ambas falhando só em vulnerabilidade alta ou crítica (o código de saída do `yarn audit` ignora o nível):
+
+- **Produção, sem exceção:** `npx audit-ci@7.1.0 --high --skip-dev`, sem arquivo de configuração nem allowlist.
+- **Completa (com devDependencies):** `npx audit-ci@7.1.0 --config audit-ci.jsonc`. Não há exceção: a `allowlist` do arquivo não existe. Se um advisory alto ou crítico sem correção disponível exigir exceção temporária, ela entra na `allowlist` com justificativa, prazo (`expiry`) e condição de remoção.
+
+O `Dockerfile` instala só dependências de produção na imagem final (`yarn install --production`); `prisma` e `dotenv` ficam em `dependencies` porque o Job de migration roda `prisma migrate deploy` na mesma imagem.
+
+O SonarCloud está temporariamente desabilitado no `pr-validation.yml` (decisão de 2026-11-18); reativar no checkpoint 2.3 do runbook de implantação.
+
 ## Repositórios da solução (Fase 3)
 
 | Repositório                       | Responsabilidade                                         | URL                                                       |
