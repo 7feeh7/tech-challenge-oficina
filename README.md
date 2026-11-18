@@ -126,15 +126,12 @@ Executar toda a suite:
 yarn test
 ```
 
-Cobertura, integração (PostgreSQL local; inclui BDD e contratos) e end-to-end:
+Cobertura e end-to-end:
 
 ```bash
 yarn test:cov
-yarn test:int
 yarn test:e2e
 ```
-
-BDD e testes de contrato em [`docs/testes-bdd-e-contratos.md`](docs/testes-bdd-e-contratos.md).
 
 Cobertura mínima, padrão dos testes e SonarQube em [`docs/local/operacao/testes-e-qualidade.md`](docs/local/operacao/testes-e-qualidade.md).
 
