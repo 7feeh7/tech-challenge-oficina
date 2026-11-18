@@ -322,7 +322,20 @@ describe('ReconciliacaoConsumoSagaService', () => {
   });
 
   it('reutiliza quando já há resolução manual (exclusão mútua)', async () => {
-    prisma.resolucaoConsumoManual.findUnique.mockResolvedValue({ id: 'res-2' });
+    prisma.resolucaoConsumoManual.findUnique.mockResolvedValue({
+      id: 'res-2',
+      fatoTardioEventId: null,
+      itensConsumidos: [],
+    });
+    prisma.resolucaoConsumoManual.findUniqueOrThrow.mockResolvedValue({
+      id: 'res-2',
+      fatoTardioEventId: null,
+      itensConsumidos: [],
+    });
+    prisma.resolucaoConsumoManual.update.mockResolvedValue({});
+    prisma.reservaEstoque.findMany.mockResolvedValue([
+      { pecaId: '11111111-1111-4111-8111-111111111111', quantidade: 2 },
+    ]);
     const out = await service.reconciliarRespostaCancelamento(
       contexto,
       'os-1',
@@ -365,10 +378,12 @@ describe('ReconciliacaoConsumoSagaService', () => {
   });
 
   it('não duplica pendência de informação insuficiente', async () => {
-    prisma.pendenciaOs.findFirst.mockResolvedValue({
-      id: 'pend-1',
-      detalhes: { natureza: 'INFORMACAO_INSUFICIENTE' },
-    });
+    prisma.pendenciaOs.findMany.mockResolvedValue([
+      {
+        id: 'pend-1',
+        detalhes: { natureza: 'INFORMACAO_INSUFICIENTE' },
+      },
+    ]);
     const out = await service.reconciliarRespostaCancelamento(
       contexto,
       'os-1',
@@ -390,10 +405,12 @@ describe('ReconciliacaoConsumoSagaService', () => {
   });
 
   it('não duplica pendência CONFLITO_CONSUMO', async () => {
-    prisma.pendenciaOs.findFirst.mockResolvedValue({
-      id: 'pend-c',
-      detalhes: { natureza: 'CONFLITO_CONSUMO' },
-    });
+    prisma.pendenciaOs.findMany.mockResolvedValue([
+      {
+        id: 'pend-c',
+        detalhes: { natureza: 'CONFLITO_CONSUMO' },
+      },
+    ]);
     prisma.consumoAplicadoOs.findUnique.mockResolvedValue({
       eventId: 'evt-a',
       tipoFato: 'REPARO_FALHOU',

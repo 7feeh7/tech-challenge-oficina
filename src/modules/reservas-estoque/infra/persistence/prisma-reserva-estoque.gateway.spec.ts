@@ -68,6 +68,7 @@ describe('PrismaReservaEstoqueGateway', () => {
     pendenciaOs: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
     },
     ajusteEstoqueAdministrativo: {
@@ -365,9 +366,12 @@ describe('PrismaReservaEstoqueGateway', () => {
   it('não duplica pendência INVENTARIO aberta na mesma rodada', async () => {
     cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
     cliente.consumoAplicadoOs.create.mockResolvedValue({ id: 'ca1' });
-    cliente.pendenciaOs.findFirst = jest
-      .fn()
-      .mockResolvedValue({ id: 'pend-existente' });
+    cliente.pendenciaOs.findMany.mockResolvedValueOnce([
+      {
+        id: 'pend-existente',
+        detalhes: { natureza: 'DIVERGENCIA_CONSUMO' },
+      },
+    ]);
     cliente.$queryRaw
       .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
@@ -406,7 +410,7 @@ describe('PrismaReservaEstoqueGateway', () => {
   it('consumir com divergência cria pendência de inventário', async () => {
     cliente.peca.findMany.mockResolvedValueOnce([{ id: PECA_UUID }]);
     cliente.consumoAplicadoOs.create.mockResolvedValue({ id: 'ca1' });
-    cliente.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
+    cliente.pendenciaOs.findMany.mockResolvedValueOnce([]);
     cliente.$queryRaw
       .mockResolvedValueOnce([{ id: 'os' }])
       .mockResolvedValueOnce([
