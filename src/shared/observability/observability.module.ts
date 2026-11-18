@@ -4,6 +4,7 @@ import { MetricsService } from './metrics.service';
 import { OsMetricsService } from './os-metrics.service';
 import { IntegrationMetricsService } from './integration-metrics.service';
 import { MessagingMetricsService } from './messaging-metrics.service';
+import { ProcessadorIdadeOsPorStatusService } from './processador-idade-os-por-status.service';
 
 @Global()
 @Module({
@@ -13,6 +14,7 @@ import { MessagingMetricsService } from './messaging-metrics.service';
     OsMetricsService,
     IntegrationMetricsService,
     MessagingMetricsService,
+    ProcessadorIdadeOsPorStatusService,
   ],
   exports: [
     JsonLoggerService,
