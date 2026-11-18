@@ -1,0 +1,15 @@
+{
+  "eventId": "2b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bee",
+  "eventType": "billing.orcamento-rejeitado.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T10:02:00.000Z",
+  "source": "billing",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": null,
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "orcamentoId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "motivo": "Cliente não aprovou o valor"
+  }
+}

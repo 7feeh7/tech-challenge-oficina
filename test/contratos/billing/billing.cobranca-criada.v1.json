@@ -1,0 +1,18 @@
+{
+  "eventId": "7c9e6679-7425-40de-944b-e07fc1f90bd1",
+  "eventType": "billing.cobranca-criada.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T21:10:00.000Z",
+  "source": "billing-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "3b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bef",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "cobrancaId": "c4f8b2a1-6d3e-4f9a-8b1c-2e5d7a9f0c3b",
+    "orderId": "ORDTST01M7GFR2A0N4CJ7FWWZZ2W21XM",
+    "linkPagamento": "https://www.mercadopago.com.br/checkout/v1/redirect?order_id=ORDTST01M7GFR2A0N4CJ7FWWZZ2W21XM",
+    "prazoPagamento": "2026-11-15T21:25:00.000Z",
+    "valorCentavos": 15000
+  }
+}

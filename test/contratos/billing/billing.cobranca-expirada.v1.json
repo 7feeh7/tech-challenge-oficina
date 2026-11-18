@@ -1,0 +1,18 @@
+{
+  "eventId": "9e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+  "eventType": "billing.cobranca-expirada.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T20:57:00.000Z",
+  "source": "billing-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440001",
+  "causationId": "7c9e6679-7425-40de-944b-e07fc1f90bd1",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440001",
+  "rodada": 1,
+  "payload": {
+    "cobrancaId": "d5a9c3b2-7e4f-5a0b-9c2d-3f6e8b0a1d4c",
+    "expiradaEm": "2026-11-15T20:56:40.000Z",
+    "orderId": "ORDTST01M7GFR5N45E6CG8FDJ1F4YYPW",
+    "statusOrderMercadoPago": "canceled",
+    "statusDetailMercadoPago": "expired"
+  }
+}

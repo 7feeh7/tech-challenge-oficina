@@ -1,0 +1,16 @@
+{
+  "eventId": "5b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bf1",
+  "eventType": "billing.pendencia-resolvida.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T12:00:00.000Z",
+  "source": "billing",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": null,
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "pendenciaId": "9d9e6679-7425-40de-944b-e07fc1f90ae9",
+    "decisao": "ESTORNO_INTEGRAL",
+    "valorEstornadoCentavos": 15000
+  }
+}
