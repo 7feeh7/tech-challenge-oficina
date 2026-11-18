@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto';
 import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
+import {
+  NATUREZA_CONFIRMACAO_PAGAMENTO as NATUREZA_CONFIRMACAO,
+  PREFIXO_ORDER_CONFIRMADA,
+} from '@/modules/ordens-servico/domain/confirmacao-pagamento-projecao';
 import type {
   ProjecaoFinanceiraGateway,
   RegistrarOrcamentoInput,
@@ -16,18 +20,19 @@ const NATUREZA_ORCAMENTO = 'ORCAMENTO';
 export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGateway {
   constructor(private readonly prisma: PrismaService) {}
 
-  async buscarOrderIdPrincipal(
+  async buscarOrdersPagas(
     contexto: ContextoTransacao,
     ordemServicoId: string,
     rodada: number,
-  ): Promise<string | null> {
+  ): Promise<string[]> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
-    const primeira = await cliente.projecaoFinanceiraOs.findFirst({
-      where: { ordemServicoId, rodada, natureza: NATUREZA_PAGAMENTO },
-      orderBy: { criadoEm: 'asc' },
+    const confirmacoes = await cliente.projecaoFinanceiraOs.findMany({
+      where: { ordemServicoId, rodada, natureza: NATUREZA_CONFIRMACAO },
       select: { orderId: true },
     });
-    return primeira?.orderId ?? null;
+    return confirmacoes.map((c) =>
+      c.orderId.slice(PREFIXO_ORDER_CONFIRMADA.length),
+    );
   }
 
   async possuiOrderId(
@@ -45,6 +50,40 @@ export class PrismaProjecaoFinanceiraGateway implements ProjecaoFinanceiraGatewa
   }
 
   async registrarPagamento(
+    contexto: ContextoTransacao,
+    input: RegistrarPagamentoInput,
+  ): Promise<'criado' | 'duplicado'> {
+    await this.registrarCobranca(contexto, input);
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const orderIdConfirmado = `${PREFIXO_ORDER_CONFIRMADA}${input.orderId}`;
+    const existente = await cliente.projecaoFinanceiraOs.findFirst({
+      where: {
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        orderId: orderIdConfirmado,
+        natureza: NATUREZA_CONFIRMACAO,
+      },
+      select: { id: true },
+    });
+    if (existente) {
+      return 'duplicado';
+    }
+    await cliente.projecaoFinanceiraOs.create({
+      data: {
+        id: randomUUID(),
+        ordemServicoId: input.ordemServicoId,
+        rodada: input.rodada,
+        natureza: NATUREZA_CONFIRMACAO,
+        cobrancaId: input.cobrancaId,
+        orderId: orderIdConfirmado,
+        valorCentavos: input.valorCentavos,
+        eventId: input.eventId,
+      },
+    });
+    return 'criado';
+  }
+
+  async registrarCobranca(
     contexto: ContextoTransacao,
     input: RegistrarPagamentoInput,
   ): Promise<'criado' | 'duplicado'> {

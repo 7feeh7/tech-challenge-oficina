@@ -87,7 +87,11 @@ describe('RetomadaSagaInventarioService', () => {
   it('não finaliza com outra pendência aberta além do inventário', async () => {
     const cliente = {
       pendenciaOs: {
-        count: jest.fn().mockResolvedValueOnce(0).mockResolvedValueOnce(2),
+        count: jest
+          .fn()
+          .mockResolvedValueOnce(0)
+          .mockResolvedValueOnce(2)
+          .mockResolvedValueOnce(0),
       },
       consumoAplicadoOs: {
         findUnique: jest.fn().mockResolvedValue({
@@ -115,6 +119,73 @@ describe('RetomadaSagaInventarioService', () => {
     );
     await service.retomarAposResolucaoInventario(contexto, 'os-1', 'evt');
     expect(transicoes.aplicar).not.toHaveBeenCalled();
+  });
+
+  describe('pendência financeira aberta na retomada da finalização', () => {
+    const retomarComContagens = async (
+      abertas: number,
+      informativas: number,
+    ) => {
+      const cliente = {
+        pendenciaOs: {
+          count: jest
+            .fn()
+            .mockResolvedValueOnce(0)
+            .mockResolvedValueOnce(abertas)
+            .mockResolvedValueOnce(informativas),
+        },
+        consumoAplicadoOs: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: 'ca1',
+            situacaoReconciliacao: 'DIVERGENCIA_RESOLVIDA',
+            aguardandoFinalizacao: true,
+            tipoFato: 'REPARO_CONCLUIDO',
+            concluidoEm: new Date(),
+          }),
+          update: jest.fn(),
+        },
+      };
+      const ordens = {
+        bloquearParaAtualizacao: jest.fn().mockResolvedValue({
+          ordem: {
+            id: 'os-1',
+            rodadaVigente: 1,
+            status: StatusOS.EM_EXECUCAO,
+          },
+        }),
+      };
+      const transicoes = { aplicar: jest.fn() };
+      const service = new RetomadaSagaInventarioService(
+        ordens as never,
+        transicoes as never,
+        { avancarSeEmCancelamento: jest.fn() } as never,
+        cliente as never,
+      );
+      await service.retomarAposResolucaoInventario(
+        new PrismaContextoTransacao(cliente as never),
+        'os-1',
+        'evt',
+      );
+      return { cliente, transicoes };
+    };
+
+    it('finaliza quando as pendências financeiras abertas são só SEGUNDO_PAGAMENTO', async () => {
+      const { cliente, transicoes } = await retomarComContagens(1, 1);
+
+      expect(transicoes.aplicar).toHaveBeenCalledTimes(1);
+      expect(cliente.pendenciaOs.count).toHaveBeenLastCalledWith({
+        where: expect.objectContaining({
+          resolvida: false,
+          detalhes: { path: ['natureza'], equals: 'SEGUNDO_PAGAMENTO' },
+        }),
+      });
+    });
+
+    it('não finaliza quando há outra pendência financeira além do segundo pagamento', async () => {
+      const { transicoes } = await retomarComContagens(2, 1);
+
+      expect(transicoes.aplicar).not.toHaveBeenCalled();
+    });
   });
 
   it('retorna cedo quando OS não é encontrada', async () => {

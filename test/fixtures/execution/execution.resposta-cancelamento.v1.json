@@ -1,0 +1,15 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440019",
+  "eventType": "execution.resposta-cancelamento.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T12:05:00.000Z",
+  "source": "execution",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "550e8400-e29b-41d4-a716-446655440012",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "tipoTarefa": "DIAGNOSTICO",
+    "resultado": "CANCELADA_SEM_INICIO"
+  }
+}

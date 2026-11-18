@@ -14,8 +14,10 @@ import type { RespostaCancelamentoContrato } from '../../domain/resposta-cancela
 import {
   conteudosConsumoSemanticamenteEquivalentes,
   deContextoConsumo,
+  divergenciasGravadasComparaveis,
   type ConteudoConsumoComparavel,
 } from '../../domain/comparar-consumo-semantico';
+import { consolidarItensQuantidade } from '../../domain/consolidar-itens-quantidade';
 import {
   montarContextoConsumoDaResposta,
   respostaAuditoriaInsuficiente,
@@ -111,6 +113,16 @@ export class ReconciliacaoConsumoSagaService {
       return 'nada';
     }
     if (respostaAuditoriaInsuficiente(payload)) {
+      const jaRegistrado = await this.convergirRespostaSemIdentidade(
+        contexto,
+        ordemServicoId,
+        rodada,
+        envelopeEventId,
+        payload,
+      );
+      if (jaRegistrado) {
+        return jaRegistrado;
+      }
       await this.abrirPendenciaInformacaoInsuficiente(
         contexto,
         ordemServicoId,
@@ -167,6 +179,58 @@ export class ReconciliacaoConsumoSagaService {
       payload.motivo,
       `estoque.consumir:resposta:${envelopeEventId}`,
     );
+  }
+
+  /**
+   * Resposta sem identidade do fato terminal, mas com o consumo da rodada já
+   * registrado (pelo fato ou pela resolução manual): a causa da informação
+   * insuficiente já não existe. Sem o `eventId` só o consumo efetivo é
+   * comparável; nada é inventado.
+   */
+  private async convergirRespostaSemIdentidade(
+    contexto: ContextoTransacao,
+    ordemServicoId: string,
+    rodada: number,
+    envelopeEventId: string,
+    payload: RespostaCancelamentoContrato,
+  ): Promise<ResultadoReconciliacaoConsumo | null> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const resolucao = await cliente.resolucaoConsumoManual.findUnique({
+      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
+      select: { id: true },
+    });
+    if (resolucao) {
+      return 'reutilizado';
+    }
+    const existente = await cliente.consumoAplicadoOs.findUnique({
+      where: { ordemServicoId_rodada: { ordemServicoId, rodada } },
+    });
+    if (!existente) {
+      return null;
+    }
+    const gravado = consolidarItensQuantidade(
+      (existente.consumoEfetivo as { itemId: string; quantidade: number }[]) ??
+        [],
+    );
+    const recebido = consolidarItensQuantidade(payload.pecasUtilizadas ?? []);
+    const mesmoConsumo =
+      gravado.length === recebido.length &&
+      gravado.every(
+        (item, i) =>
+          item.itemId === recebido[i].itemId &&
+          item.quantidade === recebido[i].quantidade,
+      );
+    if (mesmoConsumo) {
+      return 'reutilizado';
+    }
+    await this.abrirPendenciaConflitoConsumo(contexto, ordemServicoId, rodada, {
+      origem: 'RESPOSTA_CANCELAMENTO',
+      envelopeEventId,
+      registroExistenteEventId: existente.eventId,
+      consumoGravado: gravado,
+      conteudoRecebido: payload,
+    });
+    return 'pendencia_conflito';
   }
 
   async reconciliarFatoTerminal(
@@ -241,9 +305,10 @@ export class ReconciliacaoConsumoSagaService {
             itemId: string;
             quantidade: number;
           }[]) ?? [],
-        divergencias:
-          (existente.divergencias as ConteudoConsumoComparavel['divergencias']) ??
-          [],
+        divergencias: divergenciasGravadasComparaveis(
+          existente.divergencias,
+          candidato.divergencias,
+        ),
       };
       if (conteudosConsumoSemanticamenteEquivalentes(gravado, candidato)) {
         return 'reutilizado';
@@ -253,7 +318,10 @@ export class ReconciliacaoConsumoSagaService {
         ordemServicoId,
         rodada,
         {
-          registroExistente: gravado,
+          registroExistente: {
+            ...gravado,
+            divergencias: existente.divergencias,
+          },
           conteudoRecebido: candidato,
         },
       );

@@ -32,7 +32,7 @@ Idempotency-Key: `diagnostico:<tarefaId>`
 ```json
 {
   "rodada": 1,
-  "tarefaId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "tarefaId": "3fa85f64-5717-4562-b3fc-2c963f66afa6#1#DIAGNOSTICO",
   "laudo": "Desgaste prematuro nas pastilhas dianteiras e fluido de freio abaixo do nível.",
   "itens": [
     { "tipo": "PECA", "itemId": "a1b2c3d4-0001-0000-0000-000000000001", "quantidade": 2 },
@@ -40,6 +40,8 @@ Idempotency-Key: `diagnostico:<tarefaId>`
   ]
 }
 ```
+
+`tarefaId` é o identificador determinístico da tarefa no Execution, `<osId>#<rodada>#DIAGNOSTICO` (o UUID puro, formato anterior, continua aceito). Qualquer outro formato é recusado com 400.
 
 ### Resposta 200 — diagnóstico registrado
 

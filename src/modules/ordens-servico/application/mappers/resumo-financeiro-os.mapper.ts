@@ -1,3 +1,8 @@
+import {
+  NATUREZA_CONFIRMACAO_PAGAMENTO,
+  PREFIXO_ORDER_CONFIRMADA,
+} from '../../domain/confirmacao-pagamento-projecao';
+
 export interface ResumoFinanceiroOrcamento {
   orcamentoId: string;
   valorCentavos: number | null;
@@ -38,6 +43,24 @@ function maisRecente(
   )[0];
 }
 
+// Com order paga, o resumo mostra a primeira order paga da rodada; sem pagamento,
+// a order mais recente (a que o cliente deve pagar após uma reemissão, D1.15).
+function ordemDoResumo(
+  daRodada: LinhaProjecaoFinanceira[],
+): LinhaProjecaoFinanceira | undefined {
+  const ordens = daRodada.filter((p) => p.natureza === NATUREZA_PAGAMENTO);
+  const primeiraPaga = daRodada
+    .filter((p) => p.natureza === NATUREZA_CONFIRMACAO_PAGAMENTO)
+    .sort((a, b) => a.criadoEm.getTime() - b.criadoEm.getTime())[0];
+  if (!primeiraPaga) {
+    return maisRecente(ordens);
+  }
+  const orderIdPaga = primeiraPaga.orderId.slice(
+    PREFIXO_ORDER_CONFIRMADA.length,
+  );
+  return ordens.find((p) => p.orderId === orderIdPaga) ?? maisRecente(ordens);
+}
+
 export function montarResumoFinanceiro(
   rodadaVigente: number,
   projecoes: LinhaProjecaoFinanceira[],
@@ -46,9 +69,7 @@ export function montarResumoFinanceiro(
   const orcamentoLinha = maisRecente(
     daRodada.filter((p) => p.natureza === NATUREZA_ORCAMENTO),
   );
-  const pagamentoLinha = maisRecente(
-    daRodada.filter((p) => p.natureza === NATUREZA_PAGAMENTO),
-  );
+  const pagamentoLinha = ordemDoResumo(daRodada);
 
   return {
     orcamento: orcamentoLinha?.orcamentoId

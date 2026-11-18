@@ -1,6 +1,7 @@
 import {
   conteudosConsumoSemanticamenteEquivalentes,
   deContextoConsumo,
+  divergenciasGravadasComparaveis,
 } from './comparar-consumo-semantico';
 
 describe('comparar consumo semântico', () => {
@@ -139,5 +140,62 @@ describe('comparar consumo semântico', () => {
       null,
     );
     expect(conteudosConsumoSemanticamenteEquivalentes(a, c)).toBe(false);
+  });
+
+  describe('divergenciasGravadasComparaveis', () => {
+    const informada = {
+      itemId: 'p1',
+      tipo: 'CONSUMO_ACIMA',
+      quantidadePrevista: 2,
+      quantidadeUtilizada: 3,
+      justificativa: 'peça extra',
+    };
+    const gravada = (justificativa: string | null, motivo: string) => ({
+      pecaId: 'p1',
+      tipo: 'CONSUMO_ACIMA',
+      quantidadePrevista: 2,
+      quantidadeUtilizada: 3,
+      justificativa,
+      motivo,
+    });
+
+    it('lê pecaId como itemId e descarta as divergências geradas pelo OS', () => {
+      const gravadas = [
+        gravada('peça extra', 'Consumo informado'),
+        gravada(null, 'Quantidade informada excede a reservada.'),
+      ];
+      expect(divergenciasGravadasComparaveis(gravadas, [informada])).toEqual([
+        {
+          itemId: 'p1',
+          tipo: 'CONSUMO_ACIMA',
+          quantidadePrevista: 2,
+          quantidadeUtilizada: 3,
+          justificativa: 'peça extra',
+        },
+      ]);
+    });
+
+    it('devolve lista vazia sem auditoria gravada', () => {
+      expect(divergenciasGravadasComparaveis(null, [informada])).toEqual([]);
+    });
+
+    it('divergência informada ausente da gravada deixa o conteúdo diferente', () => {
+      const gravado = deContextoConsumo(
+        ctx,
+        [],
+        divergenciasGravadasComparaveis([], [informada]),
+        null,
+      );
+      const recebido = deContextoConsumo(ctx, [], [informada], null);
+      expect(
+        conteudosConsumoSemanticamenteEquivalentes(gravado, recebido),
+      ).toBe(false);
+    });
+
+    it('divergências repetidas valem como uma', () => {
+      const a = deContextoConsumo(ctx, [], [informada, informada], null);
+      const b = deContextoConsumo(ctx, [], [informada], null);
+      expect(conteudosConsumoSemanticamenteEquivalentes(a, b)).toBe(true);
+    });
   });
 });

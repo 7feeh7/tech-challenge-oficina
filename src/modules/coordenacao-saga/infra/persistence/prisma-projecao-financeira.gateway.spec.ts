@@ -8,17 +8,25 @@ describe('PrismaProjecaoFinanceiraGateway', () => {
   const prisma = {
     projecaoFinanceiraOs: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
   };
   const gateway = new PrismaProjecaoFinanceiraGateway(prisma as never);
 
-  it('retorna orderId principal', async () => {
-    prisma.projecaoFinanceiraOs.findFirst.mockResolvedValue({ orderId: 'ORD' });
+  it('lista só as orders com pagamento confirmado, sem o prefixo', async () => {
+    prisma.projecaoFinanceiraOs.findMany.mockResolvedValue([
+      { orderId: 'confirmado:ORD' },
+    ]);
     await expect(
-      gateway.buscarOrderIdPrincipal({} as never, 'os', 1),
-    ).resolves.toBe('ORD');
+      gateway.buscarOrdersPagas({} as never, 'os', 1),
+    ).resolves.toEqual(['ORD']);
+    expect(prisma.projecaoFinanceiraOs.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ordemServicoId: 'os', rodada: 1, natureza: 'CONFIRMACAO' },
+      }),
+    );
   });
 
   it('atualiza link em pagamento duplicado sem link', async () => {
@@ -26,7 +34,7 @@ describe('PrismaProjecaoFinanceiraGateway', () => {
       id: 'x',
       linkPagamento: null,
     });
-    await gateway.registrarPagamento({} as never, {
+    await gateway.registrarCobranca({} as never, {
       ordemServicoId: 'os',
       rodada: 1,
       cobrancaId: null,
@@ -38,10 +46,11 @@ describe('PrismaProjecaoFinanceiraGateway', () => {
     expect(prisma.projecaoFinanceiraOs.update).toHaveBeenCalled();
   });
 
-  it('registra pagamento idempotente', async () => {
+  it('registra cobrança idempotente sem marcá-la como paga', async () => {
+    prisma.projecaoFinanceiraOs.create.mockClear();
     prisma.projecaoFinanceiraOs.findFirst.mockResolvedValueOnce(null);
     await expect(
-      gateway.registrarPagamento({} as never, {
+      gateway.registrarCobranca({} as never, {
         ordemServicoId: 'os',
         rodada: 1,
         cobrancaId: null,
@@ -50,9 +59,16 @@ describe('PrismaProjecaoFinanceiraGateway', () => {
         eventId: 'ev',
       }),
     ).resolves.toBe('criado');
+    expect(prisma.projecaoFinanceiraOs.create).toHaveBeenCalledTimes(1);
+    expect(
+      prisma.projecaoFinanceiraOs.create.mock.calls[0][0].data,
+    ).toMatchObject({
+      natureza: 'PAGAMENTO',
+      orderId: 'ORD',
+    });
     prisma.projecaoFinanceiraOs.findFirst.mockResolvedValueOnce({ id: 'x' });
     await expect(
-      gateway.registrarPagamento({} as never, {
+      gateway.registrarCobranca({} as never, {
         ordemServicoId: 'os',
         rodada: 1,
         cobrancaId: null,
@@ -61,6 +77,39 @@ describe('PrismaProjecaoFinanceiraGateway', () => {
         eventId: 'ev',
       }),
     ).resolves.toBe('duplicado');
+  });
+
+  it('registra o pagamento como linha de confirmação, uma vez por order', async () => {
+    prisma.projecaoFinanceiraOs.create.mockClear();
+    const entrada = {
+      ordemServicoId: 'os',
+      rodada: 1,
+      cobrancaId: null,
+      orderId: 'ORD',
+      valorCentavos: 1,
+      eventId: 'ev',
+    };
+    prisma.projecaoFinanceiraOs.findFirst
+      .mockResolvedValueOnce({ id: 'order-existente', linkPagamento: null })
+      .mockResolvedValueOnce(null);
+    await expect(
+      gateway.registrarPagamento({} as never, entrada),
+    ).resolves.toBe('criado');
+    expect(prisma.projecaoFinanceiraOs.create).toHaveBeenCalledTimes(1);
+    expect(
+      prisma.projecaoFinanceiraOs.create.mock.calls[0][0].data,
+    ).toMatchObject({
+      natureza: 'CONFIRMACAO',
+      orderId: 'confirmado:ORD',
+    });
+
+    prisma.projecaoFinanceiraOs.findFirst
+      .mockResolvedValueOnce({ id: 'order-existente', linkPagamento: null })
+      .mockResolvedValueOnce({ id: 'confirmacao' });
+    await expect(
+      gateway.registrarPagamento({} as never, entrada),
+    ).resolves.toBe('duplicado');
+    expect(prisma.projecaoFinanceiraOs.create).toHaveBeenCalledTimes(1);
   });
 
   it('registra orçamento idempotente', async () => {

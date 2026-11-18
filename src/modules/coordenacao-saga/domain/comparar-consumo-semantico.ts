@@ -22,24 +22,49 @@ function mesmoInstante(a: Date, b: Date): boolean {
   return Math.abs(a.getTime() - b.getTime()) < 1000;
 }
 
+function textoOuVazio(valor: unknown): string {
+  return typeof valor === 'string' ? valor : '';
+}
+
+function chaveDivergencia(
+  d: ConteudoConsumoComparavel['divergencias'][number],
+): string {
+  return `${d.itemId}|${d.tipo ?? ''}|${d.quantidadePrevista ?? 0}|${d.quantidadeUtilizada ?? 0}|${d.justificativa ?? ''}`;
+}
+
 function divergenciasEquivalentes(
   a: ConteudoConsumoComparavel['divergencias'],
   b: ConteudoConsumoComparavel['divergencias'],
 ): boolean {
   const norm = (lista: ConteudoConsumoComparavel['divergencias']): string[] =>
-    [...lista]
-      .map((d) => ({
-        itemId: d.itemId,
-        tipo: d.tipo ?? '',
-        prev: d.quantidadePrevista ?? 0,
-        util: d.quantidadeUtilizada ?? 0,
-        just: d.justificativa ?? '',
-      }))
-      .sort((x, y) => x.itemId.localeCompare(y.itemId))
-      .map((d) => `${d.itemId}|${d.tipo}|${d.prev}|${d.util}|${d.just}`);
+    [...new Set(lista.map(chaveDivergencia))].sort();
   const la = norm(a);
   const lb = norm(b);
   return la.length === lb.length && la.every((v, i) => v === lb[i]);
+}
+
+/**
+ * A auditoria gravada em `consumos_aplicados_os.divergencias` usa `pecaId` e
+ * inclui as divergências que o próprio OS gerou na conciliação (excesso, peça
+ * fora da reserva). Só as que o Execution informou entram na comparação.
+ */
+export function divergenciasGravadasComparaveis(
+  gravadas: unknown,
+  informadas: ConteudoConsumoComparavel['divergencias'],
+): ConteudoConsumoComparavel['divergencias'] {
+  if (!Array.isArray(gravadas)) {
+    return [];
+  }
+  const chavesInformadas = new Set(informadas.map(chaveDivergencia));
+  return (gravadas as Record<string, unknown>[])
+    .map((d) => ({
+      itemId: textoOuVazio(d.itemId) || textoOuVazio(d.pecaId),
+      tipo: (d.tipo as string | null | undefined) ?? null,
+      quantidadePrevista: d.quantidadePrevista as number | undefined,
+      quantidadeUtilizada: d.quantidadeUtilizada as number | undefined,
+      justificativa: (d.justificativa as string | null | undefined) ?? null,
+    }))
+    .filter((d) => chavesInformadas.has(chaveDivergencia(d)));
 }
 
 export function conteudosConsumoSemanticamenteEquivalentes(

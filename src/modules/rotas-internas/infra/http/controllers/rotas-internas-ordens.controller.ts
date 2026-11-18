@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -21,6 +23,7 @@ export class RotasInternasOrdensController {
   ) {}
 
   @Post(':id/diagnostico')
+  @HttpCode(HttpStatus.OK)
   @RotaInternaPost(RelacaoChamadorInterno.EXECUTION)
   async concluirDiagnosticoRota(
     @Param('id', ParseUUIDPipe) id: string,
@@ -38,6 +41,7 @@ export class RotasInternasOrdensController {
   }
 
   @Post(':id/reservas')
+  @HttpCode(HttpStatus.OK)
   @RotaInternaPost(RelacaoChamadorInterno.BILLING)
   async reservar(
     @Param('id', ParseUUIDPipe) id: string,

@@ -32,6 +32,7 @@ import type { ComandosSagaOutboxService } from './comandos-saga-outbox.service';
 import type { EstadoCompensacaoGateway } from '../ports/estado-compensacao.gateway';
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
 import type { RespostaCancelamentoContrato } from '../../domain/resposta-cancelamento-contrato';
+import { NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO } from '../../domain/natureza-pendencia-financeira';
 import { SituacaoTarefaCancelamento } from '../../domain/situacao-tarefa-cancelamento';
 import type { ReconciliacaoConsumoSagaService } from './reconciliacao-consumo-saga.service';
 
@@ -54,6 +55,11 @@ export interface RespostaCancelamentoFinanceiroPayload {
     | 'PENDENCIA_MANUAL_ABERTA';
   pendenciaId?: string;
 }
+
+const REPAROS_NAO_INICIADOS = new Set([
+  ResultadoCancelamentoExecucao.CANCELADA_SEM_INICIO,
+  ResultadoCancelamentoExecucao.CANCELADA_SEM_EXISTIR,
+]);
 
 export class CompensacaoSagaService implements CompensacaoAvancoPort {
   constructor(
@@ -233,7 +239,16 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
       await this.avancar(contexto, ordemServicoId, causationId);
       return;
     }
-    snapshot.resultadoExecucao = ResultadoExecucaoCompensacao.REPARO_INICIADO;
+    // Reparo cancelado sem início ou sem existir não foi iniciado (D1.20):
+    // o Billing estorna integralmente em vez de abrir pendência manual. Um
+    // ReparoIniciado ou fato terminal já recebido mantém a pendência manual.
+    const naoIniciado =
+      REPAROS_NAO_INICIADOS.has(payload.resultado) &&
+      !snapshot.reparoIniciadoDuranteCancelamento &&
+      !snapshot.fatoTerminalExecucao;
+    snapshot.resultadoExecucao = naoIniciado
+      ? ResultadoExecucaoCompensacao.REPARO_NAO_INICIADO
+      : ResultadoExecucaoCompensacao.REPARO_INICIADO;
     snapshot.passo = PassoCompensacaoSaga.FINANCEIRO;
     await this.estado.salvar(contexto, snapshot);
     await this.avancar(contexto, ordemServicoId, causationId);
@@ -705,7 +720,10 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     });
     return abertas.some((pendencia) => {
       const detalhes = pendencia.detalhes as Record<string, unknown>;
-      return detalhes.natureza !== 'CONSULTA_PRAZO_REFERENCIA';
+      return (
+        detalhes.natureza !== 'CONSULTA_PRAZO_REFERENCIA' &&
+        detalhes.natureza !== NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO
+      );
     });
   }
 

@@ -146,7 +146,7 @@ export interface ReservaEstoqueGateway {
       motivo: string;
       responsavelId: string;
     },
-  ): Promise<{ ordemServicoId: string }>;
+  ): Promise<{ ordemServicoId: string; pendenciaResolvida: boolean }>;
 
   resolverConsumoManualInicial(
     contexto: ContextoTransacao,

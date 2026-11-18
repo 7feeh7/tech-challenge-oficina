@@ -1,3 +1,4 @@
+import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { RotasInternasOrdensController } from './rotas-internas-ordens.controller';
 
 describe('RotasInternasOrdensController', () => {
@@ -24,4 +25,16 @@ describe('RotasInternasOrdensController', () => {
     expect(concluir.execute).toHaveBeenCalled();
     expect(reservar.execute).toHaveBeenCalled();
   });
+
+  it.each(['concluirDiagnosticoRota', 'reservar'] as const)(
+    '%s responde 200 como define o contrato interno (03)',
+    (rota) => {
+      expect(
+        Reflect.getMetadata(
+          HTTP_CODE_METADATA,
+          RotasInternasOrdensController.prototype[rota],
+        ),
+      ).toBe(200);
+    },
+  );
 });
