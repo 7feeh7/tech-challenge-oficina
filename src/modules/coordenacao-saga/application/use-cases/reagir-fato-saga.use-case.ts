@@ -54,6 +54,12 @@ import {
 import { AcaoDecisao } from '../../domain/acao-decisao';
 import { decidir } from '../../domain/decidir';
 import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
+import {
+  lerOrigemPagamento,
+  OrigemPagamento,
+  validarPagamentoLegitimoSemEstorno,
+  validarSegundoPagamento,
+} from '../../domain/origem-pagamento';
 import { TipoFatoSaga } from '../../domain/tipo-fato-saga';
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
 import type { ProjecaoFinanceiraGateway } from '../ports/projecao-financeira.gateway';
@@ -95,6 +101,8 @@ interface PagamentoConfirmadoPayload {
   cobrancaId?: string;
   orderId: string;
   valorCentavos?: number;
+  /** Ausente nas mensagens anteriores ao campo aditivo. */
+  origemPagamento?: string;
 }
 
 interface PagamentoTardioPayload extends PagamentoConfirmadoPayload {
@@ -182,6 +190,7 @@ export class ReagirFatoSagaUseCase {
     });
 
     const payloadPagamento = envelope.payload as PagamentoConfirmadoPayload;
+    const origemPagamento = this.lerOrigemDoPagamento(fato, payloadPagamento);
     const ordersPagas = await this.projecao.buscarOrdersPagas(
       contexto,
       envelope.ordemServicoId,
@@ -202,6 +211,12 @@ export class ReagirFatoSagaUseCase {
         envelope.rodada,
         payloadPagamento.orderId,
       ));
+    this.validarOrigemDoPagamento(
+      origemPagamento,
+      payloadPagamento,
+      estornoSegundoPagamentoRegistrado,
+      envelope.rodada >= bloqueada.ordem.rodadaVigente,
+    );
     const exigeEstadoCompensacao =
       bloqueada.ordem.status === StatusOS.EM_CANCELAMENTO ||
       fato === TipoFatoSaga.SITUACAO_FINANCEIRA ||
@@ -225,6 +240,7 @@ export class ReagirFatoSagaUseCase {
         estadoSnap?.passo === PassoCompensacaoSaga.CONSULTA_E10,
       estornoDeSegundoPagamento,
       estornoSegundoPagamentoRegistrado,
+      origemPagamento,
     };
 
     const acao = decidir(fato, ordemDecisao);
@@ -243,6 +259,19 @@ export class ReagirFatoSagaUseCase {
           rodadaVigente: bloqueada.ordem.rodadaVigente,
         },
         'CoordenacaoSaga',
+      );
+      return;
+    }
+
+    if (
+      acao === AcaoDecisao.CONCILIAR &&
+      origemPagamento === OrigemPagamento.SEGUNDO_PAGAMENTO
+    ) {
+      await this.estornoSegundoPagamento.registrarSegundoPagamento(
+        contexto,
+        envelope,
+        payloadPagamento,
+        bloqueada.ordem.status,
       );
       return;
     }
@@ -474,6 +503,35 @@ export class ReagirFatoSagaUseCase {
       }
       default:
         break;
+    }
+  }
+
+  private lerOrigemDoPagamento(
+    fato: TipoFatoSaga,
+    payload: PagamentoConfirmadoPayload,
+  ): OrigemPagamento | null {
+    if (fato !== TipoFatoSaga.PAGAMENTO_CONFIRMADO) {
+      return null;
+    }
+    return lerOrigemPagamento(payload.origemPagamento);
+  }
+
+  // Fato de rodada antiga mantém o comportamento atual (decidir ignora): só a
+  // contradição com o estado da rodada vigente é recusada antes de qualquer efeito.
+  private validarOrigemDoPagamento(
+    origemPagamento: OrigemPagamento | null,
+    payload: PagamentoConfirmadoPayload,
+    estornoSegundoPagamentoRegistrado: boolean,
+    ehRodadaVigente: boolean,
+  ): void {
+    if (origemPagamento === OrigemPagamento.SEGUNDO_PAGAMENTO) {
+      validarSegundoPagamento(payload.orderId);
+    }
+    if (
+      origemPagamento === OrigemPagamento.PAGAMENTO_LEGITIMO &&
+      ehRodadaVigente
+    ) {
+      validarPagamentoLegitimoSemEstorno(estornoSegundoPagamentoRegistrado);
     }
   }
 

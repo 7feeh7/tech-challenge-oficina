@@ -1,6 +1,7 @@
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { AcaoDecisao } from './acao-decisao';
 import type { OrdemParaDecisao } from './ordem-para-decisao';
+import { OrigemPagamento } from './origem-pagamento';
 import { TipoFatoSaga } from './tipo-fato-saga';
 
 const STATUS_ENCERRADOS_SEM_REGRESSAO: StatusOS[] = [
@@ -50,6 +51,15 @@ export function decidir(
 ): AcaoDecisao {
   if (rodadaAntiga(ordem)) {
     return AcaoDecisao.IGNORAR;
+  }
+
+  // O segundo pagamento nunca é o pagamento da OS, em nenhum status; a
+  // idempotência dele é da pendência da order, não da projeção.
+  if (
+    fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
+    ordem.origemPagamento === OrigemPagamento.SEGUNDO_PAGAMENTO
+  ) {
+    return AcaoDecisao.CONCILIAR;
   }
 
   if (

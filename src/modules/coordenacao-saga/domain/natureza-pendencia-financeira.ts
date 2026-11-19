@@ -18,5 +18,5 @@ export const TRATAMENTO_PAGAMENTO_TARDIO_ESTORNO_AUTOMATICO =
 export const CHAVE_EVIDENCIA_ESTORNO_BILLING = 'evidenciaEstornoBilling';
 export const TIPO_ESTORNO_INTEGRAL = 'INTEGRAL';
 
-/** Chave de `detalhes` com o `PagamentoConfirmado` que chegou depois do estorno do segundo pagamento. */
+/** Chave de `detalhes` com o `PagamentoConfirmado` da order de segundo pagamento (que abriu a pendência ou chegou depois do estorno). */
 export const CHAVE_PAGAMENTO_CONFIRMADO_POSTERIOR = 'pagamentoConfirmado';

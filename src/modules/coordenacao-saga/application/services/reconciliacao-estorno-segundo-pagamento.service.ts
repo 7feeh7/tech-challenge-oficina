@@ -110,6 +110,78 @@ export class ReconciliacaoEstornoSegundoPagamentoService {
     if (!pendencia) {
       return;
     }
+    await this.completarPendenciaComPagamento(
+      contexto,
+      pendencia,
+      envelope,
+      payload,
+    );
+  }
+
+  /**
+   * `PagamentoConfirmado` com `origemPagamento = SEGUNDO_PAGAMENTO`: abre a
+   * pendência da order ou completa a que o estorno criou antes. A existência da
+   * pendência, aberta ou resolvida, é a idempotência: a order não entra na
+   * projeção financeira.
+   */
+  async registrarSegundoPagamento(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    payload: PagamentoConfirmadoPayload,
+    status: StatusOS,
+  ): Promise<void> {
+    const pendencia = await this.buscarPendenciaDaOrder(
+      contexto,
+      envelope.ordemServicoId,
+      envelope.rodada,
+      payload.orderId,
+    );
+    if (!pendencia) {
+      await this.criarPendenciaComPagamento(contexto, envelope, payload);
+      return;
+    }
+    await this.completarPendenciaComPagamento(
+      contexto,
+      pendencia,
+      envelope,
+      payload,
+    );
+    await this.resolverSeEvidenciaEOsEncerrada(contexto, pendencia, status);
+  }
+
+  // A evidência integral que já estava na pendência não será mais recebida: com
+  // a OS cancelada ou entregue, nada mais a resolveria.
+  private async resolverSeEvidenciaEOsEncerrada(
+    contexto: ContextoTransacao,
+    pendencia: PendenciaDaOrder,
+    status: StatusOS,
+  ): Promise<void> {
+    const possuiEvidencia = Boolean(
+      this.detalhesDe(pendencia)[CHAVE_EVIDENCIA_ESTORNO_BILLING],
+    );
+    if (
+      pendencia.resolvida ||
+      !possuiEvidencia ||
+      !STATUS_QUE_RESOLVEM_PENDENCIA.includes(status)
+    ) {
+      return;
+    }
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    await cliente.pendenciaOs.update({
+      where: { id: pendencia.id },
+      data: {
+        resolvida: true,
+        resolvidaEm: await obterInstanteBanco(contexto, this.prisma),
+      },
+    });
+  }
+
+  private async completarPendenciaComPagamento(
+    contexto: ContextoTransacao,
+    pendencia: PendenciaDaOrder,
+    envelope: EnvelopeMensagem,
+    payload: PagamentoConfirmadoPayload,
+  ): Promise<void> {
     this.exigirCobrancaCoerente(pendencia, payload.cobrancaId);
     const detalhes = this.detalhesDe(pendencia);
     // Reentrega e duplicata do pagamento não reescrevem o que já foi registrado.
@@ -125,14 +197,47 @@ export class ReconciliacaoEstornoSegundoPagamentoService {
           ...(detalhes.cobrancaId || !payload.cobrancaId
             ? {}
             : { cobrancaId: payload.cobrancaId }),
-          [CHAVE_PAGAMENTO_CONFIRMADO_POSTERIOR]: {
-            eventId: envelope.eventId,
-            cobrancaId: payload.cobrancaId,
-            valorCentavos: payload.valorCentavos,
-          },
+          [CHAVE_PAGAMENTO_CONFIRMADO_POSTERIOR]:
+            this.montarPagamentoRegistrado(envelope, payload),
         },
       },
     });
+  }
+
+  private async criarPendenciaComPagamento(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+    payload: PagamentoConfirmadoPayload,
+  ): Promise<void> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    await cliente.pendenciaOs.create({
+      data: {
+        id: randomUUID(),
+        ordemServicoId: envelope.ordemServicoId,
+        rodada: envelope.rodada,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        detalhes: {
+          natureza: NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO,
+          orderId: payload.orderId,
+          ...(payload.cobrancaId ? { cobrancaId: payload.cobrancaId } : {}),
+          eventId: envelope.eventId,
+          motivo: 'Segundo pagamento classificado pelo Billing',
+          [CHAVE_PAGAMENTO_CONFIRMADO_POSTERIOR]:
+            this.montarPagamentoRegistrado(envelope, payload),
+        },
+      },
+    });
+  }
+
+  private montarPagamentoRegistrado(
+    envelope: EnvelopeMensagem,
+    payload: PagamentoConfirmadoPayload,
+  ) {
+    return {
+      eventId: envelope.eventId,
+      cobrancaId: payload.cobrancaId,
+      valorCentavos: payload.valorCentavos,
+    };
   }
 
   private async buscarPendenciaDaOrder(

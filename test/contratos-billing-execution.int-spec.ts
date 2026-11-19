@@ -41,11 +41,17 @@ const INVENTARIO: Record<ServicoContrato, Record<string, Direcao>> = {
     'billing.cobranca-criada.v1': 'RECEBIDA_PELO_OS',
     'billing.cobranca-expirada.v1': 'RECEBIDA_PELO_OS',
     'billing.consultar-situacao-financeira.v1': 'EMITIDA_PELO_OS',
+    'billing.estorno-concluido.pendencia-resolvida.v1': 'RECEBIDA_PELO_OS',
+    'billing.estorno-concluido.sem-origem.v1': 'RECEBIDA_PELO_OS',
     'billing.estorno-concluido.v1': 'RECEBIDA_PELO_OS',
     'billing.gerar-orcamento.v1': 'EMITIDA_PELO_OS',
     'billing.orcamento-gerado.v1': 'RECEBIDA_PELO_OS',
     'billing.orcamento-rejeitado.v1': 'RECEBIDA_PELO_OS',
+    'billing.pagamento-confirmado.segundo-pagamento.v1': 'RECEBIDA_PELO_OS',
+    'billing.pagamento-confirmado.sem-origem.v1': 'RECEBIDA_PELO_OS',
     'billing.pagamento-confirmado.v1': 'RECEBIDA_PELO_OS',
+    'billing.pagamento-tardio-registrado.pendencia-manual.v1':
+      'RECEBIDA_PELO_OS',
     'billing.pagamento-tardio-registrado.v1': 'RECEBIDA_PELO_OS',
     'billing.pendencia-resolvida.v1': 'RECEBIDA_PELO_OS',
     'billing.resposta-cancelamento-financeiro.v1': 'RECEBIDA_PELO_OS',
@@ -103,10 +109,12 @@ const ORIGENS_ESPERADAS: Record<
   ServicoContrato,
   { repositorio: string; commit: string }
 > = {
-  billing: { repositorio: 'tech-challenge-billing', commit: '568e04e' },
+  billing: { repositorio: 'tech-challenge-billing', commit: '95669e0' },
   execution: { repositorio: 'tech-challenge-execution', commit: 'b8d52c6' },
 };
 
+const ORDER_LEGITIMA_DOS_EXEMPLOS = 'ORDTST01M7GH2KEG5AH9PXBNF8S3AQ8A';
+const ORDER_SEGUNDO_PAGAMENTO_DOS_EXEMPLOS = 'ORDTST02N8HJ3LFH6BI0QYCOG9T4BR9B';
 const ID_PECA_DOS_EXEMPLOS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const ID_OUTRA_PECA_DOS_EXEMPLOS = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
 const CONSULTA_DO_EXEMPLO = 'f7e1d5c4-9a6b-7c2d-1e4f-5a8b0c3d6e9f';
@@ -133,8 +141,8 @@ describe('Contratos publicados pelo Billing e pelo Execution', () => {
       });
     }
 
-    it('totaliza 14 exemplos do Billing e 24 do Execution', () => {
-      expect(listarExemplos('billing')).toHaveLength(14);
+    it('totaliza 19 exemplos do Billing e 24 do Execution', () => {
+      expect(listarExemplos('billing')).toHaveLength(19);
       expect(listarExemplos('execution')).toHaveLength(24);
     });
 
@@ -370,6 +378,14 @@ describe('Contratos publicados pelo Billing e pelo Execution', () => {
         where: { ordemServicoId: cenario.jornada.ordemServicoId },
       });
 
+    const financeirasDa = (cenario: Cenario) =>
+      ambiente.prisma.pendenciaOs.findMany({
+        where: {
+          ordemServicoId: cenario.jornada.ordemServicoId,
+          tipo: TipoPendenciaOs.FINANCEIRA,
+        },
+      });
+
     const inventarioAberto = (cenario: Cenario) =>
       ambiente.prisma.pendenciaOs.findMany({
         where: {
@@ -444,6 +460,84 @@ describe('Contratos publicados pelo Billing e pelo Execution', () => {
         expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(1);
       });
 
+      it('billing.pagamento-confirmado.sem-origem.v1 (legado) leva a ordem a aguardar a execução e pede o reparo uma vez', async () => {
+        const c = await ordemEm('AGUARDANDO_PAGAMENTO');
+        const mensagem = await entregar(
+          c,
+          'billing',
+          'billing.pagamento-confirmado.sem-origem.v1',
+        );
+        expect(mensagem.payload).not.toHaveProperty('origemPagamento');
+        expect(await c.jornada.status()).toBe(StatusOS.AGUARDANDO_EXECUCAO);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(1);
+        await c.jornada.reentregar(mensagem);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(1);
+      });
+
+      it('billing.pagamento-confirmado.segundo-pagamento.v1 só abre a pendência SEGUNDO_PAGAMENTO e o pagamento legítimo depois leva a ordem a aguardar a execução', async () => {
+        const c = await ordemEm('AGUARDANDO_PAGAMENTO');
+        const segundo = await entregar(
+          c,
+          'billing',
+          'billing.pagamento-confirmado.segundo-pagamento.v1',
+        );
+        expect(segundo.payload.origemPagamento).toBe('SEGUNDO_PAGAMENTO');
+        expect(await c.jornada.status()).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(0);
+        const pendencias = await financeirasDa(c);
+        expect(pendencias).toHaveLength(1);
+        expect(pendencias[0].detalhes).toMatchObject({
+          natureza: 'SEGUNDO_PAGAMENTO',
+          orderId: ORDER_SEGUNDO_PAGAMENTO_DOS_EXEMPLOS,
+        });
+
+        await entregar(c, 'billing', 'billing.pagamento-confirmado.v1');
+
+        expect(await c.jornada.status()).toBe(StatusOS.AGUARDANDO_EXECUCAO);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(1);
+        expect(await financeirasDa(c)).toHaveLength(1);
+      });
+
+      it('billing.pagamento-confirmado.segundo-pagamento.v1 e billing.estorno-concluido.v1 da mesma order reconciliam em uma pendência, sem mexer na ordem em execução', async () => {
+        const c = await ordemEm('EM_EXECUCAO');
+        const reparosAntes = await c.jornada.caixa.contar(
+          COMANDO_INICIAR_REPARO,
+        );
+        await entregar(c, 'billing', 'billing.estorno-concluido.v1', {
+          [ORDER_LEGITIMA_DOS_EXEMPLOS]: ORDER_SEGUNDO_PAGAMENTO_DOS_EXEMPLOS,
+        });
+        await entregar(
+          c,
+          'billing',
+          'billing.pagamento-confirmado.segundo-pagamento.v1',
+        );
+
+        expect(await c.jornada.status()).toBe(StatusOS.EM_EXECUCAO);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(
+          reparosAntes,
+        );
+        const pendencias = await financeirasDa(c);
+        expect(pendencias).toHaveLength(1);
+        expect(pendencias[0].detalhes).toMatchObject({
+          natureza: 'SEGUNDO_PAGAMENTO',
+          orderId: ORDER_SEGUNDO_PAGAMENTO_DOS_EXEMPLOS,
+          evidenciaEstornoBilling: { tipoEstorno: 'INTEGRAL' },
+          pagamentoConfirmado: { cobrancaId: expect.any(String) },
+        });
+      });
+
+      it('billing.pagamento-confirmado.v1 (PAGAMENTO_LEGITIMO) é recusado para a order que já tem o estorno de segundo pagamento', async () => {
+        const c = await ordemEm('AGUARDANDO_PAGAMENTO');
+        await entregar(c, 'billing', 'billing.estorno-concluido.v1');
+
+        await expect(
+          entregar(c, 'billing', 'billing.pagamento-confirmado.v1'),
+        ).rejects.toBeInstanceOf(ErroMensagemPermanente);
+
+        expect(await c.jornada.status()).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+        expect(await c.jornada.caixa.contar(COMANDO_INICIAR_REPARO)).toBe(0);
+      });
+
       it('billing.cobranca-expirada.v1 inicia a compensação financeira', async () => {
         const c = await ordemEm('AGUARDANDO_PAGAMENTO');
         await entregar(c, 'billing', 'billing.cobranca-expirada.v1');
@@ -482,6 +576,24 @@ describe('Contratos publicados pelo Billing e pelo Execution', () => {
           }),
         ).toBe(1);
       });
+
+      it.each([
+        'billing.estorno-concluido.sem-origem.v1',
+        'billing.estorno-concluido.pendencia-resolvida.v1',
+        'billing.pagamento-tardio-registrado.pendencia-manual.v1',
+      ])(
+        '%s é aceito com a ordem cancelada e não regride o estado',
+        async (nome) => {
+          const c = await ordemEm('CANCELADA');
+          const mensagem = await entregar(c, 'billing', nome);
+          expect(await c.jornada.status()).toBe(StatusOS.CANCELADA);
+          expect(
+            await ambiente.prisma.mensagemProcessada.count({
+              where: { eventId: mensagem.eventId },
+            }),
+          ).toBe(1);
+        },
+      );
 
       it('billing.pendencia-resolvida.v1 é aceito durante a compensação sem encerrar a ordem', async () => {
         const c = await ordemEm('CANCELAMENTO_NO_FINANCEIRO');

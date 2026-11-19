@@ -66,6 +66,20 @@ Vale só para `billing.estorno-concluido.v1` com `origemEstorno = SEGUNDO_PAGAME
 
 Prova: `test/estorno-segundo-pagamento.int-spec.ts` (PostgreSQL real, as duas ordens de chegada em cada estado aplicável).
 
+## Classificação do pagamento (`origemPagamento`)
+
+`billing.pagamento-confirmado.v1` traz o campo aditivo `origemPagamento` (`PAGAMENTO_LEGITIMO` ou `SEGUNDO_PAGAMENTO`), preenchido pelo Billing em toda publicação nova. O OS não classifica o pagamento pelo estado quando o campo está presente.
+
+- **`SEGUNDO_PAGAMENTO` (rodada vigente, qualquer estado a partir de `AGUARDANDO_PAGAMENTO`):** nunca confirma o pagamento da OS, não libera o reparo (nenhum `IniciarReparo`), não muda status, não avança a saga nem a compensação em `EM_CANCELAMENTO` e não entra na projeção financeira. Abre a pendência `FINANCEIRA` `natureza = SEGUNDO_PAGAMENTO` da própria order (`orderId`, `cobrancaId`, `eventId`, `motivo` e `detalhes.pagamentoConfirmado` com `eventId`, `cobrancaId` e `valorCentavos`) ou completa a existente, criada antes pelo estorno, sem abrir outra. A pendência fica aberta (em `CANCELADA` e `ENTREGUE` até o estorno resolvê-la); se já tinha a evidência integral do estorno e a OS está `CANCELADA` ou `ENTREGUE`, passa a resolvida. Reentrega e duplicata não criam outra pendência nem reescrevem a existente, mesmo depois da resolução administrativa, pois a idempotência é a pendência da order. O `cobrancaId` diferente do da pendência é violação (`ErroMensagemPermanente`).
+- **`PAGAMENTO_LEGITIMO`:** regra atual do pagamento, em qualquer ordem de chegada em relação ao segundo pagamento e ao estorno (por exemplo, segundo pagamento e estorno antes, com a OS em `AGUARDANDO_PAGAMENTO`: o legítimo depois confirma o pagamento e a saga segue como antes). Para order com evidência de estorno de segundo pagamento é violação de contrato: `ErroMensagemPermanente` antes de qualquer efeito, sem registrar a mensagem como processada.
+- **Valor desconhecido** em `origemPagamento` (inclusive `null` e texto vazio) é violação de contrato: `ErroMensagemPermanente` antes de qualquer efeito. `SEGUNDO_PAGAMENTO` sem `orderId` também.
+- **Mensagem legada, sem `origemPagamento`:** continua válida em `v1` e mantém o comportamento da Parte B, inalterado: o OS classifica pelo próprio estado (`ordersPagas`) e pela evidência do estorno, como descrito acima.
+- **Resolução administrativa:** a pendência aberta por `SEGUNDO_PAGAMENTO` é resolvida pela rota existente quando recebe a evidência integral do estorno da mesma order; sem a evidência, a rota responde `409 EVIDENCIA_BILLING_AUSENTE`.
+
+Rodada antiga continua ignorada. Prova: `test/origem-pagamento.int-spec.ts` (PostgreSQL real, todas as ordens de chegada, cada estado, duplicatas, mensagens legadas, violações e resolução administrativa) e os exemplos do Billing em `test/contratos-billing-execution.int-spec.ts`.
+
+Implantação coordenada: o OS sem este tratamento ignora `origemPagamento` e aceitaria o segundo pagamento como pagamento da OS; por isso a imagem implantada do OS deve conter este tratamento antes de ligar `OUTBOX_PUBLISHER_HABILITADO` do Billing.
+
 ## Auditoria (sem migration)
 
 Na própria linha de `pendencias_os`:

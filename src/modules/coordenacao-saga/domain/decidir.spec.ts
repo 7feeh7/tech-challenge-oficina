@@ -2,6 +2,7 @@ import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { AcaoDecisao } from './acao-decisao';
 import { decidir } from './decidir';
 import type { OrdemParaDecisao } from './ordem-para-decisao';
+import { OrigemPagamento } from './origem-pagamento';
 import { TipoFatoSaga } from './tipo-fato-saga';
 
 function ordem(
@@ -17,6 +18,7 @@ function ordem(
     emCompensacaoConsultaE10: false,
     estornoDeSegundoPagamento: false,
     estornoSegundoPagamentoRegistrado: false,
+    origemPagamento: null,
     ...parcial,
   };
 }
@@ -544,6 +546,113 @@ describe('decidir (fluxo principal E29)', () => {
           }),
         ),
       ).toBe(AcaoDecisao.APLICAR);
+    });
+  });
+  describe('classificação explícita do pagamento (origemPagamento)', () => {
+    const todosOsStatus = [
+      StatusOS.AGUARDANDO_PAGAMENTO,
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_EXECUCAO,
+      StatusOS.FINALIZADA,
+      StatusOS.EM_CANCELAMENTO,
+      StatusOS.CANCELADA,
+      StatusOS.ENTREGUE,
+    ];
+
+    it('concilia o segundo pagamento em qualquer status, nunca o aplica', () => {
+      for (const status of todosOsStatus) {
+        expect(
+          decidir(
+            TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+            ordem({
+              status,
+              orderIdFato: 'ORD-2',
+              origemPagamento: OrigemPagamento.SEGUNDO_PAGAMENTO,
+            }),
+          ),
+        ).toBe(AcaoDecisao.CONCILIAR);
+      }
+    });
+
+    it('concilia o segundo pagamento sem depender das orders pagas da projeção', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            orderIdFato: 'ORD-2',
+            ordersPagas: ['ORD-2'],
+            origemPagamento: OrigemPagamento.SEGUNDO_PAGAMENTO,
+          }),
+        ),
+      ).toBe(AcaoDecisao.CONCILIAR);
+    });
+
+    it('ignora o segundo pagamento de rodada antiga', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            rodadaVigente: 2,
+            rodadaFato: 1,
+            orderIdFato: 'ORD-2',
+            origemPagamento: OrigemPagamento.SEGUNDO_PAGAMENTO,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('aplica o pagamento legítimo em AGUARDANDO_PAGAMENTO, mesmo com segundo pagamento já registrado', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            orderIdFato: 'ORD-1',
+            ordersPagas: [],
+            origemPagamento: OrigemPagamento.PAGAMENTO_LEGITIMO,
+          }),
+        ),
+      ).toBe(AcaoDecisao.APLICAR);
+    });
+
+    it('ignora a repetição do pagamento legítimo já registrado como pago', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_EXECUCAO,
+            orderIdFato: 'ORD-1',
+            ordersPagas: ['ORD-1'],
+            origemPagamento: OrigemPagamento.PAGAMENTO_LEGITIMO,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('mantém a classificação pelo estado na mensagem legada, sem origemPagamento', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            orderIdFato: 'ORD-1',
+            origemPagamento: null,
+          }),
+        ),
+      ).toBe(AcaoDecisao.APLICAR);
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.EM_EXECUCAO,
+            orderIdFato: 'ORD-2',
+            ordersPagas: ['ORD-1'],
+            origemPagamento: null,
+          }),
+        ),
+      ).toBe(AcaoDecisao.CONCILIAR);
     });
   });
 });

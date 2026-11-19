@@ -12,6 +12,7 @@
     "cobrancaId": "c4f8b2a1-6d3e-4f9a-8b1c-2e5d7a9f0c3b",
     "orderId": "ORDTST01M7GH2KEG5AH9PXBNF8S3AQ8A",
     "aprovadoEm": "2026-11-15T21:12:28.000Z",
-    "valorCentavos": 20000
+    "valorCentavos": 20000,
+    "origemPagamento": "PAGAMENTO_LEGITIMO"
   }
 }

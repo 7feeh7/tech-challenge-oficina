@@ -1,0 +1,20 @@
+{
+  "eventId": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "eventType": "billing.estorno-concluido.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T22:05:00.000Z",
+  "source": "billing-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "d4e5f6a7-b8c9-0123-def0-234567890123",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "cobrancaId": "c4f8b2a1-6d3e-4f9a-8b1c-2e5d7a9f0c3b",
+    "orderId": "ORDTST01M7GH2KEG5AH9PXBNF8S3AQ8A",
+    "valorEstornadoCentavos": 8000,
+    "estornadoEm": "2026-11-15T21:19:58.000Z",
+    "tipoEstorno": "PARCIAL",
+    "statusOrderMercadoPago": "refunded",
+    "origemEstorno": "PENDENCIA_RESOLVIDA"
+  }
+}
