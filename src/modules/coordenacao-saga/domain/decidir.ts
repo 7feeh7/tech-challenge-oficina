@@ -60,6 +60,24 @@ export function decidir(
     return AcaoDecisao.IGNORAR;
   }
 
+  // O estorno do segundo pagamento pode chegar antes do pagamento da order, até
+  // com a OS aguardando o pagamento: a evidência é registrada sem mudar o status.
+  if (
+    fato === TipoFatoSaga.ESTORNO_CONCLUIDO &&
+    ordem.estornoDeSegundoPagamento &&
+    ordem.status === StatusOS.AGUARDANDO_PAGAMENTO
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
+  // Order já estornada como segundo pagamento nunca é o pagamento da OS.
+  if (
+    fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
+    ordem.estornoSegundoPagamentoRegistrado
+  ) {
+    return AcaoDecisao.CONCILIAR;
+  }
+
   if (
     fato === TipoFatoSaga.ORCAMENTO_REJEITADO &&
     ordem.status === StatusOS.EM_CANCELAMENTO
