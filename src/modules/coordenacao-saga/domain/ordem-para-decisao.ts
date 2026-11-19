@@ -10,4 +10,8 @@ export interface OrdemParaDecisao {
   consultaIdVigente: string | null;
   consultaIdFato: string | null;
   emCompensacaoConsultaE10: boolean;
+  /** `EstornoConcluido` com `origemEstorno = SEGUNDO_PAGAMENTO`. */
+  estornoDeSegundoPagamento: boolean;
+  /** A order do `PagamentoConfirmado` já tem a evidência do estorno do segundo pagamento. */
+  estornoSegundoPagamentoRegistrado: boolean;
 }

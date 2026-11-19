@@ -44,6 +44,7 @@ import { ProcessadoresSagaProvider } from './infra/messaging/processadores-saga.
 import { ComandosSagaOutboxService } from './application/services/comandos-saga-outbox.service';
 import { CompensacaoSagaService } from './application/services/compensacao-saga.service';
 import { ReconciliacaoConsumoSagaService } from './application/services/reconciliacao-consumo-saga.service';
+import { ReconciliacaoEstornoSegundoPagamentoService } from './application/services/reconciliacao-estorno-segundo-pagamento.service';
 import { RetomadaSagaInventarioService } from './application/services/retomada-saga-inventario.service';
 import { ConsultaPrazoReferenciaService } from './application/services/consulta-prazo-referencia.service';
 import { PrismaConsultaPrazoOrdemGateway } from './infra/persistence/prisma-consulta-prazo-ordem.gateway';
@@ -102,6 +103,12 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         RESERVA_ESTOQUE_GATEWAY,
         PrismaService,
       ],
+    },
+    {
+      provide: ReconciliacaoEstornoSegundoPagamentoService,
+      useFactory: (prisma: PrismaService, logger: JsonLoggerService) =>
+        new ReconciliacaoEstornoSegundoPagamentoService(prisma, logger),
+      inject: [PrismaService, JsonLoggerService],
     },
     {
       provide: CompensacaoSagaService,
@@ -264,6 +271,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         consultaPrazo: ConsultaPrazoReferenciaService,
         osMetrics: OsMetricsService,
         reconciliacao: ReconciliacaoConsumoSagaService,
+        estornoSegundoPagamento: ReconciliacaoEstornoSegundoPagamentoService,
       ) =>
         new ReagirFatoSagaUseCase(
           ordens,
@@ -280,6 +288,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
           consultaPrazo,
           osMetrics,
           reconciliacao,
+          estornoSegundoPagamento,
         ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
@@ -296,6 +305,7 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
         ConsultaPrazoReferenciaService,
         OsMetricsService,
         ReconciliacaoConsumoSagaService,
+        ReconciliacaoEstornoSegundoPagamentoService,
       ],
     },
     ProcessadoresSagaProvider,

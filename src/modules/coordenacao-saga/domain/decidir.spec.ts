@@ -15,6 +15,8 @@ function ordem(
     consultaIdVigente: null,
     consultaIdFato: null,
     emCompensacaoConsultaE10: false,
+    estornoDeSegundoPagamento: false,
+    estornoSegundoPagamentoRegistrado: false,
     ...parcial,
   };
 }
@@ -428,5 +430,120 @@ describe('decidir (fluxo principal E29)', () => {
         ordem({ status: StatusOS.AGUARDANDO_PAGAMENTO }),
       ),
     ).toBe(AcaoDecisao.IGNORAR);
+  });
+
+  describe('estorno do segundo pagamento em qualquer ordem de chegada', () => {
+    const statusComSegundoPagamento = [
+      StatusOS.AGUARDANDO_PAGAMENTO,
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_EXECUCAO,
+      StatusOS.FINALIZADA,
+      StatusOS.EM_CANCELAMENTO,
+      StatusOS.CANCELADA,
+      StatusOS.ENTREGUE,
+    ];
+
+    it('aplica o estorno do segundo pagamento a partir de AGUARDANDO_PAGAMENTO', () => {
+      for (const status of statusComSegundoPagamento) {
+        expect(
+          decidir(
+            TipoFatoSaga.ESTORNO_CONCLUIDO,
+            ordem({ status, estornoDeSegundoPagamento: true }),
+          ),
+        ).toBe(AcaoDecisao.APLICAR);
+      }
+    });
+
+    it('mantém ignorado o estorno em AGUARDANDO_PAGAMENTO sem a origem do segundo pagamento', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.ESTORNO_CONCLUIDO,
+          ordem({ status: StatusOS.AGUARDANDO_PAGAMENTO }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('ignora o estorno do segundo pagamento antes de AGUARDANDO_PAGAMENTO', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.ESTORNO_CONCLUIDO,
+          ordem({
+            status: StatusOS.EM_DIAGNOSTICO,
+            estornoDeSegundoPagamento: true,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('ignora o estorno do segundo pagamento de rodada antiga', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.ESTORNO_CONCLUIDO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            rodadaVigente: 2,
+            rodadaFato: 1,
+            estornoDeSegundoPagamento: true,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('concilia o pagamento de order já estornada como segundo pagamento, nunca o aplica', () => {
+      for (const status of statusComSegundoPagamento) {
+        expect(
+          decidir(
+            TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+            ordem({
+              status,
+              orderIdFato: 'ORD-2',
+              estornoSegundoPagamentoRegistrado: true,
+            }),
+          ),
+        ).toBe(AcaoDecisao.CONCILIAR);
+      }
+    });
+
+    it('ignora a repetição do pagamento de order já registrada como paga mesmo com estorno', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.EM_EXECUCAO,
+            orderIdFato: 'ORD-2',
+            ordersPagas: ['ORD-1', 'ORD-2'],
+            estornoSegundoPagamentoRegistrado: true,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('ignora o pagamento de rodada antiga mesmo com estorno registrado', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            rodadaVigente: 2,
+            rodadaFato: 1,
+            estornoSegundoPagamentoRegistrado: true,
+          }),
+        ),
+      ).toBe(AcaoDecisao.IGNORAR);
+    });
+
+    it('continua aplicando o pagamento de outra order em AGUARDANDO_PAGAMENTO', () => {
+      expect(
+        decidir(
+          TipoFatoSaga.PAGAMENTO_CONFIRMADO,
+          ordem({
+            status: StatusOS.AGUARDANDO_PAGAMENTO,
+            orderIdFato: 'ORD-LEGITIMA',
+            ordersPagas: [],
+            estornoSegundoPagamentoRegistrado: false,
+          }),
+        ),
+      ).toBe(AcaoDecisao.APLICAR);
+    });
   });
 });

@@ -54,6 +54,18 @@ No caso `INVENTARIO` a resolução não cria peça, não movimenta estoque, não
 
 `billing.estorno-concluido.v1` com o `orderId` de uma pendência `SEGUNDO_PAGAMENTO` aberta registra nela `detalhes.evidenciaEstornoBilling` (`eventId`, `cobrancaId`, `orderId`, `valorEstornadoCentavos`, `tipoEstorno`, `estornadoEm`, `statusOrderMercadoPago`) em `AGUARDANDO_EXECUCAO`, `EM_EXECUCAO` e `FINALIZADA`. O registro não resolve a pendência, não muda o status e não altera a resolução das demais pendências financeiras por `cobrancaId`. A reentrega do mesmo evento não muda nada, e uma evidência integral já registrada não é substituída por um estorno posterior.
 
+## Estorno do segundo pagamento em qualquer ordem de chegada
+
+Vale só para `billing.estorno-concluido.v1` com `origemEstorno = SEGUNDO_PAGAMENTO` (campo aditivo; ausente ou `PENDENCIA_RESOLVIDA` mantém o comportamento anterior) na rodada vigente. A correspondência é por OS, rodada e `orderId`, e o `cobrancaId` fica gravado.
+
+- **Contrato:** `orderId` vazio ou `tipoEstorno` diferente de `INTEGRAL` com essa origem é violação (`ErroMensagemPermanente`), recusada antes de qualquer efeito. O mesmo vale quando o `cobrancaId` do estorno (ou do `PagamentoConfirmado` posterior) difere do `cobrancaId` da pendência da order; com o `cobrancaId` ausente em um dos lados não há erro.
+- **Evidência durável:** com a OS em qualquer estado a partir de `AGUARDANDO_PAGAMENTO`, o evento grava `evidenciaEstornoBilling` na pendência financeira da order (aberta ou resolvida, com ou sem natureza) ou, se ela ainda não existe, cria na mesma transação a pendência `SEGUNDO_PAGAMENTO` com `orderId`, `cobrancaId`, `eventId`, `motivo` e a evidência. Em `CANCELADA` e `ENTREGUE` a pendência da order fica resolvida (`resolvida_em` pelo relógio do banco); nos demais estados fica aberta e só sai pela rota administrativa. A mensagem é confirmada e o status nunca muda.
+- **Proteção da cobrança legítima:** esse estorno nunca resolve outra pendência (cancelamento, pagamento tardio, outra order da mesma cobrança), nunca avança a compensação em `EM_CANCELAMENTO` e nunca toca reservas, estoque ou comandos.
+- **`PagamentoConfirmado` posterior da mesma order:** nunca é aplicado como o pagamento da OS e não abre outra pendência; completa a pendência existente em `detalhes.pagamentoConfirmado` (`eventId`, `cobrancaId`, `valorCentavos`) sem apagar chaves. O pagamento entra em `projecoes_financeiras_os`, exceto em `AGUARDANDO_PAGAMENTO` (o resumo financeiro não pode apontar a order estornada como a paga).
+- **Idempotência:** reentrega e duplicata não criam outra pendência nem substituem a evidência integral. A concorrência é serializada pelo `SELECT … FOR UPDATE` da OS.
+
+Prova: `test/estorno-segundo-pagamento.int-spec.ts` (PostgreSQL real, as duas ordens de chegada em cada estado aplicável).
+
 ## Auditoria (sem migration)
 
 Na própria linha de `pendencias_os`:
