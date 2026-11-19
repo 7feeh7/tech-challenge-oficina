@@ -6,8 +6,7 @@ Cópia versionada, sem edição, dos exemplos publicados pelo dono do contrato (
 | --- | --- |
 | Repositório | `tech-challenge-billing` |
 | Caminho de origem | `docs/contratos/exemplos/` |
-| Commit de origem | `568e04e` (`develop`) |
-| Conferência | Arquivos idênticos na `develop` em `c7e16e6` (o complemento do Billing não alterou `docs/contratos/`) |
-| Arquivos | 14 exemplos `*.json` |
+| Commit de origem | `95669e0` (`develop`, merge da Parte C1: campo aditivo `origemPagamento`) |
+| Arquivos | 19 exemplos `*.json` |
 
 Para atualizar: copie os arquivos do novo commit sem alterá-los e troque o commit nesta tabela.

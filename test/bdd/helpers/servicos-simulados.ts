@@ -41,7 +41,7 @@ export type ResultadoFinanceiro =
 /**
  * Billing simulado só nas portas: recebe os comandos que o OS deixou na
  * outbox, usa a porta HTTP interna de reserva e responde com mensagens no
- * formato dos exemplos publicados pelo Billing (`568e04e`).
+ * formato dos exemplos publicados pelo Billing (`95669e0`).
  */
 export class BillingSimulado {
   orcamentoId?: string;

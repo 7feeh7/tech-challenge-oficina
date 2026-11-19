@@ -1,4 +1,5 @@
 import type { StatusOS } from '@/modules/ordens-servico/domain/status-os';
+import type { OrigemPagamento } from './origem-pagamento';
 
 export interface OrdemParaDecisao {
   status: StatusOS;
@@ -14,4 +15,6 @@ export interface OrdemParaDecisao {
   estornoDeSegundoPagamento: boolean;
   /** A order do `PagamentoConfirmado` já tem a evidência do estorno do segundo pagamento. */
   estornoSegundoPagamentoRegistrado: boolean;
+  /** `origemPagamento` do `PagamentoConfirmado`; `null` na mensagem legada, sem o campo. */
+  origemPagamento: OrigemPagamento | null;
 }

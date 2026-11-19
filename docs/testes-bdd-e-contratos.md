@@ -26,7 +26,7 @@ O OS roda por inteiro e de verdade: validadores, processadores, coordenação da
 
 ## Contratos
 
-`test/contratos/billing/` e `test/contratos/execution/` guardam a **única** cópia versionada, **sem edição**, dos exemplos publicados pelos donos (`ORIGEM.md` em cada pasta traz repositório, caminho e commit: Billing em `568e04e`, idêntico na `develop` em `c7e16e6`; Execution em `b8d52c6`). Todos os testes que precisam de um exemplo o leem dali (`test/helpers/exemplos-contrato.ts`); não há outra cópia em `test/fixtures/`.
+`test/contratos/billing/` e `test/contratos/execution/` guardam a **única** cópia versionada, **sem edição**, dos exemplos publicados pelos donos (`ORIGEM.md` em cada pasta traz repositório, caminho e commit: Billing em `95669e0`, merge da Parte C1 na `develop` (19 exemplos, com `origemPagamento`); Execution em `b8d52c6`). Todos os testes que precisam de um exemplo o leem dali (`test/helpers/exemplos-contrato.ts`); não há outra cópia em `test/fixtures/`.
 
 `test/contratos-billing-execution.int-spec.ts`:
 

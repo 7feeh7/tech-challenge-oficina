@@ -476,4 +476,190 @@ describe('ReconciliacaoEstornoSegundoPagamentoService', () => {
       expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
     });
   });
+  describe('registrarSegundoPagamento', () => {
+    const pagamento = {
+      cobrancaId: 'cob-1',
+      orderId: 'ORD-2',
+      valorCentavos: 500,
+    };
+    const evidencia = { eventId: 'e-0', tipoEstorno: 'INTEGRAL' };
+
+    it('abre a pendência SEGUNDO_PAGAMENTO da order, sem resolvê-la, quando não existe', async () => {
+      const { service, prisma } = montar();
+
+      await service.registrarSegundoPagamento(
+        contexto,
+        envelope(pagamento, 'e-pag'),
+        pagamento,
+        StatusOS.CANCELADA,
+      );
+
+      expect(prisma.pendenciaOs.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          ordemServicoId: 'os-1',
+          rodada: 1,
+          tipo: 'FINANCEIRA',
+          detalhes: expect.objectContaining({
+            natureza: 'SEGUNDO_PAGAMENTO',
+            orderId: 'ORD-2',
+            cobrancaId: 'cob-1',
+            eventId: 'e-pag',
+            pagamentoConfirmado: {
+              eventId: 'e-pag',
+              cobrancaId: 'cob-1',
+              valorCentavos: 500,
+            },
+          }),
+        }),
+      });
+      const { data } = prisma.pendenciaOs.create.mock.calls[0][0];
+      expect(data.resolvida).toBeUndefined();
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('omite a cobrança ausente do pagamento na pendência criada', async () => {
+      const { service, prisma } = montar();
+      const semCobranca = { orderId: 'ORD-2' };
+
+      await service.registrarSegundoPagamento(
+        contexto,
+        envelope(semCobranca, 'e-pag'),
+        semCobranca,
+        StatusOS.EM_EXECUCAO,
+      );
+
+      const { detalhes } = prisma.pendenciaOs.create.mock.calls[0][0].data;
+      expect(detalhes).not.toHaveProperty('cobrancaId');
+    });
+
+    it('completa a pendência criada antecipadamente pelo estorno sem abrir outra', async () => {
+      const { service, prisma } = montar();
+      prisma.pendenciaOs.findFirst.mockResolvedValue({
+        id: 'p-1',
+        resolvida: false,
+        detalhes: {
+          natureza: 'SEGUNDO_PAGAMENTO',
+          orderId: 'ORD-2',
+          cobrancaId: 'cob-1',
+          evidenciaEstornoBilling: evidencia,
+        },
+      });
+
+      await service.registrarSegundoPagamento(
+        contexto,
+        envelope(pagamento, 'e-pag'),
+        pagamento,
+        StatusOS.EM_EXECUCAO,
+      );
+
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+      expect(prisma.pendenciaOs.update).toHaveBeenCalledTimes(1);
+      expect(prisma.pendenciaOs.update).toHaveBeenCalledWith({
+        where: { id: 'p-1' },
+        data: {
+          detalhes: expect.objectContaining({
+            evidenciaEstornoBilling: evidencia,
+            pagamentoConfirmado: {
+              eventId: 'e-pag',
+              cobrancaId: 'cob-1',
+              valorCentavos: 500,
+            },
+          }),
+        },
+      });
+    });
+
+    it.each([StatusOS.CANCELADA, StatusOS.ENTREGUE])(
+      'resolve em %s a pendência aberta que já tinha a evidência integral do estorno',
+      async (status) => {
+        const { service, prisma } = montar();
+        prisma.pendenciaOs.findFirst.mockResolvedValue({
+          id: 'p-1',
+          resolvida: false,
+          detalhes: {
+            natureza: 'SEGUNDO_PAGAMENTO',
+            orderId: 'ORD-2',
+            evidenciaEstornoBilling: evidencia,
+          },
+        });
+
+        await service.registrarSegundoPagamento(
+          contexto,
+          envelope(pagamento, 'e-pag'),
+          pagamento,
+          status,
+        );
+
+        expect(prisma.pendenciaOs.update).toHaveBeenLastCalledWith({
+          where: { id: 'p-1' },
+          data: { resolvida: true, resolvidaEm: INSTANTE_BANCO },
+        });
+      },
+    );
+
+    it('mantém aberta em CANCELADA a pendência ainda sem evidência do estorno', async () => {
+      const { service, prisma } = montar();
+      prisma.pendenciaOs.findFirst.mockResolvedValue({
+        id: 'p-1',
+        resolvida: false,
+        detalhes: { natureza: 'SEGUNDO_PAGAMENTO', orderId: 'ORD-2' },
+      });
+
+      await service.registrarSegundoPagamento(
+        contexto,
+        envelope(pagamento, 'e-pag'),
+        pagamento,
+        StatusOS.CANCELADA,
+      );
+
+      for (const [chamada] of prisma.pendenciaOs.update.mock.calls) {
+        expect(chamada.data).not.toHaveProperty('resolvida');
+      }
+    });
+
+    it('é no-op na reentrega e na duplicata com a pendência já resolvida', async () => {
+      const { service, prisma } = montar();
+      prisma.pendenciaOs.findFirst.mockResolvedValue({
+        id: 'p-1',
+        resolvida: true,
+        detalhes: {
+          natureza: 'SEGUNDO_PAGAMENTO',
+          orderId: 'ORD-2',
+          evidenciaEstornoBilling: evidencia,
+          pagamentoConfirmado: { eventId: 'e-0' },
+        },
+      });
+
+      await service.registrarSegundoPagamento(
+        contexto,
+        envelope(pagamento, 'e-pag'),
+        pagamento,
+        StatusOS.CANCELADA,
+      );
+
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('recusa o pagamento com cobrança diferente da pendência, sem escrita', async () => {
+      const { service, prisma } = montar();
+      prisma.pendenciaOs.findFirst.mockResolvedValue({
+        id: 'p-1',
+        resolvida: false,
+        detalhes: { orderId: 'ORD-2', cobrancaId: 'cob-outra' },
+      });
+
+      await expect(
+        service.registrarSegundoPagamento(
+          contexto,
+          envelope(pagamento, 'e-pag'),
+          pagamento,
+          StatusOS.EM_EXECUCAO,
+        ),
+      ).rejects.toBeInstanceOf(ErroMensagemPermanente);
+
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+      expect(prisma.pendenciaOs.create).not.toHaveBeenCalled();
+    });
+  });
 });

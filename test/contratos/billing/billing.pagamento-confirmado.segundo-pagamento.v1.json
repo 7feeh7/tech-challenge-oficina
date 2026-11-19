@@ -1,0 +1,18 @@
+{
+  "eventId": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+  "eventType": "billing.pagamento-confirmado.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T21:18:40.000Z",
+  "source": "billing-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": null,
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "cobrancaId": "c4f8b2a1-6d3e-4f9a-8b1c-2e5d7a9f0c3b",
+    "orderId": "ORDTST02N8HJ3LFH6BI0QYCOG9T4BR9B",
+    "aprovadoEm": "2026-11-15T21:18:38.000Z",
+    "valorCentavos": 20000,
+    "origemPagamento": "SEGUNDO_PAGAMENTO"
+  }
+}

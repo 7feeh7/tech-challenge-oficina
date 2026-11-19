@@ -305,7 +305,7 @@ describe('Saga — pagamento e orders da rodada (integração)', () => {
 
   describe('EstornoConcluido e a pendência do segundo pagamento', () => {
     const estornoConcluido = (cobrancaId: string) => ({
-      ...payloadDoExemploBilling('billing.estorno-concluido.v1'),
+      ...payloadDoExemploBilling('billing.estorno-concluido.sem-origem.v1'),
       cobrancaId,
     });
 
