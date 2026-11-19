@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import {
   UNIT_OF_WORK,
   type UnitOfWork,
 } from '@/shared/database/unit-of-work.port';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { runWithObservabilityContext } from '@/shared/http/correlation-id.context';
+import { AgendadorCicloProcessador } from '@/shared/messaging/infra/agendador-ciclo-processador';
 import { ConsultaPrazoReferenciaService } from '../../application/services/consulta-prazo-referencia.service';
 import { PrismaConsultaPrazoOrdemGateway } from '../persistence/prisma-consulta-prazo-ordem.gateway';
 
@@ -21,7 +23,7 @@ export class ProcessadorPrazoReferenciaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(ProcessadorPrazoReferenciaService.name);
-  private intervalo?: NodeJS.Timeout;
+  private agendador?: AgendadorCicloProcessador;
   private readonly habilitado: boolean;
   private readonly intervaloMs: number;
   private readonly lote: number;
@@ -42,10 +44,10 @@ export class ProcessadorPrazoReferenciaService
         '10000',
     );
     this.lote = Number(
-      this.config.get<string>('PRAZO_REFERENCIA_VERIFICADOR_LOTE') ?? '10',
+      this.config.get<string>('PRAZO_REFERENCIA_VERIFICADOR_LOTE') ?? '5',
     );
     this.posseMs = Number(
-      this.config.get<string>('PRAZO_REFERENCIA_REIVINDICACAO_MS') ?? '60000',
+      this.config.get<string>('PRAZO_REFERENCIA_REIVINDICACAO_MS') ?? '150000',
     );
   }
 
@@ -53,17 +55,17 @@ export class ProcessadorPrazoReferenciaService
     if (!this.habilitado) {
       return;
     }
-    this.intervalo = setInterval(() => {
-      void this.processarLote().catch((erro) =>
-        this.logger.error('Falha no verificador de prazo de referência', erro),
-      );
-    }, this.intervaloMs);
+    this.agendador = new AgendadorCicloProcessador(
+      this.intervaloMs,
+      () => this.processarLote(),
+      this.logger,
+      'Falha no verificador de prazo de referência',
+    );
+    this.agendador.iniciar();
   }
 
-  onModuleDestroy(): void {
-    if (this.intervalo) {
-      clearInterval(this.intervalo);
-    }
+  async onModuleDestroy(): Promise<void> {
+    await this.agendador?.parar();
   }
 
   async processarLote(): Promise<void> {
@@ -72,12 +74,21 @@ export class ProcessadorPrazoReferenciaService
       this.posseMs,
     );
     for (const ordemServicoId of ids) {
-      const meta = await this.prisma.ordemServico.findUnique({
+      await this.emitirConsultaDaOrdem(ordemServicoId);
+    }
+  }
+
+  // A leitura do correlationId fica na mesma transação da emissão: cada OS usa uma
+  // conexão só, o que mantém o pior caso por OS em espera por conexão + transação.
+  private async emitirConsultaDaOrdem(ordemServicoId: string): Promise<void> {
+    await this.unitOfWork.executar(async (contexto) => {
+      const cliente = obterClienteTransacao(contexto, this.prisma);
+      const meta = await cliente.ordemServico.findUnique({
         where: { id: ordemServicoId },
         select: { correlationId: true, rodadaVigente: true },
       });
       if (!meta) {
-        continue;
+        return;
       }
       await runWithObservabilityContext(
         {
@@ -85,17 +96,14 @@ export class ProcessadorPrazoReferenciaService
           ordemServicoId,
           rodada: meta.rodadaVigente,
         },
-        async () => {
-          await this.unitOfWork.executar(async (contexto) => {
-            await this.consulta.emitirConsultaVigente(
-              contexto,
-              ordemServicoId,
-              randomUUID(),
-              false,
-            );
-          });
-        },
+        () =>
+          this.consulta.emitirConsultaVigente(
+            contexto,
+            ordemServicoId,
+            randomUUID(),
+            false,
+          ),
       );
-    }
+    });
   }
 }

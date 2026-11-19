@@ -1,5 +1,14 @@
 name: Deploy Application
 
+# Uma run por commit na main: test → build → migration → deploy, cada job por `needs`.
+# A imagem é construída uma vez (tag = SHA do commit) e a migration e o rollout usam
+# essa mesma tag. Se a migration falhar, o rollout não roda e o Deployment anterior
+# segue no ar. Não há espera por outro workflow nem `workflow_run`.
+#
+# A fila os-in e a DLQ (terraform/) ficam no terraform.yml, só por disparo manual e
+# antes desta run (runbook, passo 6.2): o deploy lê os parâmetros SSM que ele publica.
+# Pontos de aprovação: cada job com `environment: producao` pede a aprovação
+# configurada no environment (build, migration e deploy).
 on:
   push:
     branches: [main]
@@ -13,6 +22,8 @@ env:
   K8S_NAMESPACE: oficina
   TF_ENVIRONMENT: producao
 
+# O GitHub mantém uma run em execução e uma pendente por grupo: uma nova run cancela
+# a pendente, mesmo com cancel-in-progress false.
 concurrency:
   group: deploy-producao
   cancel-in-progress: false
@@ -39,8 +50,8 @@ jobs:
       - run: yarn build
       - run: yarn test:cov
 
-  deploy:
-    name: Deploy no EKS
+  build:
+    name: Build e push da imagem
     if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
@@ -56,119 +67,140 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Resolver parametros via SSM
-        id: ssm
-        run: |
-          PREFIX="/tech-challenge/${{ env.TF_ENVIRONMENT }}"
-          ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
-          EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
-          DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
-          JWT_PRIVATE_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
-          JWT_PUBLIC_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_public_secret_arn" --query Parameter.Value --output text)
-          TOKEN_BILLING_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_billing_os_secret_arn" --query Parameter.Value --output text)
-          TOKEN_EXECUTION_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_execution_os_secret_arn" --query Parameter.Value --output text)
-          TOKEN_AUTH_CPF_OS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/token_auth_cpf_os_secret_arn" --query Parameter.Value --output text)
-          SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
-          IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
-          API_GATEWAY_URL=$(aws ssm get-parameter --name "${PREFIX}/infra/api_gateway_url" --query Parameter.Value --output text)
-          echo "ecr=$ECR" >> $GITHUB_OUTPUT
-          echo "eks=$EKS" >> $GITHUB_OUTPUT
-          echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
-          echo "jwt_private_arn=$JWT_PRIVATE_ARN" >> $GITHUB_OUTPUT
-          echo "jwt_public_arn=$JWT_PUBLIC_ARN" >> $GITHUB_OUTPUT
-          echo "token_billing_os_arn=$TOKEN_BILLING_OS_ARN" >> $GITHUB_OUTPUT
-          echo "token_execution_os_arn=$TOKEN_EXECUTION_OS_ARN" >> $GITHUB_OUTPUT
-          echo "token_auth_cpf_os_arn=$TOKEN_AUTH_CPF_OS_ARN" >> $GITHUB_OUTPUT
-          echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
-          echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
-          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
-
-      - name: Montar DATABASE_URL a partir do Secrets Manager
-        id: db
-        run: |
-          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.db_arn }}" --query SecretString --output text)
-          USER=$(echo "$SECRET" | jq -r .username)
-          PASS=$(echo "$SECRET" | jq -r .password)
-          HOST=$(echo "$SECRET" | jq -r .host)
-          PORT=$(echo "$SECRET" | jq -r .port)
-          DB=$(echo "$SECRET" | jq -r .dbname)
-          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public"
-          echo "database_url=$URL" >> $GITHUB_OUTPUT
-
-      - name: Obter segredos JWT e tokens internos
-        id: secrets
-        env:
-          JWT_PRIVATE_ARN: ${{ steps.ssm.outputs.jwt_private_arn }}
-          JWT_PUBLIC_ARN: ${{ steps.ssm.outputs.jwt_public_arn }}
-          TOKEN_BILLING_OS_ARN: ${{ steps.ssm.outputs.token_billing_os_arn }}
-          TOKEN_EXECUTION_OS_ARN: ${{ steps.ssm.outputs.token_execution_os_arn }}
-          TOKEN_AUTH_CPF_OS_ARN: ${{ steps.ssm.outputs.token_auth_cpf_os_arn }}
-        run: |
-          PRIV_JSON=$(aws secretsmanager get-secret-value --secret-id "$JWT_PRIVATE_ARN" --query SecretString --output text)
-          PUB_JSON=$(aws secretsmanager get-secret-value --secret-id "$JWT_PUBLIC_ARN" --query SecretString --output text)
-          JWT_PRIVATE=$(echo "$PRIV_JSON" | jq -r 'if .privateKey then .privateKey elif .private_key then .private_key else . end')
-          JWT_PUBLIC=$(echo "$PUB_JSON" | jq -r 'if .publicKey then .publicKey elif .public_key then .public_key else . end')
-          TOKEN_BILLING=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_BILLING_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
-          TOKEN_EXECUTION=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_EXECUTION_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
-          TOKEN_AUTH_CPF=$(aws secretsmanager get-secret-value --secret-id "$TOKEN_AUTH_CPF_OS_ARN" --query SecretString --output text | jq -r 'if .token then .token else . end')
-          echo "jwt_private<<EOF" >> $GITHUB_OUTPUT
-          echo "$JWT_PRIVATE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "jwt_public<<EOF" >> $GITHUB_OUTPUT
-          echo "$JWT_PUBLIC" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "::add-mask::$TOKEN_BILLING"
-          echo "::add-mask::$TOKEN_EXECUTION"
-          echo "::add-mask::$TOKEN_AUTH_CPF"
-          echo "token_billing=$TOKEN_BILLING" >> $GITHUB_OUTPUT
-          echo "token_execution=$TOKEN_EXECUTION" >> $GITHUB_OUTPUT
-          echo "token_auth_cpf=$TOKEN_AUTH_CPF" >> $GITHUB_OUTPUT
-
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build e push imagem (SHA imutavel)
         env:
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          ECR_REPOSITORY=$(parametro infra/ecr_repository_url)
           docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
 
+  migration:
+    name: Migration (Job no EKS)
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # O Job é removido ao fim da ação, antes do job de deploy: não soma conexões ao surge do rollout.
+      - uses: ./.github/actions/migration-os
+        with:
+          image-tag: ${{ github.sha }}
+
+  deploy:
+    name: Deploy no EKS
+    if: github.ref == 'refs/heads/main'
+    needs: migration
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Configurar kubectl
         run: |
-          aws eks update-kubeconfig \
-            --region "$AWS_REGION" \
-            --name "${{ steps.ssm.outputs.eks }}"
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          EKS_CLUSTER=$(parametro infra/eks_cluster_name)
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER"
 
-      - name: ServiceAccount e ConfigMap
-        env:
-          SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
-          IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
-          API_GATEWAY_URL: ${{ steps.ssm.outputs.api_gateway_url }}
+      # Só este job lê o ARN da IRSA: é ele que anota a ServiceAccount `oficina-api`.
+      - name: ServiceAccount (IRSA)
         run: |
-          sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
-          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" \
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          IRSA_ARN=$(parametro infra/os_service_irsa_role_arn)
+          sed "s|OS_SERVICE_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
+
+      # Os valores do SSM são lidos e aplicados no mesmo passo: não passam por
+      # `env:` nem por *output*, que apareceriam no log.
+      - name: ConfigMap
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          SNS_NOTIFICACAO_TOPIC_ARN=$(parametro infra/sns_notificacao_topic_arn)
+          API_GATEWAY_URL=$(parametro infra/api_gateway_url)
+          SQS_OS_IN_URL=$(parametro infra/os_in_queue_url)
+          SQS_OS_IN_DLQ_URL=$(parametro infra/os_in_dlq_url)
+          SQS_BILLING_IN_URL=$(parametro infra/billing_in_queue_url)
+          SQS_EXECUTION_IN_URL=$(parametro infra/execution_in_queue_url)
+          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_NOTIFICACAO_TOPIC_ARN}|g" \
               -e "s|__API_GATEWAY_URL__|${API_GATEWAY_URL}|g" \
+              -e "s|__SQS_OS_IN_URL__|${SQS_OS_IN_URL}|g" \
+              -e "s|__SQS_OS_IN_DLQ_URL__|${SQS_OS_IN_DLQ_URL}|g" \
+              -e "s|__SQS_BILLING_IN_URL__|${SQS_BILLING_IN_URL}|g" \
+              -e "s|__SQS_EXECUTION_IN_URL__|${SQS_EXECUTION_IN_URL}|g" \
               k8s/configmap.yaml | kubectl apply -f -
 
-      - name: Secret do Kubernetes
+      # Só o deploy cria o `oficina-secret` (chave JWT e tokens). A migration usa o Secret
+      # próprio, só com DATABASE_URL. Cada valor é lido, mascarado e aplicado neste passo.
+      - name: Secret da aplicação
+        env:
+          ADMIN_SENHA: ${{ secrets.ADMIN_SENHA }}
         run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+
+          montar_database_url
+
+          jwt_privada=$(segredo infra/jwt_secret_arn)
+          JWT_PRIVATE_KEY=$(jq -r 'if .privateKey then .privateKey elif .private_key then .private_key else . end' <<< "$jwt_privada")
+          mascarar "$JWT_PRIVATE_KEY"
+
+          jwt_publica=$(segredo infra/jwt_public_secret_arn)
+          JWT_PUBLIC_KEY=$(jq -r 'if .publicKey then .publicKey elif .public_key then .public_key else . end' <<< "$jwt_publica")
+
+          token_billing=$(segredo infra/token_billing_os_secret_arn)
+          TOKEN_BILLING_OS=$(jq -r 'if .token then .token else . end' <<< "$token_billing")
+          mascarar "$TOKEN_BILLING_OS"
+
+          token_execution=$(segredo infra/token_execution_os_secret_arn)
+          TOKEN_EXECUTION_OS=$(jq -r 'if .token then .token else . end' <<< "$token_execution")
+          mascarar "$TOKEN_EXECUTION_OS"
+
+          token_auth_cpf=$(segredo infra/token_auth_cpf_os_secret_arn)
+          TOKEN_AUTH_CPF_OS=$(jq -r 'if .token then .token else . end' <<< "$token_auth_cpf")
+          mascarar "$TOKEN_AUTH_CPF_OS"
+
           kubectl create secret generic oficina-secret \
             --namespace "$K8S_NAMESPACE" \
-            --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
-            --from-literal=JWT_PRIVATE_KEY='${{ steps.secrets.outputs.jwt_private }}' \
-            --from-literal=JWT_PUBLIC_KEY='${{ steps.secrets.outputs.jwt_public }}' \
-            --from-literal=TOKEN_BILLING_OS='${{ steps.secrets.outputs.token_billing }}' \
-            --from-literal=TOKEN_EXECUTION_OS='${{ steps.secrets.outputs.token_execution }}' \
-            --from-literal=TOKEN_AUTH_CPF_OS='${{ steps.secrets.outputs.token_auth_cpf }}' \
-            --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=JWT_PRIVATE_KEY="$JWT_PRIVATE_KEY" \
+            --from-literal=JWT_PUBLIC_KEY="$JWT_PUBLIC_KEY" \
+            --from-literal=TOKEN_BILLING_OS="$TOKEN_BILLING_OS" \
+            --from-literal=TOKEN_EXECUTION_OS="$TOKEN_EXECUTION_OS" \
+            --from-literal=TOKEN_AUTH_CPF_OS="$TOKEN_AUTH_CPF_OS" \
+            --from-literal=ADMIN_SENHA="$ADMIN_SENHA" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deployment, Service, PDB e HPA
         env:
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          ECR_REPOSITORY=$(parametro infra/ecr_repository_url)
           sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${ECR_REPOSITORY}:${IMAGE_TAG}|g" \
               -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
               k8s/deployment.yaml | kubectl apply -f -

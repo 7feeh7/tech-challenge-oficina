@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { executarTransacaoComLimite } from '@/shared/database/executar-transacao-com-limite';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { METRIC_NAMES } from './observability.config';
 import { MetricsService } from './metrics.service';
@@ -30,19 +31,26 @@ export class MessagingMetricsService {
     ]);
   }
 
-  async recordOutboxBacklog(): Promise<void> {
+  // As duas consultas dividem uma transação para que `limiteMs` valha para o conjunto.
+  async recordOutboxBacklog(limiteMs: number): Promise<void> {
     await safeTelemetryAsync(async () => {
       const agora = new Date();
-      const pendentes = await this.prisma.outboxMensagem.count({
-        where: { enviadoEm: null },
-      });
+      const { pendentes, maisAntiga } = await executarTransacaoComLimite(
+        this.prisma,
+        limiteMs,
+        async (tx) => ({
+          pendentes: await tx.outboxMensagem.count({
+            where: { enviadoEm: null },
+          }),
+          maisAntiga: await tx.outboxMensagem.findFirst({
+            where: { enviadoEm: null },
+            orderBy: { criadoEm: 'asc' },
+            select: { criadoEm: true },
+          }),
+        }),
+      );
       this.metrics.gauge(METRIC_NAMES.outboxPendentes, pendentes);
 
-      const maisAntiga = await this.prisma.outboxMensagem.findFirst({
-        where: { enviadoEm: null },
-        orderBy: { criadoEm: 'asc' },
-        select: { criadoEm: true },
-      });
       const idadeSegundos = maisAntiga
         ? (agora.getTime() - maisAntiga.criadoEm.getTime()) / 1000
         : 0;

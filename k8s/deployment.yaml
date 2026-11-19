@@ -28,8 +28,9 @@ spec:
         ad.datadoghq.com/api.init_configs: '[{}]'
         ad.datadoghq.com/api.instances: '[{"name":"oficina-api-health","url":"http://%%host%%:3000/health","timeout":5}]'
     spec:
-      # Pior caso e margem SDK: docs/local/mensageria-processadores-os.md e Saída E12.
-      terminationGracePeriodSeconds: 330
+      # Pior caso do encerramento (consumidor, publicador e verificador de prazo, mais
+      # fechamento do HTTP e margem): docs/tempos-processadores-os.md.
+      terminationGracePeriodSeconds: 1020
       serviceAccountName: oficina-api
       securityContext:
         runAsNonRoot: true

@@ -13,6 +13,30 @@ import { PublicadorOutboxService } from './publicador-outbox.service';
 const jsonLogger = criarJsonLoggerMensageriaFake();
 const mensageriaMetrics = criarMessagingMetricsFake();
 
+// As gravações curtas do publicador passam por `$transaction` para ter limite de execução.
+function criarPrismaFake(
+  updateMany: jest.Mock,
+  mensagensReivindicadas: unknown[] = [],
+) {
+  const tx = {
+    $queryRaw: jest.fn().mockResolvedValue(
+      mensagensReivindicadas.map((mensagem) => ({
+        id: (mensagem as { id: string }).id,
+      })),
+    ),
+    outboxMensagem: {
+      updateMany,
+      findMany: jest.fn().mockResolvedValue(mensagensReivindicadas),
+    },
+  };
+  return {
+    tx,
+    $transaction: jest.fn((trabalho: (cliente: unknown) => Promise<unknown>) =>
+      trabalho(tx),
+    ),
+  };
+}
+
 describe('PublicadorOutboxService', () => {
   it('não agenda publicação quando habilitado ausente ou diferente de true', () => {
     for (const valor of [undefined, 'false', '1', '']) {
@@ -57,18 +81,7 @@ describe('PublicadorOutboxService', () => {
       tokenReivindicacao: 'tok-1',
     };
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
-          outboxMensagem: {
-            updateMany: jest.fn(),
-            findMany: jest.fn().mockResolvedValue([mensagem]),
-          },
-        }),
-      ),
-      outboxMensagem: { updateMany },
-    };
+    const prisma = criarPrismaFake(updateMany, [mensagem]);
     const fila = { enviar: jest.fn().mockResolvedValue(undefined) };
     const config = {
       get: jest.fn((k: string) => {
@@ -112,18 +125,7 @@ describe('PublicadorOutboxService', () => {
       tokenReivindicacao: 'tok-2',
     };
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          $queryRaw: jest.fn().mockResolvedValue([{ id: 'm2' }]),
-          outboxMensagem: {
-            updateMany: jest.fn(),
-            findMany: jest.fn().mockResolvedValue([mensagem]),
-          },
-        }),
-      ),
-      outboxMensagem: { updateMany },
-    };
+    const prisma = criarPrismaFake(updateMany, [mensagem]);
     const notificacao = { publicar: jest.fn().mockResolvedValue(undefined) };
     const config = {
       get: jest.fn().mockReturnValue('true'),
@@ -180,7 +182,7 @@ describe('PublicadorOutboxService', () => {
       getOrThrow: jest.fn().mockReturnValue('https://sqs/billing'),
     } as unknown as ConfigService;
     const service = new PublicadorOutboxService(
-      { outboxMensagem: { updateMany } } as never,
+      criarPrismaFake(updateMany) as never,
       config,
       fila as never,
       { publicar: jest.fn() },
@@ -206,11 +208,7 @@ describe('PublicadorOutboxService', () => {
       getOrThrow: jest.fn().mockReturnValue('https://sqs/execution'),
     } as unknown as ConfigService;
     const service = new PublicadorOutboxService(
-      {
-        outboxMensagem: {
-          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        },
-      } as never,
+      criarPrismaFake(jest.fn().mockResolvedValue({ count: 1 })) as never,
       config,
       fila as never,
       { publicar: jest.fn() },
@@ -256,18 +254,7 @@ describe('PublicadorOutboxService', () => {
       tokenReivindicacao: 'tok-1',
     };
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          $queryRaw: jest.fn().mockResolvedValue([{ id: 'm1' }]),
-          outboxMensagem: {
-            updateMany: jest.fn(),
-            findMany: jest.fn().mockResolvedValue([mensagem]),
-          },
-        }),
-      ),
-      outboxMensagem: { updateMany },
-    };
+    const prisma = criarPrismaFake(updateMany, [mensagem]);
     const fila = { enviar: jest.fn().mockRejectedValue(new Error('SQS down')) };
     const config = {
       get: jest.fn((k: string) => {
@@ -311,7 +298,7 @@ describe('PublicadorOutboxService', () => {
       enviar: jest.fn().mockRejectedValue(new Error('falha')),
     };
     const service = new PublicadorOutboxService(
-      { outboxMensagem: { updateMany } } as never,
+      criarPrismaFake(updateMany) as never,
       config,
       fila as never,
       { publicar: jest.fn() },
@@ -334,5 +321,103 @@ describe('PublicadorOutboxService', () => {
     const diff = chamada.data.bloqueadoAte.getTime() - Date.now();
     expect(diff).toBeGreaterThanOrEqual(esperadoMs - 50);
     expect(diff).toBeLessThanOrEqual(esperadoMs + 50);
+  });
+
+  describe('limites de tempo', () => {
+    const mensagem = {
+      id: 'm1',
+      eventId: 'e1',
+      destino: DESTINO_FILA_BILLING,
+      envelope: { eventId: 'e1' },
+      correlationId: 'c',
+      tokenReivindicacao: 'tok-1',
+    };
+
+    const criarServico = (
+      prisma: ReturnType<typeof criarPrismaFake>,
+      enviar: jest.Mock,
+      valores: Record<string, string> = {},
+    ) =>
+      new PublicadorOutboxService(
+        prisma as never,
+        {
+          get: jest.fn((chave: string) => valores[chave]),
+          getOrThrow: jest.fn().mockReturnValue('https://sqs/billing'),
+        } as unknown as ConfigService,
+        { enviar } as never,
+        { publicar: jest.fn() },
+        jsonLogger,
+        mensageriaMetrics,
+      );
+
+    it('limita reivindicação, confirmação e backlog ao OUTBOX_PERSISTENCIA_MS', async () => {
+      const prisma = criarPrismaFake(
+        jest.fn().mockResolvedValue({ count: 1 }),
+        [mensagem],
+      );
+      const metrics = criarMessagingMetricsFake();
+      const service = new PublicadorOutboxService(
+        prisma as never,
+        {
+          get: jest.fn((chave: string) =>
+            chave === 'OUTBOX_PERSISTENCIA_MS' ? '1234' : undefined,
+          ),
+          getOrThrow: jest.fn().mockReturnValue('https://sqs/billing'),
+        } as unknown as ConfigService,
+        { enviar: jest.fn().mockResolvedValue(undefined) } as never,
+        { publicar: jest.fn() },
+        jsonLogger,
+        metrics,
+      );
+
+      await service.publicarLote();
+
+      // reivindicação + confirmação
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(
+        prisma.tx.$queryRaw.mock.calls.map(([, limite]) => limite),
+      ).toEqual(expect.arrayContaining(['1234']));
+      for (const [, opcoes] of prisma.$transaction.mock.calls) {
+        expect(opcoes).toEqual({ timeout: 1234 });
+      }
+      expect(metrics.recordOutboxBacklog).toHaveBeenCalledWith(1234);
+    });
+
+    it('limita a liberação da mensagem após falha de envio ao OUTBOX_PERSISTENCIA_MS', async () => {
+      const prisma = criarPrismaFake(jest.fn().mockResolvedValue({ count: 1 }));
+      const service = criarServico(
+        prisma,
+        jest.fn().mockRejectedValue(new Error('SQS down')),
+        { OUTBOX_PERSISTENCIA_MS: '777' },
+      );
+
+      await service.publicarMensagemReivindicada(mensagem);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        timeout: 777,
+      });
+    });
+
+    it('usa 5000 ms de persistência e 450000 ms de posse por padrão', async () => {
+      const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      const prisma = criarPrismaFake(updateMany, [mensagem]);
+      const service = criarServico(
+        prisma,
+        jest.fn().mockResolvedValue(undefined),
+      );
+
+      const antes = Date.now();
+      await service.reivindicarLote();
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        timeout: 5000,
+      });
+      const { bloqueadoAte } = (
+        updateMany.mock.calls[0][0] as { data: { bloqueadoAte: Date } }
+      ).data;
+      expect(bloqueadoAte.getTime() - antes).toBeGreaterThanOrEqual(450_000);
+      expect(bloqueadoAte.getTime() - antes).toBeLessThan(451_000);
+    });
   });
 });
