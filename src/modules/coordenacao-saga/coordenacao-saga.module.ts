@@ -21,14 +21,22 @@ import { ORDEM_SERVICO_GATEWAY } from '@/modules/ordens-servico/application/port
 import type { OrdemServicoGateway } from '@/modules/ordens-servico/application/ports/ordem-servico.gateway';
 import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/application/services/transicao-ordem-servico.service';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { IdempotencyModule } from '@/shared/idempotency/idempotency.module';
+import { IdempotencyService } from '@/shared/idempotency/idempotency.service';
+import type { RetomadaSagaInventarioPort } from '@/shared/saga/retomada-saga-inventario.port';
 import { COMPENSACAO_AVANCO } from '@/shared/saga/compensacao-avanco.port';
 import { RETOMADA_SAGA_INVENTARIO } from '@/shared/saga/retomada-saga-inventario.port';
 import {
   ESTADO_COMPENSACAO_GATEWAY,
   PEDIDO_EMITIDO_GATEWAY,
+  PENDENCIA_OS_GATEWAY,
   PROJECAO_FINANCEIRA_GATEWAY,
 } from './application/ports/tokens';
+import type { PendenciaOsGateway } from './application/ports/pendencia-os.gateway';
 import { ReagirFatoSagaUseCase } from './application/use-cases/reagir-fato-saga.use-case';
+import { ResolverPendenciaManualUseCase } from './application/use-cases/resolver-pendencia-manual.use-case';
+import { PendenciasOsController } from './infra/http/controllers/pendencias-os.controller';
+import { PrismaPendenciaOsGateway } from './infra/persistence/prisma-pendencia-os.gateway';
 import { PrismaPedidoEmitidoGateway } from './infra/persistence/prisma-pedido-emitido.gateway';
 import { PrismaProjecaoFinanceiraGateway } from './infra/persistence/prisma-projecao-financeira.gateway';
 import { PrismaEstadoCompensacaoGateway } from './infra/persistence/prisma-estado-compensacao.gateway';
@@ -46,11 +54,13 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 @Module({
   imports: [
     PrismaModule,
+    IdempotencyModule,
     ObservabilityModule,
     forwardRef(() => MensageriaModule),
     forwardRef(() => OrdensServicoModule),
     forwardRef(() => ReservasEstoqueModule),
   ],
+  controllers: [PendenciasOsController],
   providers: [
     PrismaPedidoEmitidoGateway,
     PrismaProjecaoFinanceiraGateway,
@@ -66,6 +76,11 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
     {
       provide: ESTADO_COMPENSACAO_GATEWAY,
       useExisting: PrismaEstadoCompensacaoGateway,
+    },
+    PrismaPendenciaOsGateway,
+    {
+      provide: PENDENCIA_OS_GATEWAY,
+      useExisting: PrismaPendenciaOsGateway,
     },
     {
       provide: ComandosSagaOutboxService,
@@ -158,6 +173,36 @@ import { OsMetricsService } from '@/shared/observability/os-metrics.service';
     {
       provide: RETOMADA_SAGA_INVENTARIO,
       useExisting: RetomadaSagaInventarioService,
+    },
+    {
+      provide: ResolverPendenciaManualUseCase,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        pendencias: PendenciaOsGateway,
+        reservas: ReservaEstoqueGateway,
+        retomadaInventario: RetomadaSagaInventarioPort,
+        unitOfWork: UnitOfWork,
+        idempotency: IdempotencyService,
+        prisma: PrismaService,
+      ) =>
+        new ResolverPendenciaManualUseCase(
+          ordens,
+          pendencias,
+          reservas,
+          retomadaInventario,
+          unitOfWork,
+          idempotency,
+          prisma,
+        ),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        PENDENCIA_OS_GATEWAY,
+        RESERVA_ESTOQUE_GATEWAY,
+        RETOMADA_SAGA_INVENTARIO,
+        UNIT_OF_WORK,
+        IdempotencyService,
+        PrismaService,
+      ],
     },
     {
       provide: ConsultaPrazoReferenciaService,

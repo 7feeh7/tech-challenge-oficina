@@ -148,6 +148,12 @@ export interface ReservaEstoqueGateway {
     },
   ): Promise<{ ordemServicoId: string; pendenciaResolvida: boolean }>;
 
+  /** Ids das peças divergentes que existem no catálogo; as demais estão fora dele. */
+  listarPecasDivergentesNoCatalogo(
+    contexto: ContextoTransacao,
+    divergencias: { pecaId: string }[],
+  ): Promise<string[]>;
+
   resolverConsumoManualInicial(
     contexto: ContextoTransacao,
     input: {

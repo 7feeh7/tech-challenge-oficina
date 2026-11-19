@@ -4,3 +4,16 @@
  * compensação, e nenhum fato do Billing a resolve.
  */
 export const NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO = 'SEGUNDO_PAGAMENTO';
+
+/**
+ * Pendência financeira de `PagamentoTardioRegistrado`: a natureza e o
+ * `tratamento` do Billing são gravados na abertura para que a resolução manual
+ * reconheça só o estorno que o Billing já confirmou por conta própria.
+ */
+export const NATUREZA_PENDENCIA_PAGAMENTO_TARDIO = 'PAGAMENTO_TARDIO';
+export const TRATAMENTO_PAGAMENTO_TARDIO_ESTORNO_AUTOMATICO =
+  'ESTORNO_AUTOMATICO';
+
+/** Chave de `detalhes` com o estorno do segundo pagamento confirmado pelo Billing. */
+export const CHAVE_EVIDENCIA_ESTORNO_BILLING = 'evidenciaEstornoBilling';
+export const TIPO_ESTORNO_INTEGRAL = 'INTEGRAL';

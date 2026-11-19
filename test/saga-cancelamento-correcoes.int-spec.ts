@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { ErroMensagemPermanente } from '@/shared/messaging/domain/mensageria.errors';
 import {
   SituacaoReconciliacaoConsumo,
   StatusOS,
@@ -375,6 +376,34 @@ describe('Saga — cancelamento: correções do complemento da E32 (integração
           COMANDO_CANCELAR_FINANCEIRO,
         ),
       ).toBe(0);
+      expect(
+        await prisma.outboxMensagem.count({
+          where: { correlationId: os.correlationId },
+        }),
+      ).toBe(outboxAntes);
+    });
+  });
+
+  describe('INTERRUPCAO_SOLICITADA só vale para reparo', () => {
+    it('é recusada para o diagnóstico antes de qualquer efeito na compensação', async () => {
+      const pecaId = await novaPeca();
+      const os = await prepararEmCancelamentoDoReparo([
+        { pecaId, quantidade: 1 },
+      ]);
+      const estadoAntes = await estadoDaCompensacao(os.osId);
+      const outboxAntes = await prisma.outboxMensagem.count({
+        where: { correlationId: os.correlationId },
+      });
+
+      await expect(
+        entregar(servicos, os, EVENTO_RESPOSTA_CANCELAMENTO_EXECUCAO, {
+          tipoTarefa: 'DIAGNOSTICO',
+          resultado: 'INTERRUPCAO_SOLICITADA',
+        }),
+      ).rejects.toThrow(ErroMensagemPermanente);
+
+      expect(await statusDaOs(prisma, os.osId)).toBe(StatusOS.EM_CANCELAMENTO);
+      expect(await estadoDaCompensacao(os.osId)).toEqual(estadoAntes);
       expect(
         await prisma.outboxMensagem.count({
           where: { correlationId: os.correlationId },

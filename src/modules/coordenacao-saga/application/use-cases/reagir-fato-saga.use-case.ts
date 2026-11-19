@@ -39,7 +39,12 @@ import { TransicaoOrdemServicoService } from '@/modules/ordens-servico/applicati
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ConsumirReservaEstoqueUseCase } from '@/modules/reservas-estoque/application/use-cases/consumir-reserva-estoque.use-case';
 import type { ReservaEstoqueGateway } from '@/modules/reservas-estoque/application/ports/reserva-estoque.gateway';
-import { NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO } from '../../domain/natureza-pendencia-financeira';
+import {
+  CHAVE_EVIDENCIA_ESTORNO_BILLING,
+  NATUREZA_PENDENCIA_PAGAMENTO_TARDIO,
+  NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO,
+  TIPO_ESTORNO_INTEGRAL,
+} from '../../domain/natureza-pendencia-financeira';
 import { AcaoDecisao } from '../../domain/acao-decisao';
 import { decidir } from '../../domain/decidir';
 import type { OrdemParaDecisao } from '../../domain/ordem-para-decisao';
@@ -85,6 +90,19 @@ interface PagamentoConfirmadoPayload {
   valorCentavos?: number;
 }
 
+interface PagamentoTardioPayload extends PagamentoConfirmadoPayload {
+  tratamento?: string;
+}
+
+interface EstornoConcluidoPayload {
+  cobrancaId?: string;
+  orderId?: string;
+  valorEstornadoCentavos?: number;
+  tipoEstorno?: string;
+  estornadoEm?: string;
+  statusOrderMercadoPago?: string;
+}
+
 interface DivergenciaReparoPayload {
   itemId: string;
   tipo?: string;
@@ -117,6 +135,8 @@ const STATUS_COM_SEGUNDO_PAGAMENTO = [
   StatusOS.EM_EXECUCAO,
   ...STATUS_ENCERRADOS,
 ];
+
+const STATUS_EM_EXECUCAO = [StatusOS.AGUARDANDO_EXECUCAO, StatusOS.EM_EXECUCAO];
 
 export class ReagirFatoSagaUseCase {
   constructor(
@@ -406,14 +426,18 @@ export class ReagirFatoSagaUseCase {
           bloqueada.ordem.status,
         );
         break;
-      case TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO:
+      case TipoFatoSaga.PAGAMENTO_TARDIO_REGISTRADO: {
+        const payloadTardio = envelope.payload as PagamentoTardioPayload;
         await this.abrirPendenciaFinanceira(
           contexto,
           envelope,
-          envelope.payload as PagamentoConfirmadoPayload,
+          payloadTardio,
           'Pagamento tardio registrado após encerramento',
+          NATUREZA_PENDENCIA_PAGAMENTO_TARDIO,
+          payloadTardio.tratamento,
         );
         break;
+      }
       default:
         break;
     }
@@ -611,6 +635,13 @@ export class ReagirFatoSagaUseCase {
     envelope: EnvelopeMensagem,
     status: StatusOS,
   ): Promise<void> {
+    if (envelope.eventType === EVENTO_ESTORNO_CONCLUIDO) {
+      await this.registrarEvidenciaEstornoSegundoPagamento(contexto, envelope);
+      // Em execução o estorno só deixa a evidência; nenhuma pendência é resolvida.
+      if (STATUS_EM_EXECUCAO.includes(status)) {
+        return;
+      }
+    }
     const payload = envelope.payload as {
       pendenciaId?: string;
       cobrancaId?: string;
@@ -651,6 +682,65 @@ export class ReagirFatoSagaUseCase {
         envelope.eventId,
       );
     }
+  }
+
+  private async registrarEvidenciaEstornoSegundoPagamento(
+    contexto: ContextoTransacao,
+    envelope: EnvelopeMensagem,
+  ): Promise<void> {
+    const payload = envelope.payload as EstornoConcluidoPayload;
+    if (!payload.orderId) {
+      return;
+    }
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const pendencia = await cliente.pendenciaOs.findFirst({
+      where: {
+        ordemServicoId: envelope.ordemServicoId,
+        tipo: TipoPendenciaOs.FINANCEIRA,
+        resolvida: false,
+        AND: [
+          {
+            detalhes: {
+              path: ['natureza'],
+              equals: NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO,
+            },
+          },
+          { detalhes: { path: ['orderId'], equals: payload.orderId } },
+        ],
+      },
+    });
+    if (!pendencia) {
+      return;
+    }
+    const detalhes = pendencia.detalhes as Record<string, unknown>;
+    const evidenciaAtual = detalhes[CHAVE_EVIDENCIA_ESTORNO_BILLING] as
+      | { eventId?: string; tipoEstorno?: string }
+      | undefined;
+    // Reentrega do mesmo evento é no-op; um estorno parcial posterior não
+    // substitui a evidência integral já registrada.
+    if (
+      evidenciaAtual?.eventId === envelope.eventId ||
+      evidenciaAtual?.tipoEstorno === TIPO_ESTORNO_INTEGRAL
+    ) {
+      return;
+    }
+    await cliente.pendenciaOs.update({
+      where: { id: pendencia.id },
+      data: {
+        detalhes: {
+          ...detalhes,
+          [CHAVE_EVIDENCIA_ESTORNO_BILLING]: {
+            eventId: envelope.eventId,
+            cobrancaId: payload.cobrancaId,
+            orderId: payload.orderId,
+            valorEstornadoCentavos: payload.valorEstornadoCentavos,
+            tipoEstorno: payload.tipoEstorno,
+            estornadoEm: payload.estornadoEm,
+            statusOrderMercadoPago: payload.statusOrderMercadoPago,
+          },
+        },
+      },
+    });
   }
 
   private async registrarPagamento(
@@ -790,6 +880,7 @@ export class ReagirFatoSagaUseCase {
     payload: Partial<PagamentoConfirmadoPayload>,
     motivo: string,
     natureza?: string,
+    tratamento?: string,
   ): Promise<void> {
     const cliente = obterClienteTransacao(contexto, this.prisma);
     // O pagamento tardio não traz orderId: a cobrança identifica a pendência,
@@ -817,6 +908,7 @@ export class ReagirFatoSagaUseCase {
         tipo: TipoPendenciaOs.FINANCEIRA,
         detalhes: {
           ...(natureza ? { natureza } : {}),
+          ...(tratamento ? { tratamento } : {}),
           ...(payload.orderId ? { orderId: payload.orderId } : {}),
           ...(payload.cobrancaId ? { cobrancaId: payload.cobrancaId } : {}),
           eventId: envelope.eventId,

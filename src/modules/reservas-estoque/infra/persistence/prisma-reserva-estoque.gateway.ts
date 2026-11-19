@@ -812,17 +812,7 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
     pendenciaId: string,
     divergencias: { pecaId: string }[],
   ): Promise<boolean> {
-    const candidatas = [
-      ...new Set(
-        divergencias
-          .map((d) => d.pecaId)
-          .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
-      ),
-    ];
-    const noCatalogo = await cliente.peca.findMany({
-      where: { id: { in: candidatas } },
-      select: { id: true },
-    });
+    const noCatalogo = await this.buscarPecasNoCatalogo(cliente, divergencias);
     const ajustadas = new Set(
       (
         await cliente.ajusteEstoqueAdministrativo.findMany({
@@ -832,6 +822,36 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       ).map((a) => a.pecaId),
     );
     return noCatalogo.every((peca) => ajustadas.has(peca.id));
+  }
+
+  /**
+   * Peça divergente fora do catálogo: identificador sem formato de UUID ou UUID
+   * sem peça cadastrada. Mesma regra do ajuste por peça (D4.8).
+   */
+  async listarPecasDivergentesNoCatalogo(
+    contexto: ContextoTransacao,
+    divergencias: { pecaId: string }[],
+  ): Promise<string[]> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const noCatalogo = await this.buscarPecasNoCatalogo(cliente, divergencias);
+    return noCatalogo.map((peca) => peca.id);
+  }
+
+  private async buscarPecasNoCatalogo(
+    cliente: ClienteTransacao,
+    divergencias: { pecaId: string }[],
+  ): Promise<{ id: string }[]> {
+    const candidatas = [
+      ...new Set(
+        divergencias
+          .map((d) => d.pecaId)
+          .filter((id) => /^[0-9a-f-]{36}$/i.test(id)),
+      ),
+    ];
+    return cliente.peca.findMany({
+      where: { id: { in: candidatas } },
+      select: { id: true },
+    });
   }
 
   async resolverConsumoManualInicial(

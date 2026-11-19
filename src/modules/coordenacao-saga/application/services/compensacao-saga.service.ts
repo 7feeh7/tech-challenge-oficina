@@ -33,6 +33,7 @@ import type { EstadoCompensacaoGateway } from '../ports/estado-compensacao.gatew
 import type { PedidoEmitidoGateway } from '../ports/pedido-emitido.gateway';
 import type { RespostaCancelamentoContrato } from '../../domain/resposta-cancelamento-contrato';
 import { NATUREZA_PENDENCIA_SEGUNDO_PAGAMENTO } from '../../domain/natureza-pendencia-financeira';
+import { validarRespostaCancelamento } from '../../domain/validar-resposta-cancelamento';
 import { SituacaoTarefaCancelamento } from '../../domain/situacao-tarefa-cancelamento';
 import type { ReconciliacaoConsumoSagaService } from './reconciliacao-consumo-saga.service';
 
@@ -154,6 +155,14 @@ export class CompensacaoSagaService implements CompensacaoAvancoPort {
     causationId: string,
     payload: RespostaCancelamentoPayload,
   ): Promise<void> {
+    // INTERRUPCAO_SOLICITADA não passa pela reconciliação, que valida as demais
+    // respostas: sem esta validação, um payload inválido (diagnóstico) gravaria
+    // o estado de compensação antes de ir para a DLQ.
+    if (
+      payload.resultado === ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA
+    ) {
+      validarRespostaCancelamento(payload);
+    }
     const bloqueada = await this.ordens.bloquearParaAtualizacao(
       contexto,
       ordemServicoId,

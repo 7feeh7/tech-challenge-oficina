@@ -1208,6 +1208,36 @@ describe('ReagirFatoSagaUseCase', () => {
       },
     );
 
+    it.each(['ESTORNO_AUTOMATICO', 'PENDENCIA_MANUAL'])(
+      'grava a natureza PAGAMENTO_TARDIO e o tratamento %s do payload',
+      async (tratamento) => {
+        const { useCase, prisma } = montarUseCase(StatusOS.CANCELADA);
+
+        await useCase.executar(contexto, {
+          eventId: 'tardio-2',
+          eventType: EVENTO_PAGAMENTO_TARDIO_REGISTRADO,
+          version: 1,
+          occurredAt: new Date().toISOString(),
+          source: 'billing',
+          correlationId: 'corr-1',
+          causationId: null,
+          ordemServicoId: 'uuid-os1',
+          rodada: 1,
+          payload: { cobrancaId: 'cob-1', tratamento },
+        });
+
+        expect(prisma.pendenciaOs.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            detalhes: expect.objectContaining({
+              natureza: 'PAGAMENTO_TARDIO',
+              tratamento,
+              cobrancaId: 'cob-1',
+            }),
+          }),
+        });
+      },
+    );
+
     it('não duplica a pendência da mesma cobrança', async () => {
       const { useCase, prisma } = montarUseCase(StatusOS.CANCELADA);
       prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({ id: 'p1' });
@@ -1303,5 +1333,178 @@ describe('ReagirFatoSagaUseCase', () => {
     expect(prisma.pendenciaOs.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'p2' } }),
     );
+  });
+
+  describe('evidência do estorno do segundo pagamento', () => {
+    const payloadEstorno = {
+      cobrancaId: 'cob-a',
+      orderId: 'ORD-2',
+      valorEstornadoCentavos: 500,
+      tipoEstorno: 'INTEGRAL',
+      estornadoEm: '2026-11-19T10:00:00.000Z',
+      statusOrderMercadoPago: 'refunded',
+    };
+    const detalhesSegundoPagamento = {
+      natureza: 'SEGUNDO_PAGAMENTO',
+      orderId: 'ORD-2',
+      cobrancaId: 'cob-a',
+      motivo: 'Segundo pagamento antes do encerramento',
+    };
+
+    const entregarEstorno = (
+      useCase: ReagirFatoSagaUseCase,
+      payload: Record<string, unknown> = payloadEstorno,
+      eventId = 'e-estorno-1',
+    ) =>
+      useCase.executar(contexto, {
+        eventId,
+        eventType: EVENTO_ESTORNO_CONCLUIDO,
+        version: 1,
+        occurredAt: new Date().toISOString(),
+        source: 'billing',
+        correlationId: 'corr-1',
+        causationId: null,
+        ordemServicoId: 'uuid-os1',
+        rodada: 1,
+        payload,
+      });
+
+    it.each([
+      StatusOS.AGUARDANDO_EXECUCAO,
+      StatusOS.EM_EXECUCAO,
+      StatusOS.FINALIZADA,
+    ])(
+      'registra a evidência em %s sem resolver nem mudar o status',
+      async (status) => {
+        const { useCase, prisma, transicoes, compensacao } =
+          montarUseCase(status);
+        prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({
+          id: 'p1',
+          detalhes: detalhesSegundoPagamento,
+        });
+        prisma.pendenciaOs.findMany = jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'p1', detalhes: detalhesSegundoPagamento },
+          ]);
+
+        await entregarEstorno(useCase);
+
+        expect(prisma.pendenciaOs.update).toHaveBeenCalledTimes(1);
+        expect(prisma.pendenciaOs.update).toHaveBeenCalledWith({
+          where: { id: 'p1' },
+          data: {
+            detalhes: {
+              ...detalhesSegundoPagamento,
+              evidenciaEstornoBilling: {
+                eventId: 'e-estorno-1',
+                ...payloadEstorno,
+              },
+            },
+          },
+        });
+        expect(transicoes.aplicar).not.toHaveBeenCalled();
+        expect(compensacao.avancarSeEmCancelamento).not.toHaveBeenCalled();
+      },
+    );
+
+    it('em execução só registra a evidência e não resolve outras pendências da cobrança', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.EM_EXECUCAO);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
+      prisma.pendenciaOs.findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: 'p2', detalhes: { cobrancaId: 'cob-a' } }]);
+
+      await entregarEstorno(useCase);
+
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('ignora o estorno sem pendência SEGUNDO_PAGAMENTO aberta do orderId', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.EM_EXECUCAO);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue(null);
+
+      await entregarEstorno(useCase);
+
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('ignora o estorno sem orderId', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.EM_EXECUCAO);
+
+      await entregarEstorno(useCase, { cobrancaId: 'cob-a' });
+
+      expect(prisma.pendenciaOs.findFirst).not.toHaveBeenCalled();
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('é idempotente na reentrega do mesmo evento', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.EM_EXECUCAO);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({
+        id: 'p1',
+        detalhes: {
+          ...detalhesSegundoPagamento,
+          evidenciaEstornoBilling: {
+            eventId: 'e-estorno-1',
+            tipoEstorno: 'PARCIAL',
+          },
+        },
+      });
+
+      await entregarEstorno(useCase);
+
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('não substitui a evidência integral por um estorno posterior', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.FINALIZADA);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({
+        id: 'p1',
+        detalhes: {
+          ...detalhesSegundoPagamento,
+          evidenciaEstornoBilling: {
+            eventId: 'e-anterior',
+            tipoEstorno: 'INTEGRAL',
+          },
+        },
+      });
+
+      await entregarEstorno(
+        useCase,
+        { ...payloadEstorno, tipoEstorno: 'PARCIAL' },
+        'e-estorno-2',
+      );
+
+      expect(prisma.pendenciaOs.update).not.toHaveBeenCalled();
+    });
+
+    it('substitui a evidência parcial por um estorno integral', async () => {
+      const { useCase, prisma } = montarUseCase(StatusOS.FINALIZADA);
+      prisma.pendenciaOs.findFirst = jest.fn().mockResolvedValue({
+        id: 'p1',
+        detalhes: {
+          ...detalhesSegundoPagamento,
+          evidenciaEstornoBilling: {
+            eventId: 'e-anterior',
+            tipoEstorno: 'PARCIAL',
+          },
+        },
+      });
+
+      await entregarEstorno(useCase, payloadEstorno, 'e-estorno-2');
+
+      expect(prisma.pendenciaOs.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            detalhes: expect.objectContaining({
+              evidenciaEstornoBilling: expect.objectContaining({
+                eventId: 'e-estorno-2',
+                tipoEstorno: 'INTEGRAL',
+              }),
+            }),
+          },
+        }),
+      );
+    });
   });
 });

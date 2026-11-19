@@ -37,6 +37,24 @@ describe('validarRespostaCancelamento', () => {
     ).toThrow(ErroMensagemPermanente);
   });
 
+  it('rejeita INTERRUPCAO_SOLICITADA com tipoTarefa DIAGNOSTICO', () => {
+    expect(() =>
+      validarRespostaCancelamento({
+        tipoTarefa: TipoTarefaCancelamento.DIAGNOSTICO,
+        resultado: ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA,
+      }),
+    ).toThrow(ErroMensagemPermanente);
+  });
+
+  it('aceita INTERRUPCAO_SOLICITADA com tipoTarefa REPARO', () => {
+    expect(
+      validarRespostaCancelamento({
+        tipoTarefa: TipoTarefaCancelamento.REPARO,
+        resultado: ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA,
+      }).resultado,
+    ).toBe(ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA);
+  });
+
   it('rejeita JA_CONCLUIDA com situacaoTarefa incompatível', () => {
     expect(() =>
       validarRespostaCancelamento({

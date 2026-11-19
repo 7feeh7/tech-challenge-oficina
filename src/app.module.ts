@@ -4,7 +4,6 @@ import { DomainExceptionFilter } from './shared/filters/domain-exception.filter'
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ServicosModule } from './modules/servicos/servicos.module';
 import { VeiculosModule } from './modules/veiculos/veiculos.module';
-import { PrismaService } from './shared/database/prisma.service';
 import { PrismaModule } from './shared/database/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
@@ -52,7 +51,6 @@ import { IdempotencyKeyInternaGuard } from './modules/rotas-internas/guards/idem
   ],
   controllers: [],
   providers: [
-    PrismaService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
