@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   FastifyAdapter,
@@ -7,6 +6,7 @@ import {
 } from '@nestjs/platform-fastify';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { CriarOrdemServicoUseCase } from '../src/modules/ordens-servico/application/use-cases/criar-ordem-servico.use-case';
 import { TransicaoOrdemServicoService } from '../src/modules/ordens-servico/application/services/transicao-ordem-servico.service';
 import { PrismaService } from '../src/shared/database/prisma.service';
@@ -48,21 +48,7 @@ describe('Rotas internas do OS pela pilha HTTP (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1', {
-      exclude: [
-        { path: 'health', method: RequestMethod.ALL },
-        { path: 'health/ready', method: RequestMethod.ALL },
-        { path: 'internal', method: RequestMethod.ALL },
-        { path: 'internal/(.*)', method: RequestMethod.ALL },
-      ],
-    });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
@@ -197,6 +183,45 @@ describe('Rotas internas do OS pela pilha HTTP (e2e)', () => {
     });
     expect(os.status).toBe(StatusOS.EM_DIAGNOSTICO);
   });
+
+  it.each([
+    ['mesma caixa do UUID', (itemId: string) => itemId],
+    ['UUID em maiúsculas', (itemId: string) => itemId.toUpperCase()],
+  ])(
+    'recusa itens repetidos com 400, sem gravar, e aceita o reenvio corrigido com a mesma chave (%s)',
+    async (_nome, repetirItemId) => {
+      const osId = await abrirOsEmDiagnostico();
+      const tarefaId = `${osId}#1#DIAGNOSTICO`;
+      const chave = `diagnostico:${tarefaId}`;
+      const corpo = {
+        rodada: 1,
+        tarefaId,
+        laudo: 'Laudo',
+        itens: [
+          { tipo: 'PECA', itemId: pecaId, quantidade: 1 },
+          { tipo: 'PECA', itemId: repetirItemId(pecaId), quantidade: 2 },
+        ],
+      };
+
+      await diagnostico(osId, chave, corpo).expect(400);
+
+      expect(
+        await prisma.idempotencyRecord.count({
+          where: { idempotencyKey: chave, scope: 'internal.diagnostico' },
+        }),
+      ).toBe(0);
+      const os = await prisma.ordemServico.findUniqueOrThrow({
+        where: { id: osId },
+      });
+      expect(os.status).toBe(StatusOS.EM_DIAGNOSTICO);
+      expect(os.diagnosticoConcluidoEm).toBeNull();
+
+      await diagnostico(osId, chave, {
+        ...corpo,
+        itens: [{ tipo: 'PECA', itemId: pecaId, quantidade: 3 }],
+      }).expect(200);
+    },
+  );
 
   it('reserva o estoque com 200 e devolve reservaId e prazoReferencia', async () => {
     const osId = await abrirOsEmDiagnostico();

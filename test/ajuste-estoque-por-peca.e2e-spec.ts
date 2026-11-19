@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   FastifyAdapter,
@@ -8,6 +7,7 @@ import {
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import {
   PerfilUsuario,
@@ -71,19 +71,7 @@ describe('Ajuste de estoque por peça divergente (e2e)', () => {
     app = fixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1', {
-      exclude: [
-        { path: 'health', method: RequestMethod.ALL },
-        { path: 'health/ready', method: RequestMethod.ALL },
-      ],
-    });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 

@@ -8,6 +8,7 @@ import {
   IsUUID,
   Matches,
   Min,
+  ValidateBy,
   ValidateNested,
 } from 'class-validator';
 
@@ -20,6 +21,26 @@ const TAREFA_ID_DIAGNOSTICO = new RegExp(
   `^(?:${UUID}#[1-9]\\d{0,8}#DIAGNOSTICO|${UUID})$`,
   'i',
 );
+
+// Um item repetido violaria o índice único da OS no banco e viraria 500; o UUID
+// é comparado sem diferenciar maiúsculas porque o PostgreSQL o trata como o mesmo valor.
+function ItensSemRepeticao() {
+  return ValidateBy({
+    name: 'itensSemRepeticao',
+    validator: {
+      validate: (itens: unknown) => {
+        if (!Array.isArray(itens)) return true;
+        const chaves = itens.map(
+          (item: Partial<ItemDiagnosticoDto>) =>
+            `${item?.tipo}:${String(item?.itemId).toLowerCase()}`,
+        );
+        return new Set(chaves).size === chaves.length;
+      },
+      defaultMessage: () =>
+        'itens não pode repetir o mesmo itemId com o mesmo tipo.',
+    },
+  });
+}
 
 class ItemDiagnosticoDto {
   @IsIn(['PECA', 'SERVICO'])
@@ -49,6 +70,7 @@ export class ConcluirDiagnosticoInternoDto {
 
   @IsArray()
   @ArrayMinSize(1)
+  @ItensSemRepeticao()
   @ValidateNested({ each: true })
   @Type(() => ItemDiagnosticoDto)
   itens!: ItemDiagnosticoDto[];

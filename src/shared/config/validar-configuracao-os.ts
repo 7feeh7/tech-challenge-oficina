@@ -44,11 +44,30 @@ function recusarLegadoHs256(ambiente: AmbienteConfiguracao): void {
   }
 }
 
+// Token igual em duas relações deixaria o chamador de uma rota passar na da outra,
+// então a checagem vale também fora de produção, onde os tokens são opcionais.
+function recusarTokensDeRelacaoIguais(ambiente: AmbienteConfiguracao): void {
+  const tokensConfigurados = [
+    ambiente.TOKEN_BILLING_OS,
+    ambiente.TOKEN_EXECUTION_OS,
+    ambiente.TOKEN_AUTH_CPF_OS,
+  ]
+    .map((token) => token?.trim())
+    .filter((token): token is string => Boolean(token));
+
+  if (new Set(tokensConfigurados).size !== tokensConfigurados.length) {
+    throw new ConfiguracaoOsInvalidaError(
+      'Tokens de chamador interno devem ser distintos entre Billing, Execution e auth-cpf.',
+    );
+  }
+}
+
 /** Falha segura na inicialização em produção quando faltam chaves ou tokens internos. */
 export function validarConfiguracaoOs(
   ambiente: AmbienteConfiguracao = process.env,
 ): void {
   recusarLegadoHs256(ambiente);
+  recusarTokensDeRelacaoIguais(ambiente);
 
   const producao = texto(ambiente, 'NODE_ENV', 'development') === 'production';
   if (!producao) {
@@ -75,14 +94,4 @@ export function validarConfiguracaoOs(
 
   exigirPreenchido(ambiente, 'JWT_ISSUER', 'JWT_ISSUER');
   exigirPreenchido(ambiente, 'JWT_AUDIENCE', 'JWT_AUDIENCE');
-
-  const billing = ambiente.TOKEN_BILLING_OS!.trim();
-  const execution = ambiente.TOKEN_EXECUTION_OS!.trim();
-  const authCpf = ambiente.TOKEN_AUTH_CPF_OS!.trim();
-  const tokens = [billing, execution, authCpf];
-  if (new Set(tokens).size !== tokens.length) {
-    throw new ConfiguracaoOsInvalidaError(
-      'Tokens de chamador interno devem ser distintos entre Billing, Execution e auth-cpf.',
-    );
-  }
 }

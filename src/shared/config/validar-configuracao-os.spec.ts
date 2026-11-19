@@ -54,6 +54,41 @@ describe('validarConfiguracaoOs', () => {
     ).toThrow(ConfiguracaoOsInvalidaError);
   });
 
+  it.each([
+    ['development', 'TOKEN_BILLING_OS', 'TOKEN_EXECUTION_OS'],
+    ['development', 'TOKEN_BILLING_OS', 'TOKEN_AUTH_CPF_OS'],
+    ['test', 'TOKEN_EXECUTION_OS', 'TOKEN_AUTH_CPF_OS'],
+    [undefined, 'TOKEN_BILLING_OS', 'TOKEN_EXECUTION_OS'],
+  ])(
+    'recusa tokens de chamador iguais configurados com NODE_ENV=%s (%s e %s)',
+    (nodeEnv, primeiroToken, segundoToken) => {
+      expect(() =>
+        validarConfiguracaoOs({
+          NODE_ENV: nodeEnv,
+          [primeiroToken]: 'mesmo',
+          [segundoToken]: ' mesmo ',
+        }),
+      ).toThrow(ConfiguracaoOsInvalidaError);
+    },
+  );
+
+  it('aceita fora de produção tokens distintos ou não configurados', () => {
+    expect(() =>
+      validarConfiguracaoOs({
+        NODE_ENV: 'development',
+        TOKEN_BILLING_OS: 't1',
+        TOKEN_EXECUTION_OS: 't2',
+        TOKEN_AUTH_CPF_OS: '',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validarConfiguracaoOs({
+        NODE_ENV: 'development',
+        TOKEN_BILLING_OS: 't1',
+      }),
+    ).not.toThrow();
+  });
+
   it('falha em produção com PEM inválido', () => {
     expect(() =>
       validarConfiguracaoOs({

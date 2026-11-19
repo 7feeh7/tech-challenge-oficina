@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -9,6 +8,8 @@ import * as bcrypt from 'bcryptjs';
 
 import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import {
   exigirDatabaseUrl,
@@ -60,14 +61,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
 
     await app.init();
     await app.getHttpAdapter().getInstance().ready();

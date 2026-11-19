@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   type NestFastifyApplication,
@@ -8,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { AppModule } from '@/app.module';
+import { configurarAplicacaoHttp } from '@/shared/http/configurar-aplicacao-http';
 import { ProcessadorPrazoReferenciaService } from '@/modules/coordenacao-saga/infra/jobs/processador-prazo-referencia.service';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { PerfilUsuario, StatusOS } from '@/shared/generated/prisma/enums';
@@ -55,21 +55,7 @@ export class AmbienteBdd {
     const app = modulo.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1', {
-      exclude: [
-        { path: 'health', method: RequestMethod.ALL },
-        { path: 'health/ready', method: RequestMethod.ALL },
-        { path: 'internal', method: RequestMethod.ALL },
-        { path: 'internal/(.*)', method: RequestMethod.ALL },
-      ],
-    });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
 
