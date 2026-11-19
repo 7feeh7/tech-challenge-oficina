@@ -87,6 +87,15 @@ export function validarRespostaCancelamento(
   }
 
   if (
+    tipoTarefa === TipoTarefaCancelamento.DIAGNOSTICO &&
+    resultado === ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA
+  ) {
+    throw new ErroMensagemPermanente(
+      'INTERRUPCAO_SOLICITADA só vale para reparo.',
+    );
+  }
+
+  if (
     tipoTarefa === TipoTarefaCancelamento.REPARO &&
     resultado === ResultadoCancelamentoExecucao.CANCELADA_EM_ANDAMENTO
   ) {

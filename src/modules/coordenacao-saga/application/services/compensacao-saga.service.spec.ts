@@ -2,6 +2,7 @@ import { criarOrdemFake } from '@/modules/ordens-servico/application/use-cases/t
 import { StatusOS } from '@/modules/ordens-servico/domain/status-os';
 import { ReservaJaProcessadaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
+import { ErroMensagemPermanente } from '@/shared/messaging/domain/mensageria.errors';
 import {
   PassoCompensacaoSaga,
   ResultadoExecucaoCompensacao,
@@ -208,6 +209,19 @@ describe('CompensacaoSagaService', () => {
       resultado: ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA,
     });
     expect(getSnapshot().aguardandoResposta).toBe(true);
+  });
+
+  it('rejeita INTERRUPCAO_SOLICITADA de diagnóstico antes de qualquer efeito', async () => {
+    const { service, estado, ordens } = montar();
+    await expect(
+      service.tratarRespostaCancelamento(contexto, 'os-1', 'caus', {
+        tipoTarefa: TipoTarefaCancelamento.DIAGNOSTICO,
+        resultado: ResultadoCancelamentoExecucao.INTERRUPCAO_SOLICITADA,
+      }),
+    ).rejects.toThrow(ErroMensagemPermanente);
+    expect(ordens.bloquearParaAtualizacao).not.toHaveBeenCalled();
+    expect(estado.obterOuCriar).not.toHaveBeenCalled();
+    expect(estado.salvar).not.toHaveBeenCalled();
   });
 
   it('REPARO JA_CONCLUIDA dispara consulta E10 e não assume diagnóstico como reparo', async () => {

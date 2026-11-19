@@ -99,7 +99,7 @@ docker compose exec -T postgres psql -U oficina -d oficina -f - < scripts/explai
 Ver cálculo completo em [ADR-003](../../adrs/003-postgresql-banco-gerenciado.md). Resumo:
 
 - `max_connections` (`db.t3.micro`): **~87**
-- API: 10 pods × 5 = **50** (`connection_limit=5` na URL)
+- API: 10 pods × 5 = **50** (`connection_limit=5` na URL; um único `PrismaService`, e portanto um único pool de `DATABASE_POOL_MAX=5`, por pod)
 - Lambda: **~10**
 - Migration job: **5**
 - Folga: **~22**

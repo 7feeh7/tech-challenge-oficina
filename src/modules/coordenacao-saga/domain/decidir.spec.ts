@@ -344,6 +344,23 @@ describe('decidir (fluxo principal E29)', () => {
     ).toBe(AcaoDecisao.APLICAR);
   });
 
+  it('aplica o estorno concluído em execução só para registrar a evidência', () => {
+    for (const status of [StatusOS.AGUARDANDO_EXECUCAO, StatusOS.EM_EXECUCAO]) {
+      expect(decidir(TipoFatoSaga.ESTORNO_CONCLUIDO, ordem({ status }))).toBe(
+        AcaoDecisao.APLICAR,
+      );
+    }
+  });
+
+  it('segue ignorando pendência resolvida em execução', () => {
+    expect(
+      decidir(
+        TipoFatoSaga.PENDENCIA_RESOLVIDA,
+        ordem({ status: StatusOS.EM_EXECUCAO }),
+      ),
+    ).toBe(AcaoDecisao.IGNORAR);
+  });
+
   it('concilia fato financeiro fora do estado esperado sem regressão', () => {
     expect(
       decidir(

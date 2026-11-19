@@ -157,6 +157,15 @@ export function decidir(
     return AcaoDecisao.APLICAR;
   }
 
+  // O estorno do segundo pagamento chega com a OS ainda em execução: registra
+  // a evidência na pendência sem mudar o status (decisão de 2026-11-19).
+  if (
+    fato === TipoFatoSaga.ESTORNO_CONCLUIDO &&
+    [StatusOS.AGUARDANDO_EXECUCAO, StatusOS.EM_EXECUCAO].includes(ordem.status)
+  ) {
+    return AcaoDecisao.APLICAR;
+  }
+
   if (
     fato === TipoFatoSaga.PAGAMENTO_CONFIRMADO &&
     ordem.status === StatusOS.EM_CANCELAMENTO
