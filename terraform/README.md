@@ -15,7 +15,7 @@ Em produção: `tech-challenge-producao-os-in` e `tech-challenge-producao-os-in-
 
 ### Visibilidade da `os-in`
 
-O tempo de visibilidade começa no recebimento. O pior caso é o lote do consumidor com erro permanente (complemento da E12): 3 mensagens × (20 s de transação + 45 s de envio à DLQ + 45 s de confirmação) = **330 s** até a última mensagem ser apagada. A variável `sqs_visibility_timeout_seconds` aceita no mínimo 360 s (330 s + 30 s de margem) e usa **600 s** por padrão, com folga para o recálculo dos tempos do complemento da E10. Se mudar lote, prazos ou `terminationGracePeriodSeconds`, recalcule antes de alterar o valor.
+O tempo de visibilidade começa no recebimento. O pior caso é o lote do consumidor com erro permanente: 3 mensagens × (2 execuções da transação de 20 s + 45 s de envio à DLQ + 45 s de confirmação) = **390 s** até a última mensagem ser apagada (tabela completa em `docs/tempos-processadores-os.md`). A variável `sqs_visibility_timeout_seconds` aceita no mínimo 420 s (390 s + 30 s de margem) e usa **600 s** por padrão, com 210 s de folga. Se mudar lote, prazos, pool de conexões ou `terminationGracePeriodSeconds`, recalcule antes de alterar o valor.
 
 ### Políticas
 

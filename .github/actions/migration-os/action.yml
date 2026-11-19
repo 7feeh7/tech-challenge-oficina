@@ -1,0 +1,121 @@
+name: Migration do OS (Job Kubernetes)
+description: >
+  Aplica as migrations do Prisma num Job do cluster, com a imagem de tag imutável
+  informada, e remove o Job e o Secret ao terminar. O Secret da migration contém só
+  DATABASE_URL. Usado pelo deploy.yml (entre o build e o rollout) e pelo migrate.yml
+  (manutenção manual). Job e Secret têm nome único por run, então duas runs
+  simultâneas (grupos de concorrência diferentes) não removem os recursos uma da outra.
+
+inputs:
+  image-tag:
+    description: Tag da imagem no ECR (SHA do commit)
+    required: true
+
+# Pré-requisitos do job que chama: credenciais AWS já assumidas (OIDC), checkout feito
+# e as variáveis de ambiente AWS_REGION, K8S_NAMESPACE e TF_ENVIRONMENT.
+runs:
+  using: composite
+  steps:
+    # O sufixo inclui a tentativa: o re-run de uma run mantém o mesmo run_id.
+    - name: Nomes dos recursos da migration
+      shell: bash
+      env:
+        RUN_ID: ${{ github.run_id }}
+        RUN_ATTEMPT: ${{ github.run_attempt }}
+      run: |
+        set -euo pipefail
+        {
+          echo "MIGRATION_ID=${RUN_ID}-${RUN_ATTEMPT}"
+          echo "MIGRATION_JOB=oficina-migrate-${RUN_ID}-${RUN_ATTEMPT}"
+          echo "MIGRATION_SECRET=oficina-migrate-secret-${RUN_ID}-${RUN_ATTEMPT}"
+        } >> "$GITHUB_ENV"
+
+    - name: Configurar kubectl
+      shell: bash
+      run: |
+        set -euo pipefail
+        source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+        EKS_CLUSTER=$(parametro infra/eks_cluster_name)
+        aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER"
+
+    # Só DATABASE_URL: o `prisma migrate deploy` não usa as demais credenciais da
+    # aplicação, e a role de CI é a mesma do deploy, então a restrição está aqui e no
+    # manifesto do Job.
+    - name: Secret da migration
+      shell: bash
+      run: |
+        set -euo pipefail
+        source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+        montar_database_url
+        kubectl create secret generic "$MIGRATION_SECRET" \
+          --namespace "$K8S_NAMESPACE" \
+          --from-literal=DATABASE_URL="$DATABASE_URL" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Executar migration (Job)
+      shell: bash
+      env:
+        IMAGE_TAG: ${{ inputs.image-tag }}
+      run: |
+        set -euo pipefail
+        source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+        ECR_REPOSITORY=$(parametro infra/ecr_repository_url)
+
+        sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${ECR_REPOSITORY}:${IMAGE_TAG}|g" \
+            -e "s|__MIGRATION_ID__|${MIGRATION_ID}|g" \
+          k8s/migration-job.yaml | kubectl apply -f -
+
+        # `kubectl wait --for=condition=complete` só termina no tempo limite quando o
+        # Job falha; aqui o Failed encerra a espera na hora. Falha da API do cluster
+        # na consulta não conclui nada: só 5 falhas seguidas encerram a espera, porque
+        # a limpeza final remove o Job e uma migration em curso seria interrompida.
+        limite=$((SECONDS + 600))
+        falhas_seguidas=0
+        while [ "$SECONDS" -lt "$limite" ]; do
+          if condicoes=$(kubectl get job "$MIGRATION_JOB" --namespace "$K8S_NAMESPACE" \
+            -o jsonpath='{range .status.conditions[?(@.status=="True")]}{.type}{" "}{end}'); then
+            falhas_seguidas=0
+            case "$condicoes" in
+              *Complete*)
+                echo "Migration concluída."
+                exit 0
+                ;;
+              *Failed*)
+                echo "O Job de migration falhou."
+                exit 1
+                ;;
+            esac
+          else
+            falhas_seguidas=$((falhas_seguidas + 1))
+            echo "Falha ao consultar o Job de migration (${falhas_seguidas} de 5 seguidas)."
+            if [ "$falhas_seguidas" -ge 5 ]; then
+              echo "Não foi possível consultar o estado do Job de migration."
+              exit 1
+            fi
+          fi
+          sleep 5
+        done
+        echo "Tempo esgotado aguardando a migration."
+        exit 1
+
+    - name: Diagnóstico da migration
+      if: failure()
+      shell: bash
+      run: |
+        kubectl describe job "$MIGRATION_JOB" --namespace "$K8S_NAMESPACE" || true
+        kubectl logs "job/$MIGRATION_JOB" --namespace "$K8S_NAMESPACE" --all-containers --tail=200 || true
+
+    # Sai antes do rollout para não somar conexões do Job ao surge do Deployment.
+    # O Job só é removido depois que os pods terminam (cascade=foreground). Remove só
+    # os recursos desta run (nomes únicos); se o primeiro passo falhou, não há nada a remover.
+    - name: Remover Job e Secret da migration
+      if: always()
+      shell: bash
+      run: |
+        if [ -z "${MIGRATION_JOB:-}" ]; then
+          exit 0
+        fi
+        kubectl delete job "$MIGRATION_JOB" \
+          --namespace "$K8S_NAMESPACE" --ignore-not-found --cascade=foreground --wait=true --timeout=120s
+        kubectl delete secret "$MIGRATION_SECRET" \
+          --namespace "$K8S_NAMESPACE" --ignore-not-found

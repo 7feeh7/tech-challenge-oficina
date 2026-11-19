@@ -7,6 +7,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Prisma } from '@/shared/generated/prisma/client';
+import { executarTransacaoComLimite } from '@/shared/database/executar-transacao-com-limite';
 import { PrismaService } from '@/shared/database/prisma.service';
 import { correlationIdStorage } from '@/shared/http/correlation-id.context';
 import { JsonLoggerService } from '@/shared/observability/json-logger.service';
@@ -34,6 +36,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
   private readonly habilitado: boolean;
   private readonly intervaloMs: number;
   private readonly posseMs: number;
+  private readonly persistenciaMs: number;
   private readonly loteMaximo: number;
   private readonly retentativaBaseMs: number;
   private readonly retentativaTetoMs: number;
@@ -54,7 +57,10 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
       this.config.get<string>('OUTBOX_PUBLISHER_INTERVAL_MS') ?? '2000',
     );
     this.posseMs = Number(
-      this.config.get<string>('OUTBOX_REIVINDICACAO_MS') ?? '300000',
+      this.config.get<string>('OUTBOX_REIVINDICACAO_MS') ?? '450000',
+    );
+    this.persistenciaMs = Number(
+      this.config.get<string>('OUTBOX_PERSISTENCIA_MS') ?? '5000',
     );
     this.loteMaximo = Number(
       this.config.get<string>('OUTBOX_PUBLISHER_LOTE') ?? '5',
@@ -88,7 +94,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     for (const mensagem of mensagens) {
       await this.publicarMensagemReivindicada(mensagem);
     }
-    await this.mensageriaMetrics.recordOutboxBacklog();
+    await this.mensageriaMetrics.recordOutboxBacklog(this.persistenciaMs);
   }
 
   async reivindicarLote(): Promise<
@@ -106,7 +112,7 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
     const bloqueadoAte = new Date(agora.getTime() + this.posseMs);
     const tokenReivindicacao = randomUUID();
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.executarNoBanco(async (tx) => {
       const pendentes = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM outbox_mensagens
         WHERE enviado_em IS NULL
@@ -151,18 +157,20 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
           await this.enviarParaDestino(mensagem.destino, mensagem);
         },
       );
-      const confirmado = await this.prisma.outboxMensagem.updateMany({
-        where: {
-          id: mensagem.id,
-          tokenReivindicacao: token,
-          enviadoEm: null,
-        },
-        data: {
-          enviadoEm: new Date(),
-          bloqueadoAte: null,
-          tokenReivindicacao: null,
-        },
-      });
+      const confirmado = await this.executarNoBanco((tx) =>
+        tx.outboxMensagem.updateMany({
+          where: {
+            id: mensagem.id,
+            tokenReivindicacao: token,
+            enviadoEm: null,
+          },
+          data: {
+            enviadoEm: new Date(),
+            bloqueadoAte: null,
+            tokenReivindicacao: null,
+          },
+        }),
+      );
       if (confirmado.count === 0) {
         correlationIdStorage.run(
           {
@@ -209,15 +217,29 @@ export class PublicadorOutboxService implements OnModuleInit, OnModuleDestroy {
         this.retentativaBaseMs,
         this.retentativaTetoMs,
       );
-      await this.prisma.outboxMensagem.updateMany({
-        where: { id: mensagem.id, tokenReivindicacao: token },
-        data: {
-          tentativas: { increment: 1 },
-          bloqueadoAte,
-          tokenReivindicacao: null,
-        },
-      });
+      await this.executarNoBanco((tx) =>
+        tx.outboxMensagem.updateMany({
+          where: { id: mensagem.id, tokenReivindicacao: token },
+          data: {
+            tentativas: { increment: 1 },
+            bloqueadoAte,
+            tokenReivindicacao: null,
+          },
+        }),
+      );
     }
+  }
+
+  // Toda gravação do publicador no banco tem limite de execução: ele entra no pior
+  // caso do ciclo e da posse (docs/tempos-processadores-os.md).
+  private executarNoBanco<T>(
+    trabalho: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return executarTransacaoComLimite(
+      this.prisma,
+      this.persistenciaMs,
+      trabalho,
+    );
   }
 
   private async enviarParaDestino(

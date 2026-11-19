@@ -17,13 +17,16 @@ import { METRIC_NAMES } from './observability.config';
 
 describe('MessagingMetricsService', () => {
   let service: MessagingMetricsService;
+  const outboxMensagem = {
+    count: jest.fn().mockResolvedValue(3),
+    findFirst: jest.fn().mockResolvedValue({
+      criadoEm: new Date(Date.now() - 60_000),
+    }),
+  };
   const prisma = {
-    outboxMensagem: {
-      count: jest.fn().mockResolvedValue(3),
-      findFirst: jest.fn().mockResolvedValue({
-        criadoEm: new Date(Date.now() - 60_000),
-      }),
-    },
+    $transaction: jest.fn((trabalho: (tx: unknown) => Promise<unknown>) =>
+      trabalho({ outboxMensagem, $queryRaw: jest.fn() }),
+    ),
   };
 
   beforeEach(() => {
@@ -61,7 +64,7 @@ describe('MessagingMetricsService', () => {
   });
 
   it('registra backlog da outbox em gauge', async () => {
-    await service.recordOutboxBacklog();
+    await service.recordOutboxBacklog(5000);
 
     expect(mockGauge).toHaveBeenCalledWith(
       METRIC_NAMES.outboxPendentes,
@@ -73,5 +76,21 @@ describe('MessagingMetricsService', () => {
       expect.any(Number),
       expect.any(Array),
     );
+  });
+
+  it('limita a execução das consultas do backlog ao prazo informado', async () => {
+    await service.recordOutboxBacklog(1234);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 1234,
+    });
+  });
+
+  it('não propaga falha do banco ao registrar o backlog', async () => {
+    prisma.$transaction.mockRejectedValueOnce(new Error('timeout'));
+
+    await expect(service.recordOutboxBacklog(5000)).resolves.toBeUndefined();
+    expect(mockGauge).not.toHaveBeenCalled();
   });
 });

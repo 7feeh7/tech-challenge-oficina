@@ -15,12 +15,15 @@ set -euo pipefail
 
 NS=oficina
 IMAGE=oficina-api:local
+# Sufixo dos nomes do Job e do Secret da migration (em produção é `<run_id>-<tentativa>`).
+MIGRATION_ID=local
 
 # O manifesto de produção aponta para o ECR e usa "Always"; local, a imagem já
 # está no nó e não há registry de onde puxar.
 localizar() {
   sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${IMAGE}|g" \
       -e "s|__IMAGE_TAG__|local|g" \
+      -e "s|__MIGRATION_ID__|${MIGRATION_ID}|g" \
       -e "s|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g" "$1"
 }
 
@@ -63,12 +66,17 @@ kubectl create secret generic oficina-secret --namespace "${NS}" \
   --dry-run=client -o yaml | kubectl apply -f -
 rm -rf "${JWT_LOCAL_DIR}"
 
+# O Job de migration lê um Secret próprio, só com DATABASE_URL (como em produção).
+kubectl create secret generic "oficina-migrate-secret-${MIGRATION_ID}" --namespace "${NS}" \
+  --from-literal=DATABASE_URL='postgresql://oficina:oficina@postgres:5432/oficina?schema=public' \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl rollout status deployment/postgres --namespace "${NS}" --timeout=180s
 
 echo "==> 4/6 Migrations (mesmo Job usado em produção)"
-kubectl delete job oficina-migrate --namespace "${NS}" --ignore-not-found
+kubectl delete job "oficina-migrate-${MIGRATION_ID}" --namespace "${NS}" --ignore-not-found
 localizar k8s/migration-job.yaml | kubectl apply -f -
-kubectl wait --for=condition=complete job/oficina-migrate \
+kubectl wait --for=condition=complete "job/oficina-migrate-${MIGRATION_ID}" \
   --namespace "${NS}" --timeout=300s
 
 echo "==> 5/6 Deployment, Service e HPA"

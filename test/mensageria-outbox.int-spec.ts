@@ -277,4 +277,69 @@ describe('Outbox — publicador (integração)', () => {
     });
     expect(atualizada?.enviadoEm).toBeNull();
   });
+
+  it('confirmação e liberação respeitam OUTBOX_PERSISTENCIA_MS com a linha bloqueada no banco', async () => {
+    const eventId = randomUUID();
+    await inserirPendente(eventId);
+    const persistenciaMs = 300;
+    const publicador = new PublicadorOutboxService(
+      prisma,
+      {
+        get: (chave: string) =>
+          chave === 'OUTBOX_PERSISTENCIA_MS'
+            ? String(persistenciaMs)
+            : undefined,
+        getOrThrow: () => 'https://local/billing-in',
+      } as unknown as ConfigService,
+      nestModule.get<FilaMensagensGateway>(FILA_MENSAGENS),
+      { publicar: jest.fn() },
+      jsonLogger,
+      mensageriaMetrics,
+    );
+    const [mensagem] = await publicador.reivindicarLote();
+
+    let liberarBloqueio!: () => void;
+    const bloqueioLiberado = new Promise<void>((resolve) => {
+      liberarBloqueio = resolve;
+    });
+    let linhaBloqueada!: () => void;
+    const aguardarBloqueio = new Promise<void>((resolve) => {
+      linhaBloqueada = resolve;
+    });
+    const transacaoBloqueadora = prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM outbox_mensagens WHERE id = ${mensagem.id} FOR UPDATE`;
+        linhaBloqueada();
+        await bloqueioLiberado;
+      },
+      { timeout: 30_000 },
+    );
+    await aguardarBloqueio;
+
+    // Confirmação (bloqueada) e depois liberação (também bloqueada): a chamada tem de
+    // terminar enquanto o bloqueio ainda existe, em cerca de 2 x OUTBOX_PERSISTENCIA_MS.
+    const inicio = Date.now();
+    let alarmeSemLimite: NodeJS.Timeout | undefined;
+    const resultado = await Promise.race([
+      publicador
+        .publicarMensagemReivindicada(mensagem)
+        .then(() => 'concluida' as const)
+        .catch(() => 'rejeitada' as const),
+      new Promise<'sem-limite'>((resolve) => {
+        alarmeSemLimite = setTimeout(() => resolve('sem-limite'), 5_000);
+      }),
+    ]);
+    clearTimeout(alarmeSemLimite);
+    const duracaoMs = Date.now() - inicio;
+
+    liberarBloqueio();
+    await transacaoBloqueadora;
+
+    expect(resultado).toBe('rejeitada');
+    expect(duracaoMs).toBeLessThan(4_000);
+    const atual = await prisma.outboxMensagem.findUniqueOrThrow({
+      where: { id: mensagem.id },
+    });
+    expect(atual.enviadoEm).toBeNull();
+  });
 });

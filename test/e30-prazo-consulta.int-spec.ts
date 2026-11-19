@@ -363,6 +363,208 @@ describe('E30 — prazo, consulta e projeção (integração)', () => {
     expect(consultas).toBeLessThanOrEqual(2);
   });
 
+  describe('administrador × verificador periódico (resultado esperado)', () => {
+    const emitidasNaOrdem = async (correlationId: string) =>
+      (
+        await prisma.outboxMensagem.findMany({
+          where: {
+            correlationId,
+            eventType: COMANDO_CONSULTAR_SITUACAO_FINANCEIRA,
+          },
+          orderBy: { criadoEm: 'asc' },
+        })
+      ).map(
+        (linha) =>
+          (linha.envelope as { payload: { consultaId: string } }).payload
+            .consultaId,
+      );
+
+    // Só a OS do teste fica elegível ao verificador: as demais, de outros testes, recebem posse distante.
+    const isolarParaOVerificador = async (ordemServicoId: string) => {
+      await prisma.ordemServico.updateMany({
+        where: { id: { not: ordemServicoId } },
+        data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+      });
+      await prisma.ordemServico.update({
+        where: { id: ordemServicoId },
+        data: {
+          prazoReferenciaReserva: new Date(0),
+          consultaPrazoProximaEm: new Date(0),
+          consultaPrazoReivindicadoEm: null,
+        },
+      });
+    };
+
+    const estadoDaConsulta = async (ordemServicoId: string) => {
+      const [ordem, estado, pendencias] = await Promise.all([
+        prisma.ordemServico.findUniqueOrThrow({
+          where: { id: ordemServicoId },
+          select: { consultaPrazoTentativa: true },
+        }),
+        prisma.estadoCompensacaoOs.findUniqueOrThrow({
+          where: { ordemServicoId },
+          select: { consultaIdVigente: true },
+        }),
+        prisma.pendenciaOs.findMany({
+          where: {
+            ordemServicoId,
+            tipo: TipoPendenciaOs.FINANCEIRA,
+            resolvida: false,
+          },
+        }),
+      ]);
+      return {
+        tentativa: ordem.consultaPrazoTentativa,
+        consultaIdVigente: estado.consultaIdVigente,
+        pendenciasDeConsulta: pendencias.filter(
+          (p) =>
+            (p.detalhes as { natureza?: string }).natureza ===
+            'CONSULTA_PRAZO_REFERENCIA',
+        ).length,
+      };
+    };
+
+    it('administrador primeiro: o verificador não emite enquanto há pedido EMITIDO', async () => {
+      const { os, correlationId } = await prepararAguardandoPagamento();
+      await vencerPrazoReferencia(os.id);
+
+      await expect(solicitarConsulta.execute(os.id)).resolves.toEqual({
+        resultado: 'emitida',
+      });
+      await isolarParaOVerificador(os.id);
+      await processador.processarLote();
+
+      const consultaDoAdministrador = consultaIdPrazoReferencia(os.id, 1, 1);
+      expect(await emitidasNaOrdem(correlationId)).toEqual([
+        consultaDoAdministrador,
+      ]);
+      expect(await estadoDaConsulta(os.id)).toEqual({
+        tentativa: 1,
+        consultaIdVigente: consultaDoAdministrador,
+        pendenciasDeConsulta: 1,
+      });
+
+      await prisma.ordemServico.update({
+        where: { id: os.id },
+        data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+      });
+    });
+
+    it('verificador primeiro: o pedido do administrador cria tentativa e consultaId novos', async () => {
+      const { os, correlationId } = await prepararAguardandoPagamento();
+      await vencerPrazoReferencia(os.id);
+      await isolarParaOVerificador(os.id);
+
+      await processador.processarLote();
+      await expect(solicitarConsulta.execute(os.id)).resolves.toEqual({
+        resultado: 'emitida',
+      });
+
+      const consultaDoVerificador = consultaIdPrazoReferencia(os.id, 1, 1);
+      const consultaDoAdministrador = consultaIdPrazoReferencia(os.id, 1, 2);
+      expect(await emitidasNaOrdem(correlationId)).toEqual([
+        consultaDoVerificador,
+        consultaDoAdministrador,
+      ]);
+      expect(await estadoDaConsulta(os.id)).toEqual({
+        tentativa: 2,
+        consultaIdVigente: consultaDoAdministrador,
+        pendenciasDeConsulta: 1,
+      });
+
+      await prisma.ordemServico.update({
+        where: { id: os.id },
+        data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+      });
+    });
+
+    it('resposta da consulta do verificador, depois do pedido do administrador, não altera a OS', async () => {
+      const { os, correlationId } = await prepararAguardandoPagamento();
+      await vencerPrazoReferencia(os.id);
+      await isolarParaOVerificador(os.id);
+      await processador.processarLote();
+      await solicitarConsulta.execute(os.id);
+
+      await processar.executar(
+        montarEnvelope(EVENTO_SITUACAO_FINANCEIRA, os.id, correlationId, 1, {
+          consultaId: consultaIdPrazoReferencia(os.id, 1, 1),
+          situacaoPagamento: 'PAGO_NO_PRAZO',
+          situacaoEstorno: 'NENHUM',
+          orderId: `ORD-CONC-${sufixo}`,
+          valorCentavos: 20000,
+        }),
+      );
+
+      expect(
+        (await prisma.ordemServico.findUniqueOrThrow({ where: { id: os.id } }))
+          .status,
+      ).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+      expect((await estadoDaConsulta(os.id)).consultaIdVigente).toBe(
+        consultaIdPrazoReferencia(os.id, 1, 2),
+      );
+
+      await prisma.ordemServico.update({
+        where: { id: os.id },
+        data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+      });
+    });
+
+    it('em disputa real, o estado final é coerente com a ordem de emissão (1 ou 2 consultas)', async () => {
+      const { os, correlationId } = await prepararAguardandoPagamento();
+      await vencerPrazoReferencia(os.id);
+      await isolarParaOVerificador(os.id);
+
+      await Promise.all([
+        solicitarConsulta.execute(os.id),
+        processador.processarLote(),
+      ]);
+
+      const emitidas = await emitidasNaOrdem(correlationId);
+      expect([1, 2]).toContain(emitidas.length);
+      expect(emitidas).toEqual(
+        emitidas.map((_, indice) =>
+          consultaIdPrazoReferencia(os.id, 1, indice + 1),
+        ),
+      );
+      expect(await estadoDaConsulta(os.id)).toEqual({
+        tentativa: emitidas.length,
+        consultaIdVigente: emitidas[emitidas.length - 1],
+        pendenciasDeConsulta: 1,
+      });
+
+      await prisma.ordemServico.update({
+        where: { id: os.id },
+        data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+      });
+    });
+  });
+
+  it('posse da reivindicação usa o relógio do banco e vence depois de PRAZO_REFERENCIA_REIVINDICACAO_MS', async () => {
+    const { os } = await prepararAguardandoPagamento();
+    await prisma.ordemServico.updateMany({
+      where: { id: { not: os.id } },
+      data: { consultaPrazoReivindicadoEm: new Date(Date.now() + 3_600_000) },
+    });
+    await prisma.ordemServico.update({
+      where: { id: os.id },
+      data: {
+        prazoReferenciaReserva: new Date(0),
+        consultaPrazoProximaEm: new Date(0),
+        consultaPrazoReivindicadoEm: null,
+      },
+    });
+
+    await expect(
+      reivindicacao.reivindicarElegiveis(1, 150_000),
+    ).resolves.toEqual([os.id]);
+
+    const [{ segundos }] = await prisma.$queryRaw<{ segundos: number }[]>`
+      SELECT EXTRACT(EPOCH FROM (consulta_prazo_reivindicado_em - NOW()))::float AS segundos
+      FROM ordens_servico WHERE id = ${os.id}::uuid`;
+    expect(segundos).toBeGreaterThan(149);
+    expect(segundos).toBeLessThanOrEqual(150);
+  });
+
   it('verificador periódico emite consulta com correlationId da OS', async () => {
     const { os, correlationId } = await prepararAguardandoPagamento();
     await prisma.ordemServico.update({

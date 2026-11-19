@@ -9,6 +9,13 @@ metadata:
 # Dados sensíveis (DATABASE_URL, JWT_*_KEY, TOKEN_*_OS, ADMIN_SENHA)
 # ficam no Secret (secret.example.yaml), criado pelo pipeline de CI/CD.
 # A API publica eventos de notificação no SNS via IRSA (sem credencial estática).
+# URLs das filas e ARN do tópico: o deploy.yml substitui os marcadores __...__ com
+# os valores do SSM. Os processadores ficam desligados (`false`) e o deploy reaplica
+# este arquivo inteiro: ligar um processador é um PR que altera este arquivo
+# (docs/tempos-processadores-os.md, "Ativação dos processadores"); edição manual do
+# ConfigMap no cluster é revertida no próximo deploy.
+# Tempos: calculados em docs/tempos-processadores-os.md e conferidos por
+# src/shared/messaging/prazos-operacionais-os.spec.ts.
 data:
   PORT: "3000"
   NODE_ENV: "production"
@@ -21,6 +28,22 @@ data:
   ADMIN_NOME: "Administrador"
   ADMIN_EMAIL: "admin@oficina.com"
   SNS_NOTIFICACAO_TOPIC_ARN: "__SNS_NOTIFICACAO_TOPIC_ARN__"
+  SQS_OS_IN_URL: "__SQS_OS_IN_URL__"
+  SQS_OS_IN_DLQ_URL: "__SQS_OS_IN_DLQ_URL__"
+  SQS_BILLING_IN_URL: "__SQS_BILLING_IN_URL__"
+  SQS_EXECUTION_IN_URL: "__SQS_EXECUTION_IN_URL__"
+  SQS_CONSUMER_HABILITADO: "false"
+  OUTBOX_PUBLISHER_HABILITADO: "false"
+  PRAZO_REFERENCIA_VERIFICADOR_HABILITADO: "false"
+  DATABASE_TRANSACTION_TIMEOUT_MS: "10000"
+  SQS_OPERATION_DEADLINE_MS: "45000"
+  SNS_OPERATION_DEADLINE_MS: "45000"
+  SQS_CONSUMER_LOTE: "3"
+  OUTBOX_PUBLISHER_LOTE: "5"
+  OUTBOX_PERSISTENCIA_MS: "5000"
+  OUTBOX_REIVINDICACAO_MS: "450000"
+  PRAZO_REFERENCIA_VERIFICADOR_LOTE: "5"
+  PRAZO_REFERENCIA_REIVINDICACAO_MS: "150000"
   API_GATEWAY_URL: "__API_GATEWAY_URL__"
   DD_SITE: "datadoghq.com"
   DD_DOGSTATSD_PORT: "8125"
