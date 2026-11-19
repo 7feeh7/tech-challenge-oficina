@@ -14,6 +14,7 @@ import { PrismaService } from '@/shared/database/prisma.service';
 import {
   COMANDO_GERAR_ORCAMENTO,
   DESTINO_FILA_BILLING,
+  EVENTO_STATUS_CHANGED,
 } from '@/shared/messaging/envelope';
 import { MensageriaModule } from '@/shared/messaging/mensageria.module';
 import { IdempotencyModule } from '@/shared/idempotency/idempotency.module';
@@ -25,6 +26,7 @@ import {
   verificarConexaoPostgres,
 } from './helpers/exigir-database-integracao';
 import { fecharModuloIntegracao } from './helpers/fechar-modulo-integracao';
+import { SessaoBloqueioOrdemServico } from './helpers/sessao-bloqueio-ordem-servico';
 
 describe('Rotas internas de negócio (integração)', () => {
   let nestModule: TestingModule;
@@ -117,12 +119,12 @@ describe('Rotas internas de negócio (integração)', () => {
     await fecharModuloIntegracao(nestModule, prisma);
   });
 
-  async function abrirOsEmDiagnostico() {
+  async function abrirOsEmDiagnostico(pecaDaOs: string = pecaId) {
     const os = await criarOs.execute({
       clienteId,
       veiculoId,
       descricaoProblema: 'teste',
-      pecas: [{ pecaId, quantidade: 1 }],
+      pecas: [{ pecaId: pecaDaOs, quantidade: 1 }],
     });
     await unitOfWork.executar((contexto) =>
       transicoes.aplicar(contexto, {
@@ -174,28 +176,172 @@ describe('Rotas internas de negócio (integração)', () => {
     expect(historico).toBe(1);
   });
 
-  it('idempotência concorrente com a mesma chave grava um único efeito', async () => {
+  // Mantém a OS bloqueada por uma conexão de fora do pool até as duas chamadas
+  // estarem esperando o mesmo `FOR UPDATE`, para que a disputa seja real.
+  async function executarDuasVezesEmDisputa<T>(
+    ordemServicoId: string,
+    operacao: () => Promise<T>,
+  ): Promise<PromiseSettledResult<T>[]> {
+    const sessao = new SessaoBloqueioOrdemServico(
+      exigirDatabaseUrl(),
+      ordemServicoId,
+    );
+    try {
+      await sessao.adquirir();
+      const chamadas = Promise.allSettled([operacao(), operacao()]);
+      await sessao.aguardarDisputaBloqueio(2);
+      await sessao.liberar();
+      return await chamadas;
+    } finally {
+      await sessao.descartar();
+    }
+  }
+
+  function contarOutbox(correlationId: string, eventType: string) {
+    return prisma.outboxMensagem.count({ where: { correlationId, eventType } });
+  }
+
+  async function correlationIdDaOs(osId: string): Promise<string> {
+    const os = await prisma.ordemServico.findUniqueOrThrow({
+      where: { id: osId },
+      select: { correlationId: true },
+    });
+    return os.correlationId;
+  }
+
+  function valorDaChamada<T>(resultado: PromiseSettledResult<T>): T {
+    if (resultado.status === 'rejected') {
+      throw resultado.reason;
+    }
+    return resultado.value;
+  }
+
+  it('diagnóstico concorrente com a mesma chave devolve o mesmo corpo e grava um só efeito e uma só mensagem', async () => {
     const osId = await abrirOsEmDiagnostico();
+    const correlationId = await correlationIdDaOs(osId);
     const key = `diagnostico:${randomUUID()}`;
     const body = {
       ordemServicoId: osId,
       rodada: 1,
       tarefaId: randomUUID(),
       laudo: 'Motor com ruído',
-      itens: [{ tipo: 'SERVICO' as const, itemId: servicoId, quantidade: 1 }],
+      itens: [
+        { tipo: 'SERVICO' as const, itemId: servicoId, quantidade: 1 },
+        { tipo: 'PECA' as const, itemId: pecaId, quantidade: 2 },
+      ],
       idempotencyKey: key,
     };
-
-    const resultados = await Promise.allSettled([
-      concluirDiagnostico.execute(body),
-      concluirDiagnostico.execute(body),
-    ]);
-    const sucesso = resultados.filter((r) => r.status === 'fulfilled');
-    expect(sucesso.length).toBeGreaterThanOrEqual(1);
-    const gravados = await prisma.idempotencyRecord.count({
-      where: { idempotencyKey: key, scope: 'internal.diagnostico' },
+    const historicoAntes = await prisma.historicoStatusOS.count({
+      where: { ordemServicoId: osId },
     });
-    expect(gravados).toBe(1);
+    const outboxAntes = await contarOutbox(
+      correlationId,
+      COMANDO_GERAR_ORCAMENTO,
+    );
+
+    const [primeira, segunda] = await executarDuasVezesEmDisputa(osId, () =>
+      concluirDiagnostico.execute(body),
+    );
+
+    const corpoPrimeira = valorDaChamada(primeira);
+    expect(valorDaChamada(segunda)).toEqual(corpoPrimeira);
+    expect(corpoPrimeira.itensOficiais).toHaveLength(2);
+
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { idempotencyKey: key, scope: 'internal.diagnostico' },
+      }),
+    ).toBe(1);
+    expect(await contarOutbox(correlationId, COMANDO_GERAR_ORCAMENTO)).toBe(
+      outboxAntes + 1,
+    );
+    expect(
+      await prisma.ordemServicoServico.count({
+        where: { ordemServicoId: osId },
+      }),
+    ).toBe(1);
+    const pecasDaOs = await prisma.ordemServicoPeca.findMany({
+      where: { ordemServicoId: osId },
+    });
+    expect(pecasDaOs).toHaveLength(1);
+    expect(pecasDaOs[0].quantidade).toBe(2);
+    expect(
+      await prisma.historicoStatusOS.count({ where: { ordemServicoId: osId } }),
+    ).toBe(historicoAntes);
+  });
+
+  it('reserva concorrente com a mesma chave devolve o mesmo corpo e grava uma só reserva, transição e mensagem', async () => {
+    const pecaDaReserva = (
+      await prisma.peca.create({
+        data: {
+          codigo: `RES-${sufixo}`,
+          nome: 'Peça reserva concorrente',
+          precoUnitario: 25,
+          quantidadeEstoque: 10,
+        },
+      })
+    ).id;
+    const osId = await abrirOsEmDiagnostico(pecaDaReserva);
+    const correlationId = await correlationIdDaOs(osId);
+    await concluirDiagnostico.execute({
+      ordemServicoId: osId,
+      rodada: 1,
+      tarefaId: randomUUID(),
+      laudo: 'Laudo',
+      itens: [{ tipo: 'PECA', itemId: pecaDaReserva, quantidade: 3 }],
+      idempotencyKey: `diagnostico:${randomUUID()}`,
+    });
+    await unitOfWork.executar((contexto) =>
+      transicoes.aplicar(contexto, {
+        ordemServicoId: osId,
+        aplicar: (ordem, agora) => ordem.registrarOrcamentoGerado(agora),
+        observacao: 'orçamento',
+      }),
+    );
+    const key = `reserva:${randomUUID()}:1`;
+    const entrada = {
+      ordemServicoId: osId,
+      rodada: 1,
+      orcamentoId: randomUUID(),
+      idempotencyKey: key,
+    };
+    const historicoAntes = await prisma.historicoStatusOS.count({
+      where: { ordemServicoId: osId },
+    });
+    const outboxAntes = await contarOutbox(
+      correlationId,
+      EVENTO_STATUS_CHANGED,
+    );
+
+    const [primeira, segunda] = await executarDuasVezesEmDisputa(osId, () =>
+      reservar.execute(entrada),
+    );
+
+    expect(valorDaChamada(segunda)).toEqual(valorDaChamada(primeira));
+    expect(
+      await prisma.idempotencyRecord.count({
+        where: { idempotencyKey: key, scope: 'internal.reserva' },
+      }),
+    ).toBe(1);
+    const reservas = await prisma.reservaEstoque.findMany({
+      where: { ordemServicoId: osId },
+    });
+    expect(reservas).toHaveLength(1);
+    expect(reservas[0].quantidade).toBe(3);
+    const peca = await prisma.peca.findUniqueOrThrow({
+      where: { id: pecaDaReserva },
+    });
+    expect(peca.quantidadeReservada).toBe(3);
+    const os = await prisma.ordemServico.findUniqueOrThrow({
+      where: { id: osId },
+    });
+    expect(os.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+    expect(
+      await prisma.historicoStatusOS.count({ where: { ordemServicoId: osId } }),
+    ).toBe(historicoAntes + 1);
+    expect(await contarOutbox(correlationId, EVENTO_STATUS_CHANGED)).toBe(
+      outboxAntes + 1,
+    );
   });
 
   it('reserva e transiciona para AGUARDANDO_PAGAMENTO com prazo do banco', async () => {

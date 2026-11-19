@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Module,
-  Post,
-  Req,
-  RequestMethod,
-} from '@nestjs/common';
+import { Controller, Get, Module, Post, Req } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   FastifyAdapter,
@@ -16,6 +9,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { sign } from 'jsonwebtoken';
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { RelacaoChamadorInterno } from '../src/modules/rotas-internas/relacao-chamador-interno';
 import { RotaInternaPost } from '../src/modules/rotas-internas/decorators/rota-interna-post.decorator';
 import { RotaInternaGet } from '../src/modules/rotas-internas/decorators/rota-interna-get.decorator';
@@ -60,14 +54,7 @@ describe('Autenticação RS256 e rotas internas (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1', {
-      exclude: [
-        { path: 'health', method: RequestMethod.ALL },
-        { path: 'health/ready', method: RequestMethod.ALL },
-        { path: 'internal', method: RequestMethod.ALL },
-        { path: 'internal/(.*)', method: RequestMethod.ALL },
-      ],
-    });
+    configurarAplicacaoHttp(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     jwtService = app.get(JwtService);
@@ -141,19 +128,44 @@ describe('Autenticação RS256 e rotas internas (e2e)', () => {
       .expect(401);
   });
 
-  it('omite /internal do Swagger público (mesma lógica do bootstrap)', () => {
-    const config = new DocumentBuilder()
-      .setTitle('Sistema de Oficina Mecânica')
-      .setVersion('1.0.0')
-      .build();
-    const document = SwaggerModule.createDocument(app, config);
-    for (const path of Object.keys(document.paths)) {
-      if (path.startsWith('/internal')) {
-        delete document.paths[path];
-      }
+  it('não publica /internal no documento Swagger gerado pela configuração do bootstrap', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/docs-json')
+      .expect(200);
+    const caminhos = Object.keys(resposta.body.paths);
+
+    expect(caminhos.some((caminho) => caminho.startsWith('/internal'))).toBe(
+      false,
+    );
+    expect(caminhos.some((caminho) => caminho.startsWith('/v1/'))).toBe(true);
+  });
+
+  it('a sonda interna existiria no Swagger sem a configuração do bootstrap', () => {
+    const documentoSemFiltro = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().build(),
+    );
+
+    expect(Object.keys(documentoSemFiltro.paths)).toContain(
+      '/internal/probe/billing',
+    );
+  });
+
+  it('responde as rotas internas fora do prefixo /v1', async () => {
+    const osId = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+    const rotasInternas = [
+      {
+        metodo: 'post',
+        caminho: `/internal/ordens-servico/${osId}/diagnostico`,
+      },
+      { metodo: 'post', caminho: `/internal/ordens-servico/${osId}/reservas` },
+      { metodo: 'get', caminho: '/internal/clientes?cpf=12345678901' },
+    ] as const;
+
+    for (const { metodo, caminho } of rotasInternas) {
+      // 401 sem token prova que a rota existe fora de /v1 e está protegida.
+      await request(app.getHttpServer())[metodo](caminho).expect(401);
+      await request(app.getHttpServer())[metodo](`/v1${caminho}`).expect(404);
     }
-    const paths = Object.keys(document.paths);
-    expect(paths.some((p) => p.startsWith('/internal'))).toBe(false);
-    expect(paths.some((p) => p.startsWith('/v1/'))).toBe(true);
   });
 });

@@ -43,6 +43,8 @@ Idempotency-Key: `diagnostico:<tarefaId>`
 
 `tarefaId` é o identificador determinístico da tarefa no Execution, `<osId>#<rodada>#DIAGNOSTICO` (o UUID puro, formato anterior, continua aceito). Qualquer outro formato é recusado com 400.
 
+Os `itens` não repetem o mesmo `itemId` com o mesmo `tipo` (o `itemId` é comparado sem diferenciar maiúsculas de minúsculas); a repetição é recusada com 400, sem gravar nada, e o reenvio corrigido com a mesma `Idempotency-Key` é aceito.
+
 ### Resposta 200 — diagnóstico registrado
 
 ```json

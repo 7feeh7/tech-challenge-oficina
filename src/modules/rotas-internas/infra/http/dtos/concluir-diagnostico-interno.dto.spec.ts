@@ -40,3 +40,60 @@ describe('ConcluirDiagnosticoInternoDto.tarefaId', () => {
     expect(erros.map((e) => e.property)).toEqual(['tarefaId']);
   });
 });
+
+describe('ConcluirDiagnosticoInternoDto.itens', () => {
+  const OUTRO_ITEM_ID = '8d0f7780-8536-41ef-955c-f18ed2a38bf8';
+
+  const validarItens = async (itens: unknown[]) =>
+    validate(
+      plainToInstance(ConcluirDiagnosticoInternoDto, {
+        rodada: 1,
+        tarefaId: OS_ID,
+        laudo: 'Laudo',
+        itens,
+      }),
+    );
+
+  it('aceita o mesmo itemId com tipos diferentes', async () => {
+    const erros = await validarItens([
+      { tipo: 'PECA', itemId: ITEM_ID, quantidade: 1 },
+      { tipo: 'SERVICO', itemId: ITEM_ID, quantidade: 1 },
+    ]);
+
+    expect(erros).toHaveLength(0);
+  });
+
+  it('aceita itens distintos do mesmo tipo', async () => {
+    const erros = await validarItens([
+      { tipo: 'PECA', itemId: ITEM_ID, quantidade: 1 },
+      { tipo: 'PECA', itemId: OUTRO_ITEM_ID, quantidade: 1 },
+    ]);
+
+    expect(erros).toHaveLength(0);
+  });
+
+  it.each([
+    ['mesma quantidade', 1, 1],
+    ['quantidades diferentes', 1, 3],
+  ])(
+    'recusa itemId e tipo repetidos com %s',
+    async (_nome, primeira, segunda) => {
+      const erros = await validarItens([
+        { tipo: 'PECA', itemId: ITEM_ID, quantidade: primeira },
+        { tipo: 'PECA', itemId: ITEM_ID, quantidade: segunda },
+      ]);
+
+      expect(erros.map((e) => e.property)).toEqual(['itens']);
+      expect(erros[0].constraints).toHaveProperty('itensSemRepeticao');
+    },
+  );
+
+  it('recusa itemId repetido que difere só na caixa do UUID', async () => {
+    const erros = await validarItens([
+      { tipo: 'SERVICO', itemId: ITEM_ID, quantidade: 1 },
+      { tipo: 'SERVICO', itemId: ITEM_ID.toUpperCase(), quantidade: 1 },
+    ]);
+
+    expect(erros.map((e) => e.property)).toEqual(['itens']);
+  });
+});

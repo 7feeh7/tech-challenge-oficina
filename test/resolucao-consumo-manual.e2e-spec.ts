@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -9,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import {
   exigirDatabaseUrl,
@@ -110,19 +110,7 @@ describe('Resolução manual de consumo (e2e)', () => {
       app.getHttpAdapter().getInstance(),
       app.get(JsonLoggerService),
     );
-    app.setGlobalPrefix('v1', {
-      exclude: [
-        { path: 'health', method: RequestMethod.ALL },
-        { path: 'health/ready', method: RequestMethod.ALL },
-      ],
-    });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     httpServer = app.getHttpServer();
