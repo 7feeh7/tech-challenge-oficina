@@ -122,7 +122,7 @@ Publicado pelo OS quando recebe `billing.cobranca-criada.v1` e atualiza a proje�
       "nome": "João da Silva",
       "email": "joao.silva@email.com"
     },
-    "numeroOS": 1042,
+    "numeroOs": 1042,
     "linkPagamento": "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=1234567890",
     "prazoPagamento": "2026-11-15T10:18:00.000Z",
     "valorCentavos": 34500
@@ -136,7 +136,7 @@ Publicado pelo OS quando recebe `billing.cobranca-criada.v1` e atualiza a proje�
 | --- | --- | --- | --- |
 | `destinatario.nome` | `string` | sim | Nome do cliente para a notificação |
 | `destinatario.email` | `string` | sim | E-mail do cliente para a notificação |
-| `numeroOS` | `number` | não | Número sequencial da OS |
+| `numeroOs` | `number` | não | Número sequencial da OS |
 | `linkPagamento` | `string` | sim | URL do Mercado Pago para o cliente pagar |
 | `prazoPagamento` | `string` | sim | ISO 8601; prazo de pagamento calculado pelo Billing (D4.5) |
 | `valorCentavos` | `number` | sim | Valor em centavos (D3.12) |
