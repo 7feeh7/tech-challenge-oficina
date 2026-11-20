@@ -12,6 +12,7 @@ import {
   ReservaJaProcessadaError,
   ConsumoAplicadoIncompativelError,
   PendenciaResolucaoConsumoInvalidaError,
+  QuantidadeResolucaoManualInvalidaError,
   ResolucaoConsumoManualComConsumoAplicadoError,
   ResolucaoConsumoManualJaExisteError,
 } from '../../domain/errors/reserva-estoque.errors';
@@ -48,6 +49,7 @@ describe('PrismaReservaEstoqueGateway', () => {
     peca: {
       update: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+      findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
     consumoAplicadoOs: {
@@ -1072,6 +1074,280 @@ describe('PrismaReservaEstoqueGateway', () => {
       await expect(
         gateway.resolverConsumoManualInicial(contexto, inputBase),
       ).rejects.toThrow(PendenciaResolucaoConsumoInvalidaError);
+    });
+
+    describe('etapas após o bloqueio das reservas ativas', () => {
+      const PECA_B_UUID = '33333333-3333-4333-8333-333333333333';
+      const reservaUnica = [{ id: 'r1', peca_id: PECA_UUID, quantidade: 2 }];
+
+      function prepararResolucao(
+        linhas: { id: string; peca_id: string; quantidade: number }[],
+      ): void {
+        cliente.pendenciaOs.findUnique.mockResolvedValue({
+          id: 'pend-res',
+          ordemServicoId: 'os',
+          rodada: 1,
+        });
+        cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
+        cliente.resolucaoConsumoManual.findUnique.mockResolvedValue(null);
+        cliente.$queryRaw
+          .mockResolvedValueOnce([{ id: 'os' }])
+          .mockResolvedValueOnce([
+            {
+              id: 'pend-res',
+              ordem_servico_id: 'os',
+              rodada: 1,
+              resolvida: false,
+              detalhes: { natureza: 'INFORMACAO_INSUFICIENTE' },
+            },
+          ])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(
+            linhas.map((linha) => ({
+              ...linha,
+              ordem_servico_id: 'os',
+              rodada: 1,
+              grupo_reserva_id: 'g1',
+              quantidade_consumida: 0,
+              situacao: 'ATIVA',
+              prazo_referencia: null,
+            })),
+          )
+          .mockResolvedValue([
+            {
+              id: PECA_UUID,
+              quantidade_estoque: 10,
+              quantidade_reservada: 2,
+              ativo: true,
+            },
+          ]);
+      }
+
+      it('recusa pendência já resolvida', async () => {
+        cliente.pendenciaOs.findUnique.mockResolvedValue({
+          id: 'pend-res',
+          ordemServicoId: 'os',
+          rodada: 1,
+        });
+        cliente.consumoAplicadoOs.findUnique.mockResolvedValue(null);
+        cliente.resolucaoConsumoManual.findUnique.mockResolvedValue(null);
+        cliente.$queryRaw
+          .mockResolvedValueOnce([{ id: 'os' }])
+          .mockResolvedValueOnce([
+            {
+              id: 'pend-res',
+              ordem_servico_id: 'os',
+              rodada: 1,
+              resolvida: true,
+              detalhes: { natureza: 'INFORMACAO_INSUFICIENTE' },
+            },
+          ]);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, inputBase),
+        ).rejects.toThrow(PendenciaInventarioJaResolvidaError);
+      });
+
+      it('recusa peça sem reserva ativa na OS e rodada', async () => {
+        prepararResolucao(reservaUnica);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_B_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(QuantidadeResolucaoManualInvalidaError);
+      });
+
+      it('recusa quantidade consumida fracionária', async () => {
+        prepararResolucao(reservaUnica);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 1.5 }],
+          }),
+        ).rejects.toThrow('Quantidade consumida inválida');
+      });
+
+      it('recusa quantidade liberada fracionária', async () => {
+        prepararResolucao(reservaUnica);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [],
+            itensLiberados: [{ pecaId: PECA_UUID, quantidade: 1.5 }],
+          }),
+        ).rejects.toThrow('Quantidade liberada inválida');
+      });
+
+      it('recusa soma de consumido e liberado diferente da reserva', async () => {
+        prepararResolucao(reservaUnica);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 1 }],
+          }),
+        ).rejects.toThrow('Soma de consumido e liberado difere');
+      });
+
+      it('bloqueia as peças afetadas em ordem crescente de id', async () => {
+        prepararResolucao([
+          { id: 'r1', peca_id: PECA_UUID, quantidade: 2 },
+          { id: 'r2', peca_id: PECA_B_UUID, quantidade: 1 },
+        ]);
+        cliente.$executeRaw.mockResolvedValue(1);
+
+        await gateway.resolverConsumoManualInicial(contexto, {
+          ...inputBase,
+          itensConsumidos: [{ pecaId: PECA_B_UUID, quantidade: 1 }],
+          itensLiberados: [{ pecaId: PECA_UUID, quantidade: 2 }],
+        });
+
+        const pecasBloqueadas = cliente.$queryRaw.mock.calls
+          .slice(4)
+          .map((chamada: unknown[]) => chamada[1]);
+        expect(pecasBloqueadas).toEqual([PECA_UUID, PECA_B_UUID]);
+      });
+
+      it('recusa consumo quando o saldo físico da peça não é atualizado', async () => {
+        prepararResolucao(reservaUnica);
+        cliente.$executeRaw.mockResolvedValueOnce(0);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(ReservaJaProcessadaError);
+      });
+
+      it('recusa consumo quando a reserva já saiu de ATIVA', async () => {
+        prepararResolucao(reservaUnica);
+        cliente.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(ReservaJaProcessadaError);
+      });
+
+      it('recusa liberação quando o saldo reservado não é atualizado', async () => {
+        prepararResolucao(reservaUnica);
+        cliente.$executeRaw.mockResolvedValueOnce(0);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [],
+            itensLiberados: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(ReservaJaProcessadaError);
+      });
+
+      it('recusa liberação quando a reserva já saiu de ATIVA', async () => {
+        prepararResolucao(reservaUnica);
+        cliente.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [],
+            itensLiberados: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(ReservaJaProcessadaError);
+      });
+
+      it('recusa quando outra transação resolveu a pendência antes', async () => {
+        prepararResolucao(reservaUnica);
+        cliente.$executeRaw
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(1)
+          .mockResolvedValueOnce(0);
+
+        await expect(
+          gateway.resolverConsumoManualInicial(contexto, {
+            ...inputBase,
+            itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          }),
+        ).rejects.toThrow(PendenciaInventarioJaResolvidaError);
+      });
+
+      describe('com ajuste físico', () => {
+        const comAjuste = (quantidadeFisicaNova: number) => ({
+          ...inputBase,
+          itensConsumidos: [{ pecaId: PECA_UUID, quantidade: 2 }],
+          ajustesFisicos: [{ pecaId: PECA_UUID, quantidadeFisicaNova }],
+        });
+
+        it('registra o ajuste administrativo com o saldo anterior', async () => {
+          prepararResolucao(reservaUnica);
+          cliente.$executeRaw.mockResolvedValue(1);
+          cliente.peca.findUnique.mockResolvedValue({
+            quantidadeEstoque: 8,
+            quantidadeReservada: 0,
+          });
+
+          await gateway.resolverConsumoManualInicial(contexto, comAjuste(5));
+
+          expect(
+            cliente.ajusteEstoqueAdministrativo.create,
+          ).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+              pecaId: PECA_UUID,
+              ordemServicoId: 'os',
+              pendenciaId: 'pend-res',
+              quantidadeFisicaAnterior: 8,
+              quantidadeFisicaNova: 5,
+              motivo: 'decisão administrativa',
+              responsavelId: 'admin-1',
+            }),
+          });
+        });
+
+        it('recusa ajuste de peça sem saldo cadastrado', async () => {
+          prepararResolucao(reservaUnica);
+          cliente.$executeRaw.mockResolvedValue(1);
+          cliente.peca.findUnique.mockResolvedValue(null);
+
+          await expect(
+            gateway.resolverConsumoManualInicial(contexto, comAjuste(5)),
+          ).rejects.toThrow(PendenciaInventarioNaoEncontradaError);
+        });
+
+        it('recusa ajuste abaixo da quantidade reservada', async () => {
+          prepararResolucao(reservaUnica);
+          cliente.$executeRaw.mockResolvedValue(1);
+          cliente.peca.findUnique.mockResolvedValue({
+            quantidadeEstoque: 8,
+            quantidadeReservada: 3,
+          });
+
+          await expect(
+            gateway.resolverConsumoManualInicial(contexto, comAjuste(2)),
+          ).rejects.toThrow(EstoqueFisicoAbaixoReservadoError);
+        });
+
+        it('recusa ajuste quando a atualização condicional não altera a peça', async () => {
+          prepararResolucao(reservaUnica);
+          cliente.$executeRaw
+            .mockResolvedValueOnce(1)
+            .mockResolvedValueOnce(1)
+            .mockResolvedValueOnce(0);
+          cliente.peca.findUnique.mockResolvedValue({
+            quantidadeEstoque: 8,
+            quantidadeReservada: 0,
+          });
+
+          await expect(
+            gateway.resolverConsumoManualInicial(contexto, comAjuste(5)),
+          ).rejects.toThrow(EstoqueFisicoAbaixoReservadoError);
+        });
+      });
     });
   });
 

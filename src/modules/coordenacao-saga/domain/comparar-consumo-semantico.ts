@@ -37,7 +37,9 @@ function divergenciasEquivalentes(
   b: ConteudoConsumoComparavel['divergencias'],
 ): boolean {
   const norm = (lista: ConteudoConsumoComparavel['divergencias']): string[] =>
-    [...new Set(lista.map(chaveDivergencia))].sort();
+    [...new Set(lista.map(chaveDivergencia))].sort((x, y) =>
+      x.localeCompare(y),
+    );
   const la = norm(a);
   const lb = norm(b);
   return la.length === lb.length && la.every((v, i) => v === lb[i]);

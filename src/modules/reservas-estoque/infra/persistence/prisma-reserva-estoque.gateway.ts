@@ -965,141 +965,35 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       pendencia.rodada,
     );
 
-    const pecasReservaAtiva = new Set(linhasAtivas.map((l) => l.peca_id));
-    for (const itemId of [
-      ...mapaConsumido.keys(),
-      ...mapaLiberado.keys(),
-      ...(input.ajustesFisicos?.map((a) => a.pecaId) ?? []),
-    ]) {
-      if (!pecasReservaAtiva.has(itemId)) {
-        throw new QuantidadeResolucaoManualInvalidaError(
-          `Peça ${itemId} não possui reserva ativa nesta OS e rodada.`,
-        );
-      }
-    }
-    for (const [pecaId, qtd] of mapaConsumido) {
-      if (qtd < 0 || !Number.isInteger(qtd)) {
-        throw new QuantidadeResolucaoManualInvalidaError(
-          `Quantidade consumida inválida para a peça ${pecaId}.`,
-        );
-      }
-    }
-    for (const [pecaId, qtd] of mapaLiberado) {
-      if (qtd < 0 || !Number.isInteger(qtd)) {
-        throw new QuantidadeResolucaoManualInvalidaError(
-          `Quantidade liberada inválida para a peça ${pecaId}.`,
-        );
-      }
-    }
+    this.validarItensResolucaoManual(
+      linhasAtivas,
+      mapaConsumido,
+      mapaLiberado,
+      input.ajustesFisicos,
+    );
 
-    for (const linha of linhasAtivas) {
-      const consumir = mapaConsumido.get(linha.peca_id) ?? 0;
-      const liberarQty = mapaLiberado.get(linha.peca_id) ?? 0;
-      if (consumir + liberarQty !== linha.quantidade) {
-        throw new QuantidadeResolucaoManualInvalidaError(
-          `Soma de consumido e liberado difere da reserva original para a peça ${linha.peca_id}.`,
-        );
-      }
-      if (consumir > linha.quantidade) {
-        throw new QuantidadeResolucaoManualInvalidaError(
-          `Consumo manual excede reserva original para a peça ${linha.peca_id}.`,
-        );
-      }
-    }
-
-    const pecasAfetadas = new Set([
+    await this.bloquearPecasEmOrdem(cliente, [
       ...mapaConsumido.keys(),
       ...mapaLiberado.keys(),
       ...(input.ajustesFisicos?.map((a) => a.pecaId) ?? []),
     ]);
-    for (const pecaId of [...pecasAfetadas].sort()) {
-      await this.bloquearPeca(cliente, pecaId);
-    }
-
-    for (const linha of linhasAtivas) {
-      const utilizada = mapaConsumido.get(linha.peca_id) ?? 0;
-      if (utilizada <= 0) {
-        continue;
-      }
-      const consumoFisico = await cliente.$executeRaw`
-        UPDATE pecas
-        SET quantidade_estoque = quantidade_estoque - ${utilizada},
-            quantidade_reservada = quantidade_reservada - ${linha.quantidade}
-        WHERE id = ${linha.peca_id}::uuid
-          AND quantidade_estoque >= ${utilizada}
-          AND quantidade_reservada >= ${linha.quantidade}
-      `;
-      if (consumoFisico !== 1) {
-        throw new ReservaJaProcessadaError();
-      }
-      const transicionou = await this.transicionarReserva(
-        cliente,
-        linha.id,
-        SituacaoReservaEstoque.CONSUMIDA,
-        { quantidadeConsumida: utilizada },
-      );
-      if (!transicionou) {
-        throw new ReservaJaProcessadaError();
-      }
-    }
-
-    for (const linha of linhasAtivas) {
-      if ((mapaConsumido.get(linha.peca_id) ?? 0) > 0) {
-        continue;
-      }
-      const liberado = await cliente.$executeRaw`
-        UPDATE pecas
-        SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
-        WHERE id = ${linha.peca_id}::uuid
-          AND quantidade_reservada >= ${linha.quantidade}
-      `;
-      if (liberado !== 1) {
-        throw new ReservaJaProcessadaError();
-      }
-      const transicionou = await this.transicionarReserva(
-        cliente,
-        linha.id,
-        SituacaoReservaEstoque.LIBERADA,
-        {},
-      );
-      if (!transicionou) {
-        throw new ReservaJaProcessadaError();
-      }
-    }
-
-    for (const ajuste of input.ajustesFisicos ?? []) {
-      const saldo = await cliente.peca.findUnique({
-        where: { id: ajuste.pecaId },
-        select: { quantidadeEstoque: true, quantidadeReservada: true },
-      });
-      if (!saldo) {
-        throw new PendenciaInventarioNaoEncontradaError(input.pendenciaId);
-      }
-      if (ajuste.quantidadeFisicaNova < saldo.quantidadeReservada) {
-        throw new EstoqueFisicoAbaixoReservadoError();
-      }
-      const fisicoAtualizado = await cliente.$executeRaw`
-        UPDATE pecas
-        SET quantidade_estoque = ${ajuste.quantidadeFisicaNova}
-        WHERE id = ${ajuste.pecaId}::uuid
-          AND quantidade_reservada <= ${ajuste.quantidadeFisicaNova}
-      `;
-      if (fisicoAtualizado !== 1) {
-        throw new EstoqueFisicoAbaixoReservadoError();
-      }
-      await cliente.ajusteEstoqueAdministrativo.create({
-        data: {
-          id: randomUUID(),
-          pecaId: ajuste.pecaId,
-          ordemServicoId: pendencia.ordem_servico_id,
-          pendenciaId: pendencia.id,
-          quantidadeFisicaAnterior: saldo.quantidadeEstoque,
-          quantidadeFisicaNova: ajuste.quantidadeFisicaNova,
-          motivo: motivoNormalizado,
-          responsavelId: input.responsavelId,
-        },
-      });
-    }
+    await this.consumirReservasResolucaoManual(
+      cliente,
+      linhasAtivas,
+      mapaConsumido,
+    );
+    await this.liberarReservasResolucaoManual(
+      cliente,
+      linhasAtivas,
+      mapaConsumido,
+    );
+    await this.aplicarAjustesFisicosResolucaoManual(cliente, {
+      ajustesFisicos: input.ajustesFisicos ?? [],
+      pendenciaId: input.pendenciaId,
+      pendencia,
+      motivo: motivoNormalizado,
+      responsavelId: input.responsavelId,
+    });
 
     const resolucaoId = randomUUID();
     const resolvidoEm = new Date();
@@ -1143,6 +1037,176 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       rodada: pendencia.rodada,
       resolucaoId,
     };
+  }
+
+  private validarItensResolucaoManual(
+    linhasAtivas: ReservaBloqueadaRow[],
+    mapaConsumido: Map<string, number>,
+    mapaLiberado: Map<string, number>,
+    ajustesFisicos: { pecaId: string }[] | undefined,
+  ): void {
+    const pecasReservaAtiva = new Set(linhasAtivas.map((l) => l.peca_id));
+    for (const itemId of [
+      ...mapaConsumido.keys(),
+      ...mapaLiberado.keys(),
+      ...(ajustesFisicos?.map((a) => a.pecaId) ?? []),
+    ]) {
+      if (!pecasReservaAtiva.has(itemId)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Peça ${itemId} não possui reserva ativa nesta OS e rodada.`,
+        );
+      }
+    }
+    for (const [pecaId, qtd] of mapaConsumido) {
+      if (qtd < 0 || !Number.isInteger(qtd)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Quantidade consumida inválida para a peça ${pecaId}.`,
+        );
+      }
+    }
+    for (const [pecaId, qtd] of mapaLiberado) {
+      if (qtd < 0 || !Number.isInteger(qtd)) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Quantidade liberada inválida para a peça ${pecaId}.`,
+        );
+      }
+    }
+
+    for (const linha of linhasAtivas) {
+      const consumir = mapaConsumido.get(linha.peca_id) ?? 0;
+      const liberarQty = mapaLiberado.get(linha.peca_id) ?? 0;
+      if (consumir + liberarQty !== linha.quantidade) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Soma de consumido e liberado difere da reserva original para a peça ${linha.peca_id}.`,
+        );
+      }
+      if (consumir > linha.quantidade) {
+        throw new QuantidadeResolucaoManualInvalidaError(
+          `Consumo manual excede reserva original para a peça ${linha.peca_id}.`,
+        );
+      }
+    }
+  }
+
+  private async bloquearPecasEmOrdem(
+    cliente: ClienteTransacao,
+    pecaIds: string[],
+  ): Promise<void> {
+    for (const pecaId of [...new Set(pecaIds)].sort((a, b) =>
+      a.localeCompare(b),
+    )) {
+      await this.bloquearPeca(cliente, pecaId);
+    }
+  }
+
+  private async consumirReservasResolucaoManual(
+    cliente: ClienteTransacao,
+    linhasAtivas: ReservaBloqueadaRow[],
+    mapaConsumido: Map<string, number>,
+  ): Promise<void> {
+    for (const linha of linhasAtivas) {
+      const utilizada = mapaConsumido.get(linha.peca_id) ?? 0;
+      if (utilizada <= 0) {
+        continue;
+      }
+      const consumoFisico = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = quantidade_estoque - ${utilizada},
+            quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_estoque >= ${utilizada}
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
+      if (consumoFisico !== 1) {
+        throw new ReservaJaProcessadaError();
+      }
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.CONSUMIDA,
+        { quantidadeConsumida: utilizada },
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
+    }
+  }
+
+  private async liberarReservasResolucaoManual(
+    cliente: ClienteTransacao,
+    linhasAtivas: ReservaBloqueadaRow[],
+    mapaConsumido: Map<string, number>,
+  ): Promise<void> {
+    for (const linha of linhasAtivas) {
+      if ((mapaConsumido.get(linha.peca_id) ?? 0) > 0) {
+        continue;
+      }
+      const liberado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_reservada = quantidade_reservada - ${linha.quantidade}
+        WHERE id = ${linha.peca_id}::uuid
+          AND quantidade_reservada >= ${linha.quantidade}
+      `;
+      if (liberado !== 1) {
+        throw new ReservaJaProcessadaError();
+      }
+      const transicionou = await this.transicionarReserva(
+        cliente,
+        linha.id,
+        SituacaoReservaEstoque.LIBERADA,
+        {},
+      );
+      if (!transicionou) {
+        throw new ReservaJaProcessadaError();
+      }
+    }
+  }
+
+  private async aplicarAjustesFisicosResolucaoManual(
+    cliente: ClienteTransacao,
+    resolucao: {
+      ajustesFisicos: { pecaId: string; quantidadeFisicaNova: number }[];
+      pendenciaId: string;
+      pendencia: { id: string; ordem_servico_id: string };
+      motivo: string;
+      responsavelId: string;
+    },
+  ): Promise<void> {
+    const { ajustesFisicos, pendenciaId, pendencia, motivo, responsavelId } =
+      resolucao;
+    for (const ajuste of ajustesFisicos) {
+      const saldo = await cliente.peca.findUnique({
+        where: { id: ajuste.pecaId },
+        select: { quantidadeEstoque: true, quantidadeReservada: true },
+      });
+      if (!saldo) {
+        throw new PendenciaInventarioNaoEncontradaError(pendenciaId);
+      }
+      if (ajuste.quantidadeFisicaNova < saldo.quantidadeReservada) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+      const fisicoAtualizado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = ${ajuste.quantidadeFisicaNova}
+        WHERE id = ${ajuste.pecaId}::uuid
+          AND quantidade_reservada <= ${ajuste.quantidadeFisicaNova}
+      `;
+      if (fisicoAtualizado !== 1) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+      await cliente.ajusteEstoqueAdministrativo.create({
+        data: {
+          id: randomUUID(),
+          pecaId: ajuste.pecaId,
+          ordemServicoId: pendencia.ordem_servico_id,
+          pendenciaId: pendencia.id,
+          quantidadeFisicaAnterior: saldo.quantidadeEstoque,
+          quantidadeFisicaNova: ajuste.quantidadeFisicaNova,
+          motivo: motivo,
+          responsavelId: responsavelId,
+        },
+      });
+    }
   }
 
   private normalizarDivergencia(
