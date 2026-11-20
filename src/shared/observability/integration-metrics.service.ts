@@ -6,7 +6,6 @@ export type IntegrationName =
   | 'postgresql'
   | 'sns'
   | 'sqs'
-  | 'sendgrid'
   | 'secrets_manager'
   | 'lambda';
 

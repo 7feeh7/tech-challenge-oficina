@@ -1,4 +1,4 @@
-import { sanitizeObject, sanitizeString } from './log-sanitizer';
+import { maskCpf, sanitizeObject, sanitizeString } from './log-sanitizer';
 
 describe('log-sanitizer', () => {
   it('remove authorization, jwt, senha e segredo dos metadados', () => {
@@ -29,6 +29,20 @@ describe('log-sanitizer', () => {
     expect(sanitizeString('contato joao.silva@oficina.com.br')).toBe(
       'contato jo***@oficina.com.br',
     );
+  });
+
+  it('sanitiza arrays e objetos aninhados', () => {
+    const sanitized = sanitizeObject({
+      items: [{ token: 'abc', detail: 'ok' }],
+      nested: { jwt: 'segredo' },
+    });
+
+    expect(sanitized.items).toEqual([{ token: '[redacted]', detail: 'ok' }]);
+    expect(sanitized.nested).toEqual({ jwt: '[redacted]' });
+  });
+
+  it('mascara CPF inválido em string sem formato completo', () => {
+    expect(maskCpf('doc 12345')).toBe('doc 12345');
   });
 
   it('remove bearer token de strings', () => {

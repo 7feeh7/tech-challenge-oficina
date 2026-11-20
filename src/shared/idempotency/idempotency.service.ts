@@ -1,6 +1,11 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
+import { ConteudoDivergenteInternoError } from '@/modules/rotas-internas/domain/erros-internos';
+import { devePersistirResultadoIdempotente } from './idempotencia-interna';
 
 const TTL_HOURS = 24;
 
@@ -17,6 +22,36 @@ export class IdempotencyService {
     return createHash('sha256')
       .update(JSON.stringify(body ?? {}))
       .digest('hex');
+  }
+
+  async buscarNaTransacao(
+    contexto: ContextoTransacao,
+    key: string,
+    scope: string,
+    requestHash: string,
+  ): Promise<StoredIdempotentResponse | null> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+    const record = await cliente.idempotencyRecord.findUnique({
+      where: {
+        idempotencyKey_scope: {
+          idempotencyKey: key,
+          scope,
+        },
+      },
+    });
+
+    if (!record) {
+      return null;
+    }
+
+    if (record.requestHash !== requestHash) {
+      throw new ConteudoDivergenteInternoError();
+    }
+
+    return {
+      statusCode: record.responseStatus,
+      body: record.responseBody,
+    };
   }
 
   async findReplay(
@@ -59,6 +94,43 @@ export class IdempotencyService {
     const expiraEm = new Date(Date.now() + TTL_HOURS * 60 * 60 * 1000);
 
     await this.prisma.idempotencyRecord.create({
+      data: {
+        idempotencyKey: key,
+        scope,
+        requestHash,
+        responseStatus: statusCode,
+        responseBody: body as object,
+        expiraEm,
+      },
+    });
+  }
+
+  /**
+   * Idempotência das rotas internas: grava na mesma transação do efeito e só para 2xx.
+   * A E28 chama este método a partir dos casos de uso.
+   */
+  async gravarNaTransacao(
+    contexto: ContextoTransacao,
+    key: string,
+    scope: string,
+    requestHash: string,
+    statusCode: number,
+    body: unknown,
+  ): Promise<void> {
+    if (!devePersistirResultadoIdempotente(statusCode)) {
+      return;
+    }
+
+    const cliente =
+      contexto instanceof PrismaContextoTransacao
+        ? contexto.cliente
+        : (() => {
+            throw new Error('Contexto de transação inválido.');
+          })();
+
+    const expiraEm = new Date(Date.now() + TTL_HOURS * 60 * 60 * 1000);
+
+    await cliente.idempotencyRecord.create({
       data: {
         idempotencyKey: key,
         scope,

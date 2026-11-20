@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/shared/database/prisma.service';
 import {
   CatalogoGateway,
+  ItemCatalogoDiagnostico,
   VeiculoDoCatalogo,
 } from '../../application/ports/catalogo.gateway';
 
@@ -24,19 +25,51 @@ export class PrismaCatalogoGateway implements CatalogoGateway {
     });
   }
 
-  async buscarPrecoDoServico(servicoId: string): Promise<number | null> {
+  async servicoExiste(servicoId: string): Promise<boolean> {
     const servico = await this.prisma.servico.findUnique({
       where: { id: servicoId },
-      select: { precoBase: true },
+      select: { id: true },
     });
-    return servico ? Number(servico.precoBase) : null;
+    return servico !== null;
   }
 
-  async buscarPrecoDaPeca(pecaId: string): Promise<number | null> {
+  async pecaExiste(pecaId: string): Promise<boolean> {
     const peca = await this.prisma.peca.findUnique({
       where: { id: pecaId },
-      select: { precoUnitario: true },
+      select: { id: true },
     });
-    return peca ? Number(peca.precoUnitario) : null;
+    return peca !== null;
+  }
+
+  async buscarServicoParaDiagnostico(
+    servicoId: string,
+  ): Promise<ItemCatalogoDiagnostico | null> {
+    const servico = await this.prisma.servico.findUnique({
+      where: { id: servicoId },
+      select: { id: true, nome: true, precoBase: true, ativo: true },
+    });
+    if (!servico) return null;
+    return {
+      id: servico.id,
+      nome: servico.nome,
+      precoUnitario: Number(servico.precoBase),
+      ativo: servico.ativo,
+    };
+  }
+
+  async buscarPecaParaDiagnostico(
+    pecaId: string,
+  ): Promise<ItemCatalogoDiagnostico | null> {
+    const peca = await this.prisma.peca.findUnique({
+      where: { id: pecaId },
+      select: { id: true, nome: true, precoUnitario: true, ativo: true },
+    });
+    if (!peca) return null;
+    return {
+      id: peca.id,
+      nome: peca.nome,
+      precoUnitario: Number(peca.precoUnitario),
+      ativo: peca.ativo,
+    };
   }
 }

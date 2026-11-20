@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ValidationPipe } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -9,19 +8,21 @@ import * as bcrypt from 'bcryptjs';
 
 import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../src/app.module';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
+import { configurarAplicacaoHttp } from '../src/shared/http/configurar-aplicacao-http';
 import { PrismaService } from '../src/shared/database/prisma.service';
 import {
-  PerfilUsuario,
-  StatusOS,
-  StatusOrcamento,
-} from '../src/shared/generated/prisma/enums';
+  exigirDatabaseUrl,
+  verificarConexaoPostgres,
+} from './helpers/exigir-database-integracao';
+import { PerfilUsuario, StatusOS } from '../src/shared/generated/prisma/enums';
 
 /**
  * E2E completo do fluxo principal da oficina:
  *   login → criar cliente → criar veículo → catálogo (serviço/peça)
- *   → criar OS → criar orçamento → aprovar → consultar
+ *   → criar OS → simular pagamento pendente → desistência → consultar
  *
- * Requer PostgreSQL real acessível em DATABASE_URL e JWT_SECRET definido.
+ * Requer PostgreSQL real acessível em DATABASE_URL e par RS256 (JWT_*_KEY).
  */
 describe('Fluxo completo da oficina (e2e)', () => {
   let app: NestFastifyApplication;
@@ -38,13 +39,21 @@ describe('Fluxo completo da oficina (e2e)', () => {
     servicoId?: string;
     pecaId?: string;
     ordemServicoId?: string;
-    orcamentoId?: string;
   } = {};
 
   let token: string;
   let jwtService: JwtService;
 
+  const mensagensDaOs = () =>
+    prisma.outboxMensagem.findMany({
+      where: {
+        envelope: { path: ['ordemServicoId'], equals: created.ordemServicoId },
+      },
+    });
+
   beforeAll(async () => {
+    exigirDatabaseUrl();
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -52,20 +61,14 @@ describe('Fluxo completo da oficina (e2e)', () => {
     app = moduleFixture.createNestApplication<NestFastifyApplication>(
       new FastifyAdapter(),
     );
-    app.setGlobalPrefix('v1');
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    configurarAplicacaoHttp(app);
 
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
     httpServer = app.getHttpServer();
 
     prisma = app.get(PrismaService);
+    await verificarConexaoPostgres(() => prisma.$queryRaw`SELECT 1`);
     jwtService = app.get(JwtService);
 
     const senhaHash = await bcrypt.hash(senhaPlain, 10);
@@ -82,10 +85,15 @@ describe('Fluxo completo da oficina (e2e)', () => {
   });
 
   afterAll(async () => {
-    if (created.orcamentoId) {
-      await prisma.orcamento.deleteMany({ where: { id: created.orcamentoId } });
-    }
     if (created.ordemServicoId) {
+      await prisma.outboxMensagem.deleteMany({
+        where: {
+          envelope: {
+            path: ['ordemServicoId'],
+            equals: created.ordemServicoId,
+          },
+        },
+      });
       await prisma.movimentacaoEstoque.deleteMany({
         where: { ordemServicoId: created.ordemServicoId },
       });
@@ -208,7 +216,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     expect(created.pecaId).toBeDefined();
   });
 
-  it('5. POST /ordens-servico → deve criar OS em RECEBIDA e registrar histórico', async () => {
+  it('5. POST /ordens-servico → deve criar OS em RECEBIDA com sugestões, histórico e outbox', async () => {
     // Act
     const res = await request(httpServer)
       .post('/v1/ordens-servico')
@@ -225,36 +233,104 @@ describe('Fluxo completo da oficina (e2e)', () => {
     // Assert
     expect(res.body.id).toBeDefined();
     expect(res.body.status).toBe(StatusOS.RECEBIDA);
+    expect(res.body.rodadaVigente).toBe(1);
+    expect(res.body.sugestoes).toHaveLength(2);
+    expect(res.body.servicos).toHaveLength(0);
+    expect(res.body.pecas).toHaveLength(0);
     created.ordemServicoId = res.body.id;
 
     const historico = await prisma.historicoStatusOS.findMany({
       where: { ordemServicoId: created.ordemServicoId },
     });
-    expect(historico.length).toBeGreaterThanOrEqual(1);
+    expect(historico).toHaveLength(1);
     expect(historico[0].statusNovo).toBe(StatusOS.RECEBIDA);
+
+    const outbox = await mensagensDaOs();
+    expect(outbox.map((m) => m.eventType).sort()).toEqual([
+      'execution.iniciar-diagnostico.v1',
+      'ordem-servico.status-changed.v1',
+    ]);
   });
 
-  it('6. POST /orcamentos → deve criar orçamento e mover OS para AGUARDANDO_APROVACAO', async () => {
-    // Act
-    const res = await request(httpServer)
-      .post('/v1/orcamentos')
+  it('5b. POST /ordens-servico com diagnóstico na abertura → 400', async () => {
+    await request(httpServer)
+      .post('/v1/ordens-servico')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        ordemServicoId: created.ordemServicoId,
-        valorTotal: 250,
-        observacoes: 'Orçamento E2E',
+        clienteId: created.clienteId,
+        veiculoId: created.veiculoId,
+        diagnostico: 'Não pode vir na abertura',
       })
-      .expect(201);
+      .expect(400);
+  });
 
-    // Assert
-    expect(res.body.id).toBeDefined();
-    expect(res.body.status).toBe(StatusOrcamento.AGUARDANDO_APROVACAO);
-    created.orcamentoId = res.body.id;
+  it('5c. PATCH /ordens-servico/:id altera só a descrição; DELETE não existe mais', async () => {
+    const res = await request(httpServer)
+      .patch(`/v1/ordens-servico/${created.ordemServicoId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ descricaoProblema: 'Revisão programada e barulho no freio' })
+      .expect(200);
+    expect(res.body.descricaoProblema).toBe(
+      'Revisão programada e barulho no freio',
+    );
 
-    const os = await prisma.ordemServico.findUnique({
+    await request(httpServer)
+      .patch(`/v1/ordens-servico/${created.ordemServicoId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: StatusOS.EM_EXECUCAO })
+      .expect(400);
+
+    await request(httpServer)
+      .delete(`/v1/ordens-servico/${created.ordemServicoId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('5d. rotas legadas /v1/orcamentos removidas', async () => {
+    await request(httpServer)
+      .post('/v1/orcamentos')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ordemServicoId: created.ordemServicoId, valorTotal: 250 })
+      .expect(404);
+
+    await request(httpServer)
+      .patch('/v1/orcamentos/00000000-0000-4000-8000-000000000001')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'APROVADO' })
+      .expect(404);
+
+    await request(httpServer)
+      .get('/v1/orcamentos')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('5e. diagnóstico concluído (simulado) → OS em EM_DIAGNOSTICO com itens oficiais', async () => {
+    // O worker do Execution Service (E28) ainda não existe: o diagnóstico é simulado no banco.
+    await prisma.ordemServico.update({
       where: { id: created.ordemServicoId! },
+      data: { status: StatusOS.EM_DIAGNOSTICO, prioridadeFila: 5 },
     });
-    expect(os?.status).toBe(StatusOS.AGUARDANDO_APROVACAO);
+    await prisma.ordemServicoPeca.create({
+      data: {
+        ordemServicoId: created.ordemServicoId!,
+        pecaId: created.pecaId!,
+        quantidade: 2,
+        precoUnitario: 50,
+      },
+    });
+  });
+
+  it('6. prepara AGUARDANDO_PAGAMENTO sem rota pública de orçamento', async () => {
+    const prazo = new Date(Date.now() + 86_400_000);
+    await prisma.ordemServico.update({
+      where: { id: created.ordemServicoId! },
+      data: {
+        status: StatusOS.AGUARDANDO_PAGAMENTO,
+        prioridadeFila: 3,
+        prazoReferenciaReserva: prazo,
+      },
+    });
   });
 
   it('7. token de cliente → consulta OS própria e bloqueia acesso cruzado', async () => {
@@ -265,7 +341,8 @@ describe('Fluxo completo da oficina (e2e)', () => {
         perfil: 'CLIENTE',
       },
       {
-        secret: process.env.JWT_SECRET,
+        privateKey: process.env.JWT_PRIVATE_KEY,
+        algorithm: 'RS256',
         issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
         audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
       },
@@ -281,7 +358,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         nome: 'Outro Cliente E2E',
-        cpfCnpj: '15396887700',
+        cpfCnpj: '52998224725',
         email: `outro.e2e+${Date.now()}@oficina.test`,
         telefone: '11988887777',
       })
@@ -294,7 +371,8 @@ describe('Fluxo completo da oficina (e2e)', () => {
         perfil: 'CLIENTE',
       },
       {
-        secret: process.env.JWT_SECRET,
+        privateKey: process.env.JWT_PRIVATE_KEY,
+        algorithm: 'RS256',
         issuer: process.env.JWT_ISSUER ?? 'tech-challenge-auth',
         audience: process.env.JWT_AUDIENCE ?? 'tech-challenge-api',
       },
@@ -308,35 +386,7 @@ describe('Fluxo completo da oficina (e2e)', () => {
     await prisma.cliente.deleteMany({ where: { id: outroCliente.body.id } });
   });
 
-  it('8. PATCH /orcamentos/:id → APROVADO deve dar baixa no estoque e mover OS para EM_EXECUCAO', async () => {
-    // Arrange
-    const pecaAntes = await prisma.peca.findUnique({
-      where: { id: created.pecaId! },
-    });
-
-    // Act
-    await request(httpServer)
-      .patch(`/v1/orcamentos/${created.orcamentoId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({ status: StatusOrcamento.APROVADO })
-      .expect(200);
-
-    // Assert
-    const pecaDepois = await prisma.peca.findUnique({
-      where: { id: created.pecaId! },
-    });
-    expect(pecaDepois!.quantidadeEstoque).toBe(
-      pecaAntes!.quantidadeEstoque - 2,
-    );
-
-    const os = await prisma.ordemServico.findUnique({
-      where: { id: created.ordemServicoId! },
-    });
-    expect(os?.status).toBe(StatusOS.EM_EXECUCAO);
-    expect(os?.iniciadaEm).toBeTruthy();
-  });
-
-  it('9. GET /ordens-servico/:id → deve refletir o estado final', async () => {
+  it('9. GET /ordens-servico/:id → deve refletir o estado atual', async () => {
     // Act
     const res = await request(httpServer)
       .get(`/v1/ordens-servico/${created.ordemServicoId}`)
@@ -345,7 +395,39 @@ describe('Fluxo completo da oficina (e2e)', () => {
 
     // Assert
     expect(res.body.id).toBe(created.ordemServicoId);
-    expect(res.body.status).toBe(StatusOS.EM_EXECUCAO);
+    expect(res.body.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+  });
+
+  it('9b. POST desistência → EM_CANCELAMENTO, idempotente; retirada ainda recusada (409)', async () => {
+    const desistir = () =>
+      request(httpServer)
+        .post(`/v1/ordens-servico/${created.ordemServicoId}/desistencia`)
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', `desistencia-${created.ordemServicoId}`)
+        .send({ motivo: 'Cliente desistiu do serviço' });
+
+    const primeira = await desistir().expect(200);
+    expect(primeira.body.status).toBe(StatusOS.EM_CANCELAMENTO);
+    expect(primeira.body.etapaOrigemCancelamento).toBe(
+      StatusOS.AGUARDANDO_PAGAMENTO,
+    );
+
+    await desistir().expect(200);
+
+    const historico = await prisma.historicoStatusOS.findMany({
+      where: {
+        ordemServicoId: created.ordemServicoId!,
+        statusNovo: StatusOS.EM_CANCELAMENTO,
+      },
+    });
+    expect(historico).toHaveLength(1);
+
+    await request(httpServer)
+      .post(`/v1/ordens-servico/${created.ordemServicoId}/retirada`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', `retirada-${created.ordemServicoId}`)
+      .send({})
+      .expect(409);
   });
 
   it('10. GET /ordens-servico/metricas/tempo-medio → deve retornar métricas', async () => {

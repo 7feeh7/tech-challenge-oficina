@@ -1,8 +1,14 @@
+import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
+import { EstoqueFisicoAbaixoReservadoError } from '../../domain/errors/peca.errors';
 import { Peca } from '../../domain/entities/peca.entity';
 import { PrismaPecaGateway } from './prisma-peca.gateway';
 
-const prisma = {
+jest.mock('@/shared/database/obter-cliente-transacao', () => ({
+  obterClienteTransacao: (_ctx: unknown, prisma: PrismaService) => prisma,
+}));
+
+const cliente = {
   peca: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
@@ -12,7 +18,11 @@ const prisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  $queryRaw: jest.fn(),
+  $executeRaw: jest.fn(),
 } as unknown as PrismaService;
+
+const prisma = cliente;
 
 const db = prisma.peca as unknown as Record<string, jest.Mock>;
 
@@ -33,6 +43,9 @@ const peca = new Peca({ ...raw, precoUnitario: 29.9 });
 
 describe('PrismaPecaGateway', () => {
   const gateway = new PrismaPecaGateway(prisma);
+  const contexto = new PrismaContextoTransacao(cliente);
+  const queryRaw = cliente.$queryRaw as unknown as jest.Mock;
+  const executeRaw = cliente.$executeRaw as unknown as jest.Mock;
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -138,5 +151,42 @@ describe('PrismaPecaGateway', () => {
     await gateway.remover('p1');
 
     expect(db.delete).toHaveBeenCalledWith({ where: { id: 'p1' } });
+  });
+
+  it('atualizarNoContexto recusa físico abaixo do reservado', async () => {
+    queryRaw.mockResolvedValue([{ quantidade_reservada: 5 }]);
+
+    await expect(
+      gateway.atualizarNoContexto(contexto, 'p1', peca, {
+        quantidadeEstoque: 3,
+      }),
+    ).rejects.toThrow(EstoqueFisicoAbaixoReservadoError);
+
+    expect(executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('atualizarNoContexto ajusta físico sob bloqueio', async () => {
+    queryRaw.mockResolvedValue([{ quantidade_reservada: 2 }]);
+    executeRaw.mockResolvedValue(1);
+    db.update.mockResolvedValue({ ...raw, quantidadeEstoque: 15 });
+
+    await gateway.atualizarNoContexto(contexto, 'p1', peca, {
+      quantidadeEstoque: 15,
+    });
+
+    expect(executeRaw).toHaveBeenCalled();
+    expect(db.update).toHaveBeenCalled();
+  });
+
+  it('atualizarNoContexto sem estoque grava só campos parciais', async () => {
+    peca.alterarNome('Nome novo');
+    db.update.mockResolvedValue({ ...raw, nome: 'Nome novo' });
+
+    const atualizada = await gateway.atualizarNoContexto(contexto, 'p1', peca, {
+      nome: 'Nome novo',
+    });
+
+    expect(atualizada.nome).toBe('Nome novo');
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });

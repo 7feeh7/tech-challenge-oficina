@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable, from, of, switchMap } from 'rxjs';
+import { CHAMADOR_INTERNO_KEY } from '@/modules/rotas-internas/decorators/chamador-interno.decorator';
 import { IDEMPOTENT_SCOPE_KEY } from './idempotent.decorator';
 import { IdempotencyService } from './idempotency.service';
 
@@ -25,6 +26,14 @@ export class IdempotencyInterceptor implements NestInterceptor {
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const chamadorInterno = this.reflector.getAllAndOverride<string>(
+      CHAMADOR_INTERNO_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (chamadorInterno) {
+      return next.handle();
+    }
+
     const scope = this.reflector.getAllAndOverride<string>(
       IDEMPOTENT_SCOPE_KEY,
       [context.getHandler(), context.getClass()],

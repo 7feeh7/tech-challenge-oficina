@@ -1,49 +1,72 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { CoordenacaoSagaModule } from '@/modules/coordenacao-saga/coordenacao-saga.module';
+import {
+  COMPENSACAO_AVANCO,
+  type CompensacaoAvancoPort,
+} from '@/shared/saga/compensacao-avanco.port';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import { PrismaModule } from '@/shared/database/prisma.module';
+import { MensageriaModule } from '@/shared/messaging/mensageria.module';
+import { OUTBOX_GATEWAY } from '@/shared/messaging/application/ports/tokens';
+import type { OutboxGateway } from '@/shared/messaging/application/ports/outbox.gateway';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
 import { CatalogoGateway } from './application/ports/catalogo.gateway';
-import { NotificadorDeStatusGateway } from './application/ports/notificador-status.gateway';
 import { OrdemServicoGateway } from './application/ports/ordem-servico.gateway';
 import {
   CATALOGO_GATEWAY,
-  NOTIFICADOR_STATUS_GATEWAY,
   ORDEM_SERVICO_GATEWAY,
 } from './application/ports/tokens';
+import { TransicaoOrdemServicoService } from './application/services/transicao-ordem-servico.service';
 import { AtualizarOrdemServicoUseCase } from './application/use-cases/atualizar-ordem-servico.use-case';
 import { BuscarOrdemServicoUseCase } from './application/use-cases/buscar-ordem-servico.use-case';
 import { CalcularTempoMedioUseCase } from './application/use-cases/calcular-tempo-medio.use-case';
 import { CriarOrdemServicoUseCase } from './application/use-cases/criar-ordem-servico.use-case';
 import { ListarOrdensServicoUseCase } from './application/use-cases/listar-ordens-servico.use-case';
-import { RemoverOrdemServicoUseCase } from './application/use-cases/remover-ordem-servico.use-case';
+import { RegistrarDesistenciaUseCase } from './application/use-cases/registrar-desistencia.use-case';
+import { RegistrarRetiradaUseCase } from './application/use-cases/registrar-retirada.use-case';
 import { OrdensServicoController } from './infra/http/controllers/ordens-servico.controller';
-import { LocalNotificadorStatusGateway } from './infra/notification/local-notificador-status.gateway';
-import { notificadorStatusProvider } from './infra/notification/notificador-status.provider';
-import { SendGridNotificadorStatusGateway } from './infra/notification/sendgrid-notificador-status.gateway';
-import { SnsNotificadorStatusGateway } from './infra/notification/sns-notificador-status.gateway';
 import { PrismaCatalogoGateway } from './infra/persistence/prisma-catalogo.gateway';
 import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-servico.gateway';
 
-/**
- * Wiring do módulo: liga as portas da camada de aplicação aos adaptadores de
- * infraestrutura. Os casos de uso são classes puras, por isso são instanciados
- * por factory em vez de resolvidos por decorator.
- */
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    forwardRef(() => MensageriaModule),
+    forwardRef(() => CoordenacaoSagaModule),
+  ],
   controllers: [OrdensServicoController],
   providers: [
     PrismaOrdemServicoGateway,
     PrismaCatalogoGateway,
-    SnsNotificadorStatusGateway,
-    LocalNotificadorStatusGateway,
-    SendGridNotificadorStatusGateway,
-    notificadorStatusProvider,
     { provide: ORDEM_SERVICO_GATEWAY, useExisting: PrismaOrdemServicoGateway },
     { provide: CATALOGO_GATEWAY, useExisting: PrismaCatalogoGateway },
     {
+      provide: TransicaoOrdemServicoService,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        outbox: OutboxGateway,
+        metricas: OsMetricsService,
+      ) => new TransicaoOrdemServicoService(ordens, outbox, metricas),
+      inject: [ORDEM_SERVICO_GATEWAY, OUTBOX_GATEWAY, OsMetricsService],
+    },
+    {
       provide: CriarOrdemServicoUseCase,
-      useFactory: (ordens: OrdemServicoGateway, catalogo: CatalogoGateway) =>
-        new CriarOrdemServicoUseCase(ordens, catalogo),
-      inject: [ORDEM_SERVICO_GATEWAY, CATALOGO_GATEWAY],
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        catalogo: CatalogoGateway,
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+      ) =>
+        new CriarOrdemServicoUseCase(ordens, catalogo, unitOfWork, transicoes),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        CATALOGO_GATEWAY,
+        UNIT_OF_WORK,
+        TransicaoOrdemServicoService,
+      ],
     },
     {
       provide: ListarOrdensServicoUseCase,
@@ -61,20 +84,48 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
       provide: AtualizarOrdemServicoUseCase,
       useFactory: (
         ordens: OrdemServicoGateway,
-        catalogo: CatalogoGateway,
-        notificador: NotificadorDeStatusGateway,
-      ) => new AtualizarOrdemServicoUseCase(ordens, catalogo, notificador),
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+      ) => new AtualizarOrdemServicoUseCase(ordens, unitOfWork, transicoes),
       inject: [
         ORDEM_SERVICO_GATEWAY,
-        CATALOGO_GATEWAY,
-        NOTIFICADOR_STATUS_GATEWAY,
+        UNIT_OF_WORK,
+        TransicaoOrdemServicoService,
       ],
     },
     {
-      provide: RemoverOrdemServicoUseCase,
-      useFactory: (ordens: OrdemServicoGateway) =>
-        new RemoverOrdemServicoUseCase(ordens),
-      inject: [ORDEM_SERVICO_GATEWAY],
+      provide: RegistrarDesistenciaUseCase,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+        compensacao: CompensacaoAvancoPort,
+      ) =>
+        new RegistrarDesistenciaUseCase(
+          ordens,
+          unitOfWork,
+          transicoes,
+          compensacao,
+        ),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        UNIT_OF_WORK,
+        TransicaoOrdemServicoService,
+        COMPENSACAO_AVANCO,
+      ],
+    },
+    {
+      provide: RegistrarRetiradaUseCase,
+      useFactory: (
+        ordens: OrdemServicoGateway,
+        unitOfWork: UnitOfWork,
+        transicoes: TransicaoOrdemServicoService,
+      ) => new RegistrarRetiradaUseCase(ordens, unitOfWork, transicoes),
+      inject: [
+        ORDEM_SERVICO_GATEWAY,
+        UNIT_OF_WORK,
+        TransicaoOrdemServicoService,
+      ],
     },
     {
       provide: CalcularTempoMedioUseCase,
@@ -83,9 +134,10 @@ import { PrismaOrdemServicoGateway } from './infra/persistence/prisma-ordem-serv
       inject: [ORDEM_SERVICO_GATEWAY],
     },
   ],
-  // O módulo de orçamentos também move a OS pelo fluxo (gerar, aprovar, recusar)
-  // e precisa avisar o cliente pelo mesmo canal — reusa esta porta em vez de
-  // declarar outro notificador.
-  exports: [NOTIFICADOR_STATUS_GATEWAY],
+  exports: [
+    ORDEM_SERVICO_GATEWAY,
+    CATALOGO_GATEWAY,
+    TransicaoOrdemServicoService,
+  ],
 })
 export class OrdensServicoModule {}

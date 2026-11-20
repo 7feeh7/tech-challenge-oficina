@@ -1,19 +1,31 @@
-# Aplica as migrations do Prisma UMA vez por deploy, antes do rollout da API.
+# Aplica as migrations com a mesma imagem imutável (tag = SHA do commit) que o
+# Deployment usa. O pipeline cria e remove este Job (nome único por run: __MIGRATION_ID__
+# vira `<run_id>-<tentativa>`, então o deploy.yml e o migrate.yml não se atropelam): o deploy.yml o executa entre o
+# build e o rollout; o migrate.yml (workflow_dispatch na main) o executa em manutenção.
 #
 # Roda dentro do cluster porque o RDS é privado (só os nodes do EKS o alcançam),
 # então o runner do GitHub Actions não conseguiria conectar direto no banco.
 #
-# Se o Job falhar, o pipeline para e o Deployment antigo continua servindo.
+# Segredo mínimo: o `prisma migrate deploy` só precisa de DATABASE_URL, então o Job lê
+# o Secret próprio `oficina-migrate-secret-<id>`, nunca o `oficina-secret` da aplicação
+# (credenciais da API). Também não usa o ConfigMap nem a ServiceAccount `oficina-api`
+# (IRSA): roda com a ServiceAccount padrão do namespace, sem acesso à AWS.
+#
+# Se o Job falhar, o pipeline para antes do rollout e o Deployment antigo continua
+# servindo.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: oficina-migrate
+  name: oficina-migrate-__MIGRATION_ID__
   namespace: oficina
   labels:
     app: oficina-migrate
 spec:
   backoffLimit: 2
-  # Remove o Job automaticamente 10 min após terminar.
+  # Menor que a espera do pipeline (600 s): o cluster marca Failed antes de o
+  # pipeline desistir.
+  activeDeadlineSeconds: 540
+  # O pipeline remove o Job ao terminar; isto limpa se ele for interrompido.
   ttlSecondsAfterFinished: 600
   template:
     metadata:
@@ -24,14 +36,12 @@ spec:
       containers:
         - name: migrate
           # A tag é injetada pelo pipeline (mesma imagem da API).
-          image: ECR_REPOSITORY_URL:latest
+          image: ECR_REPOSITORY_URL:__IMAGE_TAG__
           imagePullPolicy: Always
           command: ["yarn", "prisma", "migrate", "deploy"]
           envFrom:
-            - configMapRef:
-                name: oficina-config
             - secretRef:
-                name: oficina-secret
+                name: oficina-migrate-secret-__MIGRATION_ID__
           resources:
             requests:
               cpu: "100m"

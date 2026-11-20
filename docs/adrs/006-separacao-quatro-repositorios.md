@@ -1,7 +1,8 @@
 # ADR-006 — Separação em quatro repositórios
 
-**Status:** aceito  
-**Data:** 2026-09-13
+**Status:** substituído  
+**Data:** 2026-09-13  
+**Substituída por:** [ADR-008](008-divisao-em-microsservicos.md)
 
 ## Contexto
 

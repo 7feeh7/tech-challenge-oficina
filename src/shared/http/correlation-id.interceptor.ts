@@ -8,7 +8,9 @@ import { Observable } from 'rxjs';
 import {
   correlationIdStorage,
   extractCorrelationId,
+  extractRequestId,
 } from './correlation-id.context';
+import { tagActiveSpanWithCorrelation } from '@/shared/observability/trace-context';
 
 @Injectable()
 export class CorrelationIdInterceptor implements NestInterceptor {
@@ -17,7 +19,12 @@ export class CorrelationIdInterceptor implements NestInterceptor {
       headers: Record<string, string | string[] | undefined>;
     }>();
     const correlationId = extractCorrelationId(request.headers);
+    const requestId = extractRequestId(request.headers);
+    request.headers['x-request-id'] = requestId;
 
-    return correlationIdStorage.run({ correlationId }, () => next.handle());
+    return correlationIdStorage.run({ correlationId, requestId }, () => {
+      tagActiveSpanWithCorrelation(correlationId);
+      return next.handle();
+    });
   }
 }

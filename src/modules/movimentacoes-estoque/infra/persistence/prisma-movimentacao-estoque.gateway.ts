@@ -1,11 +1,17 @@
 import { Injectable } from '@nestjs/common';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import {
   MovimentacaoComPeca,
   MovimentacaoEstoqueGateway,
   PaginaMovimentacoes,
 } from '../../application/ports/movimentacao-estoque.gateway';
 import { MovimentacaoEstoque } from '../../domain/entities/movimentacao-estoque.entity';
+import {
+  EstoqueInsuficienteError,
+  PecaDaMovimentacaoNaoEncontradaError,
+} from '../../domain/errors/movimentacao-estoque.errors';
 import { PrismaMovimentacaoEstoqueMapper } from './prisma-movimentacao-estoque.mapper';
 
 const SELECT_PECA = { select: { id: true, codigo: true, nome: true } };
@@ -14,12 +20,19 @@ const SELECT_PECA = { select: { id: true, codigo: true, nome: true } };
 export class PrismaMovimentacaoEstoqueGateway implements MovimentacaoEstoqueGateway {
   constructor(private readonly prisma: PrismaService) {}
 
-  async buscarSaldoDaPeca(pecaId: string): Promise<number | null> {
+  async buscarSaldosDaPeca(pecaId: string) {
     const peca = await this.prisma.peca.findUnique({
       where: { id: pecaId },
-      select: { quantidadeEstoque: true },
+      select: { quantidadeEstoque: true, quantidadeReservada: true },
     });
-    return peca ? peca.quantidadeEstoque : null;
+    if (!peca) {
+      return null;
+    }
+    return {
+      quantidadeFisica: peca.quantidadeEstoque,
+      quantidadeReservada: peca.quantidadeReservada,
+      quantidadeDisponivel: peca.quantidadeEstoque - peca.quantidadeReservada,
+    };
   }
 
   async buscarComPecaPorId(id: string): Promise<MovimentacaoComPeca | null> {
@@ -54,21 +67,65 @@ export class PrismaMovimentacaoEstoqueGateway implements MovimentacaoEstoqueGate
     };
   }
 
-  /** As duas escritas vão na mesma transação: histórico e saldo nunca divergem. */
   async registrar(
+    contexto: ContextoTransacao,
     movimentacao: MovimentacaoEstoque,
-    novoSaldo: number,
   ): Promise<MovimentacaoComPeca> {
-    const [raw] = await this.prisma.$transaction([
-      this.prisma.movimentacaoEstoque.create({
-        data: PrismaMovimentacaoEstoqueMapper.toPersistence(movimentacao),
-        include: { peca: SELECT_PECA },
-      }),
-      this.prisma.peca.update({
-        where: { id: movimentacao.pecaId },
-        data: { quantidadeEstoque: novoSaldo },
-      }),
-    ]);
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+
+    const saldos = await cliente.$queryRaw<
+      {
+        id: string;
+        quantidade_estoque: number;
+        quantidade_reservada: number;
+        codigo: string;
+        nome: string;
+      }[]
+    >`
+      SELECT id, quantidade_estoque, quantidade_reservada, codigo, nome
+      FROM pecas
+      WHERE id = ${movimentacao.pecaId}::uuid
+      FOR UPDATE
+    `;
+
+    const pecaRow = saldos[0];
+    if (!pecaRow) {
+      throw new PecaDaMovimentacaoNaoEncontradaError(movimentacao.pecaId);
+    }
+
+    const disponivel =
+      pecaRow.quantidade_estoque - pecaRow.quantidade_reservada;
+
+    if (movimentacao.ehEntrada()) {
+      const atualizado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = quantidade_estoque + ${movimentacao.quantidade}
+        WHERE id = ${movimentacao.pecaId}::uuid
+      `;
+      if (atualizado !== 1) {
+        throw new PecaDaMovimentacaoNaoEncontradaError(movimentacao.pecaId);
+      }
+    } else {
+      if (movimentacao.quantidade > disponivel) {
+        throw new EstoqueInsuficienteError(disponivel, movimentacao.quantidade);
+      }
+
+      const atualizado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = quantidade_estoque - ${movimentacao.quantidade}
+        WHERE id = ${movimentacao.pecaId}::uuid
+          AND quantidade_estoque - quantidade_reservada >= ${movimentacao.quantidade}
+      `;
+
+      if (atualizado !== 1) {
+        throw new EstoqueInsuficienteError(disponivel, movimentacao.quantidade);
+      }
+    }
+
+    const raw = await cliente.movimentacaoEstoque.create({
+      data: PrismaMovimentacaoEstoqueMapper.toPersistence(movimentacao),
+      include: { peca: SELECT_PECA },
+    });
 
     return this.toMovimentacaoComPeca(raw);
   }

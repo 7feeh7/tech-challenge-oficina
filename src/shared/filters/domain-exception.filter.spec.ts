@@ -1,55 +1,118 @@
-import { ArgumentsHost } from '@nestjs/common';
+import { ArgumentsHost, HttpStatus } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
-import {
-  CredenciaisInvalidasError,
-  EmailUsuarioJaExisteError,
-  NomeUsuarioInvalidoError,
-  UsuarioNaoEncontradoError,
-} from '@/modules/usuarios/domain/errors/usuario.errors';
 import { DomainExceptionFilter } from './domain-exception.filter';
+import { EstoqueInsuficienteReservaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { ErroNegocioInternoError } from '@/modules/rotas-internas/domain/erro-negocio-interno.error';
+import { OsMetricsService } from '@/shared/observability/os-metrics.service';
+import {
+  DomainConflictError,
+  DomainNotFoundError,
+  DomainUnauthorizedError,
+  DomainValidationError,
+} from '../exceptions/domain.error';
+import { ConteudoIdempotenciaDivergenteError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 
-describe('DomainExceptionFilter', () => {
+describe('DomainExceptionFilter — contrato interno', () => {
   const reply = jest.fn();
-  const response = Symbol('response');
   const host = {
-    switchToHttp: () => ({ getResponse: () => response }),
+    switchToHttp: () => ({ getResponse: () => ({}) }),
   } as unknown as ArgumentsHost;
 
-  const filter = new DomainExceptionFilter({
-    httpAdapter: { reply },
-  } as unknown as HttpAdapterHost);
-
-  const statusRespondido = () => reply.mock.calls[0][2] as number;
-  const corpoRespondido = () => reply.mock.calls[0][1] as { message: string };
+  const filtro = new DomainExceptionFilter(
+    { httpAdapter: { reply } } as unknown as HttpAdapterHost,
+    { recordFalhaTransicao: jest.fn() } as unknown as OsMetricsService,
+  );
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('traduz erro de validação para 400', () => {
-    filter.catch(new NomeUsuarioInvalidoError(), host);
-
-    expect(statusRespondido()).toBe(400);
-    expect(corpoRespondido().message).toBe(
-      'O nome do usuário deve possuir entre 3 e 100 caracteres.',
+  it('traduz ErroNegocioInternoError para codigo/mensagem/detalhes', () => {
+    filtro.catch(
+      new ErroNegocioInternoError('X', 'msg', HttpStatus.CONFLICT, { a: 1 }),
+      host,
+    );
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      { codigo: 'X', mensagem: 'msg', detalhes: { a: 1 } },
+      HttpStatus.CONFLICT,
     );
   });
 
-  it('traduz erro de recurso inexistente para 404', () => {
-    filter.catch(new UsuarioNaoEncontradoError('uuid-u1'), host);
-
-    expect(statusRespondido()).toBe(404);
-    expect(corpoRespondido().message).toContain('uuid-u1');
+  it('mantém mapeamento padrão para DomainNotFoundError', () => {
+    class ErroNaoEncontrado extends DomainNotFoundError {
+      constructor() {
+        super('não achou');
+      }
+    }
+    filtro.catch(new ErroNaoEncontrado(), host);
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: 'não achou' }),
+      404,
+    );
   });
 
-  it('traduz erro de conflito para 409', () => {
-    filter.catch(new EmailUsuarioJaExisteError(), host);
-
-    expect(statusRespondido()).toBe(409);
+  it('traduz DomainValidationError em 400', () => {
+    class ErroValidacao extends DomainValidationError {
+      constructor() {
+        super('inválido');
+      }
+    }
+    filtro.catch(new ErroValidacao(), host);
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: 'inválido' }),
+      400,
+    );
   });
 
-  it('traduz erro de credenciais para 401', () => {
-    filter.catch(new CredenciaisInvalidasError(), host);
+  it('traduz DomainConflictError em 409', () => {
+    class ErroConflito extends DomainConflictError {
+      constructor() {
+        super('conflito');
+      }
+    }
+    filtro.catch(new ErroConflito(), host);
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: 'conflito' }),
+      409,
+    );
+  });
 
-    expect(statusRespondido()).toBe(401);
-    expect(corpoRespondido().message).toBe('Credenciais inválidas.');
+  it('traduz DomainUnauthorizedError em 401', () => {
+    class ErroAuth extends DomainUnauthorizedError {
+      constructor() {
+        super('negado');
+      }
+    }
+    filtro.catch(new ErroAuth(), host);
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ message: 'negado' }),
+      401,
+    );
+  });
+
+  it('traduz ConteudoIdempotenciaDivergenteError', () => {
+    filtro.catch(new ConteudoIdempotenciaDivergenteError(), host);
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ codigo: 'CONTEUDO_DIVERGENTE' }),
+      409,
+    );
+  });
+
+  it('traduz EstoqueInsuficienteReservaError para ESTOQUE_INSUFICIENTE', () => {
+    filtro.catch(
+      new EstoqueInsuficienteReservaError([
+        { pecaId: 'p1', disponivelAtual: 1, solicitado: 2 },
+      ]),
+      host,
+    );
+    expect(reply).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ codigo: 'ESTOQUE_INSUFICIENTE' }),
+      409,
+    );
   });
 });

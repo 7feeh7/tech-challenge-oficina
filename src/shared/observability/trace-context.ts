@@ -12,3 +12,11 @@ export function getActiveTraceIds(): { traceId?: string; spanId?: string } {
     spanId: context.toSpanId(),
   };
 }
+
+export function tagActiveSpanWithCorrelation(correlationId?: string): void {
+  if (!correlationId) {
+    return;
+  }
+  const span = tracer.scope().active();
+  span?.setTag('correlation_id', correlationId);
+}

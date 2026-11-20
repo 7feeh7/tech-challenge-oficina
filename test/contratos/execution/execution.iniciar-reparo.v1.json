@@ -1,0 +1,21 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440011",
+  "eventType": "execution.iniciar-reparo.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T11:00:00.000Z",
+  "source": "os-service",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": "550e8400-e29b-41d4-a716-446655440020",
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "itensOficiais": [
+      {
+        "tipo": "SERVICO",
+        "itemId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+        "nome": "Troca de pastilhas",
+        "quantidade": 1
+      }
+    ]
+  }
+}

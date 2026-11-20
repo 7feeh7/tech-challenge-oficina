@@ -1,5 +1,10 @@
-import { OrdemServico } from '../../domain/entities/ordem-servico.entity';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
+import {
+  OrdemServico,
+  SugestaoItemOrdem,
+} from '../../domain/entities/ordem-servico.entity';
 import { StatusOS } from '../../domain/status-os';
+import type { ResumoFinanceiroOs } from '../mappers/resumo-financeiro-os.mapper';
 
 export interface ClienteDaOrdem {
   id: string;
@@ -30,6 +35,19 @@ export interface ItemPecaDetalhe {
   precoUnitario: number;
 }
 
+export interface HistoricoStatusDetalhe {
+  id: string;
+  statusAnterior: StatusOS | null;
+  statusNovo: StatusOS;
+  rodada: number | null;
+  eventId: string | null;
+  motivo: string | null;
+  observacao: string | null;
+  alteradoPor: string | null;
+  ocorridoEm: Date;
+  criadoEm: Date;
+}
+
 /** Leitura completa da OS, com os dados dos agregados vizinhos já resolvidos. */
 export interface OrdemServicoDetalhe {
   ordem: OrdemServico;
@@ -37,8 +55,9 @@ export interface OrdemServicoDetalhe {
   veiculo: VeiculoDaOrdem;
   servicos: ItemServicoDetalhe[];
   pecas: ItemPecaDetalhe[];
-  orcamentos: unknown[];
-  historicoStatus: unknown[];
+  sugestoes: readonly SugestaoItemOrdem[];
+  resumoFinanceiro: ResumoFinanceiroOs;
+  historicoStatus: HistoricoStatusDetalhe[];
 }
 
 /** Leitura enxuta usada na listagem. */
@@ -57,7 +76,19 @@ export interface PaginaOrdensServico {
 export interface RegistroDeStatus {
   statusAnterior: StatusOS | null;
   statusNovo: StatusOS;
+  rodada: number;
+  eventId: string;
+  ocorridoEm: Date;
+  motivo?: string | null;
   observacao?: string;
+  alteradoPor?: string;
+}
+
+/** OS lida com bloqueio de linha, junto do cliente que precisa ser avisado. */
+export interface OrdemServicoBloqueada {
+  ordem: OrdemServico;
+  cliente: { id: string; nome: string; email: string };
+  veiculo: { placa: string; modelo: string };
 }
 
 /** Marcos de tempo usados pelo cálculo de métricas. */
@@ -71,23 +102,29 @@ export interface MarcosDeTempo {
 export interface OrdemServicoGateway {
   buscarPorId(id: string): Promise<OrdemServico | null>;
   buscarDetalhePorId(id: string): Promise<OrdemServicoDetalhe | null>;
+  /** Fila ordenada pela prioridade persistida, com paginação no banco (D2.27). */
   listar(
     page: number,
     limit: number,
     status?: StatusOS,
   ): Promise<PaginaOrdensServico>;
-  /** Cria a OS com seus itens e a primeira entrada do histórico (mesma transação). */
+  /** Grava a OS, as sugestões e a primeira entrada do histórico. */
   criar(
+    contexto: ContextoTransacao,
     ordem: OrdemServico,
     registro: RegistroDeStatus,
-  ): Promise<OrdemServicoDetalhe>;
-  /** Atualiza a OS, insere os itens adicionados e grava o histórico se o status mudou. */
-  atualizar(
+  ): Promise<OrdemServicoBloqueada>;
+  /** Lê a OS com `FOR UPDATE`, serializando as mudanças concorrentes sobre ela. */
+  bloquearParaAtualizacao(
+    contexto: ContextoTransacao,
     id: string,
+  ): Promise<OrdemServicoBloqueada | null>;
+  /** Grava estado, itens e, se houve mudança de status, a entrada do histórico. */
+  salvar(
+    contexto: ContextoTransacao,
     ordem: OrdemServico,
     registro?: RegistroDeStatus,
-  ): Promise<OrdemServicoDetalhe>;
-  remover(id: string): Promise<void>;
+  ): Promise<void>;
   buscarMarcosDeTempo(
     dataInicio?: Date,
     dataFim?: Date,

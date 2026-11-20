@@ -14,8 +14,17 @@ import { UsuariosModule } from '@/modules/usuarios/usuarios.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '8h' },
+        privateKey: configService.getOrThrow<string>('JWT_PRIVATE_KEY'),
+        publicKey: configService.getOrThrow<string>('JWT_PUBLIC_KEY'),
+        signOptions: {
+          expiresIn: '8h',
+          algorithm: 'RS256',
+          issuer: configService.get<string>('JWT_ISSUER'),
+          audience: configService.get<string>('JWT_AUDIENCE'),
+        },
+        verifyOptions: {
+          algorithms: ['RS256'],
+        },
       }),
       inject: [ConfigService],
     }),

@@ -35,11 +35,33 @@ Sanitização na aplicação (`log-sanitizer.ts`) + regra de mascaramento no Dat
 | --- | --- | --- |
 | `oficina.ordem_servico.criada` | counter | `environment`, `service`, `status` |
 | `oficina.ordem_servico.tempo_por_status` | distribution | `environment`, `service`, `status` |
+| `oficina.ordem_servico.idade_mais_antiga_segundos` | gauge | `environment`, `service`, `status` |
 | `oficina.ordem_servico.transicao_falha` | counter | `environment`, `service` |
 | `oficina.integracao.falha` | counter | `environment`, `service`, `integration` |
 | `oficina.integracao.latencia` | timing | `environment`, `service`, `integration`, `result` |
 
-Status medidos: `EM_DIAGNOSTICO`, `EM_EXECUCAO`, `FINALIZADA` (inclui renegociação).
+Status medidos por `tempo_por_status`: `EM_DIAGNOSTICO`, `AGUARDANDO_APROVACAO`, `AGUARDANDO_PAGAMENTO`, `AGUARDANDO_EXECUCAO`, `EM_EXECUCAO`, `EM_CANCELAMENTO` e `FINALIZADA` (`STATUS_COM_DURACAO`, em `os-metrics.service.ts`).
+
+### Idade da OS mais antiga por status (monitor de OS parada)
+
+`tempo_por_status` só é emitida quando a OS **sai** do status, então não detecta OS presa. Para isso o OS emite o gauge `oficina.ordem_servico.idade_mais_antiga_segundos`:
+
+- um valor por status de `STATUS_COM_DURACAO`, com a tag `status:<STATUS>`, sem identificador de OS;
+- valor: segundos desde a entrada da OS mais antiga no status atual, considerando só as OS que **estão** nele;
+- entrada no status: `ocorridoEm` do último registro de `historico_status_os` com `statusNovo` igual ao status atual da OS (se a OS reentra no status, vale a última entrada);
+- OS sem registro de histórico do status atual: usa `criadoEm` da OS (superestima a idade, em vez de esconder uma OS possivelmente presa);
+- status sem nenhuma OS: o gauge sai com `0`, para o monitor não ficar sem dado;
+- uma consulta agregada por ciclo (`GROUP BY status`, `LEFT JOIN LATERAL` no histórico, índice existente `historico_status_os(ordem_servico_id)`), sem migration;
+- falha da consulta ou da telemetria não derruba a aplicação: o ciclo é descartado e o próximo tenta de novo, sem emitir `0` (o monitor vê ausência de dado, não "sem OS presa").
+
+Emissão por `ProcessadorIdadeOsPorStatusService`, um ciclo por vez (sem sobreposição), parado no `onModuleDestroy`:
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `OS_IDADE_POR_STATUS_HABILITADO` | `false` | `true` liga o processador (ligar em produção) |
+| `OS_IDADE_POR_STATUS_INTERVAL_MS` | `60000` | pausa entre ciclos; valor inválido volta ao padrão |
+
+Cada pod emite o gauge com as mesmas tags; no monitor, agregue com `max` entre os pods.
 
 IDs de OS, cliente, veículo ou requisição **não** viram tags.
 

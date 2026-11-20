@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { obterClienteTransacao } from '@/shared/database/obter-cliente-transacao';
 import { PrismaService } from '@/shared/database/prisma.service';
+import type { ContextoTransacao } from '@/shared/database/unit-of-work.port';
 import { PaginaPecas, PecaGateway } from '../../application/ports/peca.gateway';
+import type { AtualizarPecaInput } from '../../application/use-cases/atualizar-peca.use-case';
 import { Peca } from '../../domain/entities/peca.entity';
+import {
+  EstoqueFisicoAbaixoReservadoError,
+  PecaNaoEncontradaError,
+} from '../../domain/errors/peca.errors';
 import { PrismaPecaMapper } from './prisma-peca.mapper';
 
 @Injectable()
@@ -67,6 +74,54 @@ export class PrismaPecaGateway implements PecaGateway {
     const raw = await this.prisma.peca.update({
       where: { id },
       data: PrismaPecaMapper.toPersistence(peca),
+    });
+    return PrismaPecaMapper.toDomain(raw);
+  }
+
+  async atualizarNoContexto(
+    contexto: ContextoTransacao,
+    id: string,
+    peca: Peca,
+    input: AtualizarPecaInput,
+  ): Promise<Peca> {
+    const cliente = obterClienteTransacao(contexto, this.prisma);
+
+    if (input.quantidadeEstoque !== undefined) {
+      const linhas = await cliente.$queryRaw<
+        { quantidade_reservada: number }[]
+      >`
+        SELECT quantidade_reservada
+        FROM pecas
+        WHERE id = ${id}::uuid
+        FOR UPDATE
+      `;
+
+      const reservado = linhas[0]?.quantidade_reservada;
+      if (reservado === undefined) {
+        throw new PecaNaoEncontradaError(id);
+      }
+
+      if (input.quantidadeEstoque < reservado) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+
+      const atualizado = await cliente.$executeRaw`
+        UPDATE pecas
+        SET quantidade_estoque = ${input.quantidadeEstoque}
+        WHERE id = ${id}::uuid
+          AND quantidade_reservada <= ${input.quantidadeEstoque}
+      `;
+
+      if (atualizado !== 1) {
+        throw new EstoqueFisicoAbaixoReservadoError();
+      }
+    }
+
+    const data = PrismaPecaMapper.toPersistenceParcial(peca, input);
+
+    const raw = await cliente.peca.update({
+      where: { id },
+      data,
     });
     return PrismaPecaMapper.toDomain(raw);
   }

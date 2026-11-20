@@ -5,9 +5,13 @@ import { METRIC_NAMES } from './observability.config';
 import { MetricsService } from './metrics.service';
 import { safeTelemetryAsync } from './safe-telemetry';
 
-const STATUS_COM_DURACAO: StatusOS[] = [
+export const STATUS_COM_DURACAO: StatusOS[] = [
   StatusOS.EM_DIAGNOSTICO,
+  StatusOS.AGUARDANDO_APROVACAO,
+  StatusOS.AGUARDANDO_PAGAMENTO,
+  StatusOS.AGUARDANDO_EXECUCAO,
   StatusOS.EM_EXECUCAO,
+  StatusOS.EM_CANCELAMENTO,
   StatusOS.FINALIZADA,
 ];
 
@@ -28,6 +32,10 @@ export class OsMetricsService {
     this.metrics.increment(METRIC_NAMES.osTransicaoFalha, 1);
   }
 
+  recordSituacaoFinanceiraIndeterminada(): void {
+    this.metrics.increment(METRIC_NAMES.situacaoFinanceiraIndeterminada, 1);
+  }
+
   async recordTransicao(
     ordemServicoId: string,
     statusAnterior: StatusOS,
@@ -42,10 +50,10 @@ export class OsMetricsService {
         where: {
           ordemServicoId,
           statusNovo: statusAnterior,
-          criadoEm: { lt: transicaoEm },
+          ocorridoEm: { lt: transicaoEm },
         },
-        orderBy: { criadoEm: 'desc' },
-        select: { criadoEm: true },
+        orderBy: { ocorridoEm: 'desc' },
+        select: { ocorridoEm: true },
       });
 
       if (!entrada) {
@@ -53,7 +61,7 @@ export class OsMetricsService {
       }
 
       const duracaoSegundos =
-        (transicaoEm.getTime() - entrada.criadoEm.getTime()) / 1000;
+        (transicaoEm.getTime() - entrada.ocorridoEm.getTime()) / 1000;
 
       if (duracaoSegundos < 0) {
         return;
@@ -65,5 +73,50 @@ export class OsMetricsService {
         [`status:${statusAnterior}`],
       );
     });
+  }
+
+  async recordIdadeMaisAntigaPorStatus(): Promise<void> {
+    await safeTelemetryAsync(async () => {
+      const agora = new Date();
+      const entradas = await this.buscarEntradaMaisAntigaPorStatus();
+
+      for (const status of STATUS_COM_DURACAO) {
+        const entradaMaisAntiga = entradas.get(status);
+        // Sem OS no status o gauge vai a 0, para o monitor não ficar sem dado.
+        const idadeSegundos = entradaMaisAntiga
+          ? Math.max(0, (agora.getTime() - entradaMaisAntiga.getTime()) / 1000)
+          : 0;
+
+        this.metrics.gauge(
+          METRIC_NAMES.osIdadeMaisAntigaSegundos,
+          idadeSegundos,
+          [`status:${status}`],
+        );
+      }
+    });
+  }
+
+  // Entrada no status atual = último histórico com statusNovo igual ao status da
+  // OS (uma OS pode reentrar no mesmo status em outra rodada). Se faltar
+  // histórico, usa a criação da OS: superestima a idade em vez de esconder a OS.
+  private async buscarEntradaMaisAntigaPorStatus(): Promise<
+    Map<StatusOS, Date>
+  > {
+    const linhas = await this.prisma.$queryRaw<
+      { status: StatusOS; entrou_em: Date }[]
+    >`
+      SELECT os.status::text AS status,
+             MIN(COALESCE(entrada.ocorrido_em, os.criado_em)) AS entrou_em
+      FROM ordens_servico os
+      LEFT JOIN LATERAL (
+        SELECT MAX(historico.ocorrido_em) AS ocorrido_em
+        FROM historico_status_os historico
+        WHERE historico.ordem_servico_id = os.id
+          AND historico.status_novo = os.status
+      ) entrada ON TRUE
+      WHERE os.status = ANY(${STATUS_COM_DURACAO}::"StatusOS"[])
+      GROUP BY os.status`;
+
+    return new Map(linhas.map((linha) => [linha.status, linha.entrou_em]));
   }
 }

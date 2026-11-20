@@ -14,6 +14,7 @@ export interface PecaProps {
   descricao?: string | null;
   precoUnitario: number;
   quantidadeEstoque?: number;
+  quantidadeReservada?: number;
   estoqueMinimo?: number;
   ativo?: boolean;
   criadoEm?: Date;
@@ -31,6 +32,7 @@ export class Peca {
   private _descricao: string | null;
   private _precoUnitario: number;
   private _quantidadeEstoque: number;
+  private _quantidadeReservada: number;
   private _estoqueMinimo: number;
   private _ativo: boolean;
   readonly criadoEm: Date;
@@ -44,6 +46,9 @@ export class Peca {
     this._precoUnitario = Peca.validarPreco(props.precoUnitario);
     this._quantidadeEstoque = Peca.validarQuantidadeEstoque(
       props.quantidadeEstoque ?? 0,
+    );
+    this._quantidadeReservada = Peca.validarQuantidadeEstoque(
+      props.quantidadeReservada ?? 0,
     );
     this._estoqueMinimo = Peca.validarEstoqueMinimo(props.estoqueMinimo ?? 0);
     this._ativo = props.ativo ?? true;
@@ -65,6 +70,12 @@ export class Peca {
   }
   get quantidadeEstoque() {
     return this._quantidadeEstoque;
+  }
+  get quantidadeReservada() {
+    return this._quantidadeReservada;
+  }
+  get quantidadeDisponivel() {
+    return this._quantidadeEstoque - this._quantidadeReservada;
   }
   get estoqueMinimo() {
     return this._estoqueMinimo;

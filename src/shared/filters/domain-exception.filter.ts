@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import { ErroNegocioInternoError } from '@/modules/rotas-internas/domain/erro-negocio-interno.error';
 import {
   DomainConflictError,
   DomainError,
@@ -17,8 +18,14 @@ import {
   DomainUnauthorizedError,
   DomainValidationError,
 } from '../exceptions/domain.error';
-import { TransicaoStatusInvalidaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
+import { ConteudoIdempotenciaDivergenteError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
+import { EstoqueInsuficienteReservaError } from '@/modules/reservas-estoque/domain/errors/reserva-estoque.errors';
 import { OsMetricsService } from '@/shared/observability/os-metrics.service';
+import { registrarFalhaTransicaoSeAplicavel } from '@/shared/observability/registrar-falha-transicao';
+import {
+  ConteudoDivergenteInternoError,
+  EstoqueInsuficienteInternoError,
+} from '@/modules/rotas-internas/domain/erros-internos';
 
 /**
  * Traduz erros de domínio em respostas HTTP. Mantém o núcleo da aplicação
@@ -32,13 +39,24 @@ export class DomainExceptionFilter implements ExceptionFilter<DomainError> {
   ) {}
 
   catch(error: DomainError, host: ArgumentsHost): void {
-    if (error instanceof TransicaoStatusInvalidaError) {
-      this.osMetrics.recordTransicaoFalha();
+    registrarFalhaTransicaoSeAplicavel(error, this.osMetrics);
+
+    const { httpAdapter } = this.httpAdapterHost;
+
+    if (error instanceof ErroNegocioInternoError) {
+      httpAdapter.reply(
+        host.switchToHttp().getResponse(),
+        {
+          codigo: error.codigo,
+          mensagem: error.mensagem,
+          detalhes: error.detalhes,
+        },
+        error.statusHttp,
+      );
+      return;
     }
 
     const excecao = DomainExceptionFilter.paraExcecaoHttp(error);
-    const { httpAdapter } = this.httpAdapterHost;
-
     httpAdapter.reply(
       host.switchToHttp().getResponse(),
       excecao.getResponse(),
@@ -47,6 +65,24 @@ export class DomainExceptionFilter implements ExceptionFilter<DomainError> {
   }
 
   private static paraExcecaoHttp(error: DomainError): HttpException {
+    if (error instanceof ConteudoIdempotenciaDivergenteError) {
+      const interno = new ConteudoDivergenteInternoError();
+      return new ConflictException({
+        codigo: interno.codigo,
+        mensagem: interno.mensagem,
+        detalhes: interno.detalhes,
+      });
+    }
+    if (error instanceof EstoqueInsuficienteReservaError) {
+      const interno = new EstoqueInsuficienteInternoError(
+        error.itensIndisponiveis,
+      );
+      return new ConflictException({
+        codigo: interno.codigo,
+        mensagem: interno.mensagem,
+        detalhes: interno.detalhes,
+      });
+    }
     if (error instanceof DomainValidationError) {
       return new BadRequestException(error.message);
     }

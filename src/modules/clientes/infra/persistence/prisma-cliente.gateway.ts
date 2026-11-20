@@ -7,6 +7,7 @@ import {
   PaginaClientes,
 } from '../../application/ports/cliente.gateway';
 import { Cliente } from '../../domain/entities/cliente.entity';
+import { CpfCnpjClienteInvalidoError } from '../../domain/errors/cliente.errors';
 import { PrismaClienteMapper } from './prisma-cliente.mapper';
 
 @Injectable()
@@ -15,6 +16,19 @@ export class PrismaClienteGateway implements ClienteGateway {
 
   async buscarPorId(id: string): Promise<Cliente | null> {
     const raw = await this.prisma.cliente.findUnique({ where: { id } });
+    return raw ? PrismaClienteMapper.toDomain(raw) : null;
+  }
+
+  async buscarPorCpf(cpf: string): Promise<Cliente | null> {
+    let cpfCnpj: string;
+    try {
+      cpfCnpj = Cliente.normalizarCpfCnpj(cpf);
+    } catch {
+      throw new CpfCnpjClienteInvalidoError();
+    }
+    const raw = await this.prisma.cliente.findFirst({
+      where: { cpfCnpj },
+    });
     return raw ? PrismaClienteMapper.toDomain(raw) : null;
   }
 

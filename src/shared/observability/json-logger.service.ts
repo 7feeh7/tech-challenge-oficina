@@ -1,5 +1,5 @@
 import { Injectable, LoggerService } from '@nestjs/common';
-import { getCorrelationId } from '@/shared/http/correlation-id.context';
+import { getObservabilityLogFields } from '@/shared/http/correlation-id.context';
 import { OBSERVABILITY } from './observability.config';
 import { sanitizeObject } from './log-sanitizer';
 import { getActiveTraceIds } from './trace-context';
@@ -34,8 +34,9 @@ export class JsonLoggerService implements LoggerService {
       environment: OBSERVABILITY.env,
       version: OBSERVABILITY.version,
       message: sanitizeString(message),
-      correlationId: getCorrelationId(),
     };
+
+    Object.assign(entry, getObservabilityLogFields());
 
     if (context) entry.context = context;
     if (traceId) entry.traceId = traceId;

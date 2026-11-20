@@ -1,84 +1,34 @@
-import { OrdemServicoNaoEncontradaError } from '../../domain/errors/ordem-servico.errors';
-import { StatusOS } from '../../domain/status-os';
-import {
-  OrdemServicoOutput,
-  OrdemServicoOutputMapper,
-} from '../mappers/ordem-servico-output.mapper';
-import { CatalogoGateway } from '../ports/catalogo.gateway';
-import { NotificadorDeStatusGateway } from '../ports/notificador-status.gateway';
-import {
-  OrdemServicoGateway,
-  RegistroDeStatus,
-} from '../ports/ordem-servico.gateway';
-import {
-  adicionarItensNaOrdem,
-  ItemPecaInput,
-  ItemServicoInput,
-} from './montar-itens';
+import type { UnitOfWork } from '@/shared/database/unit-of-work.port';
+import { OrdemServicoGateway } from '../ports/ordem-servico.gateway';
+import { TransicaoOrdemServicoService } from '../services/transicao-ordem-servico.service';
+import { OrdemServicoOutput } from '../mappers/ordem-servico-output.mapper';
+import { MudancaOrdemServicoUseCase } from './mudanca-ordem-servico.use-case';
 
 export interface AtualizarOrdemServicoInput {
-  status?: StatusOS;
   descricaoProblema?: string;
-  diagnostico?: string;
-  servicos?: ItemServicoInput[];
-  pecas?: ItemPecaInput[];
 }
 
-export class AtualizarOrdemServicoUseCase {
+/** O PATCH público só corrige a descrição, antes do diagnóstico (D2.22). */
+export class AtualizarOrdemServicoUseCase extends MudancaOrdemServicoUseCase {
   constructor(
-    private readonly ordens: OrdemServicoGateway,
-    private readonly catalogo: CatalogoGateway,
-    private readonly notificador: NotificadorDeStatusGateway,
-  ) {}
+    ordens: OrdemServicoGateway,
+    unitOfWork: UnitOfWork,
+    transicoes: TransicaoOrdemServicoService,
+  ) {
+    super(ordens, unitOfWork, transicoes);
+  }
 
   async execute(
     id: string,
     input: AtualizarOrdemServicoInput,
   ): Promise<OrdemServicoOutput> {
-    const ordem = await this.ordens.buscarPorId(id);
-    if (!ordem) {
-      throw new OrdemServicoNaoEncontradaError(id);
-    }
-
-    const statusAnterior = ordem.status;
-
-    if (input.status !== undefined) {
-      ordem.alterarStatus(input.status);
-    }
-    if (input.descricaoProblema !== undefined) {
-      ordem.alterarDescricaoProblema(input.descricaoProblema);
-    }
-    if (input.diagnostico !== undefined) {
-      ordem.alterarDiagnostico(input.diagnostico);
-    }
-
-    await adicionarItensNaOrdem(
-      ordem,
-      this.catalogo,
-      input.servicos,
-      input.pecas,
-    );
-
-    const registro: RegistroDeStatus | undefined =
-      ordem.status === statusAnterior
-        ? undefined
-        : { statusAnterior, statusNovo: ordem.status };
-
-    const detalhe = await this.ordens.atualizar(id, ordem, registro);
-
-    if (registro) {
-      await this.notificador.notificarMudancaDeStatus({
-        ordemServicoId: id,
-        destinatario: {
-          nome: detalhe.cliente.nome,
-          email: detalhe.cliente.email ?? '',
-        },
-        numeroOS: detalhe.ordem.numero,
-        statusAnterior: registro.statusAnterior,
-        statusNovo: registro.statusNovo,
-      });
-    }
-
-    return OrdemServicoOutputMapper.toOutput(detalhe);
+    return await this.aplicarMudanca({
+      ordemServicoId: id,
+      aplicar: (ordem) => {
+        if (input.descricaoProblema !== undefined) {
+          ordem.alterarDescricaoProblema(input.descricaoProblema);
+        }
+      },
+    });
   }
 }

@@ -3,6 +3,8 @@ import { JsonLoggerService } from './json-logger.service';
 import { MetricsService } from './metrics.service';
 import { OsMetricsService } from './os-metrics.service';
 import { IntegrationMetricsService } from './integration-metrics.service';
+import { MessagingMetricsService } from './messaging-metrics.service';
+import { ProcessadorIdadeOsPorStatusService } from './processador-idade-os-por-status.service';
 
 @Global()
 @Module({
@@ -11,12 +13,15 @@ import { IntegrationMetricsService } from './integration-metrics.service';
     MetricsService,
     OsMetricsService,
     IntegrationMetricsService,
+    MessagingMetricsService,
+    ProcessadorIdadeOsPorStatusService,
   ],
   exports: [
     JsonLoggerService,
     MetricsService,
     OsMetricsService,
     IntegrationMetricsService,
+    MessagingMetricsService,
   ],
 })
 export class ObservabilityModule {}

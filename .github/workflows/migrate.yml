@@ -1,0 +1,46 @@
+name: Database Migration
+
+# Só manutenção manual (D9.1): na implantação normal a migration roda dentro do
+# deploy.yml, entre o build e o rollout, com a mesma imagem. Este workflow aplica as
+# migrations de uma imagem já publicada no ECR (input image_tag), na main e com
+# aprovação em producao. O Job e o Secret têm nome único por run, então pode coexistir
+# com um deploy.yml; as duas migrations simultâneas se serializam pelo lock do Prisma.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag da imagem no ECR (padrão = SHA do commit atual)
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  K8S_NAMESPACE: oficina
+  TF_ENVIRONMENT: producao
+
+concurrency:
+  group: migrate-producao
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: Prisma Migrate (Job)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Lê só o necessário à migration: ARN do segredo do banco, ECR e nome do cluster.
+      # Sem as credenciais da aplicação, ConfigMap nem ARN da IRSA (o Job não usa IRSA).
+      - uses: ./.github/actions/migration-os
+        with:
+          image-tag: ${{ inputs.image_tag || github.sha }}

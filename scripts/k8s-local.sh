@@ -15,11 +15,15 @@ set -euo pipefail
 
 NS=oficina
 IMAGE=oficina-api:local
+# Sufixo dos nomes do Job e do Secret da migration (em produção é `<run_id>-<tentativa>`).
+MIGRATION_ID=local
 
 # O manifesto de produção aponta para o ECR e usa "Always"; local, a imagem já
 # está no nó e não há registry de onde puxar.
 localizar() {
-  sed -e "s|ECR_REPOSITORY_URL:latest|${IMAGE}|g" \
+  sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${IMAGE}|g" \
+      -e "s|__IMAGE_TAG__|local|g" \
+      -e "s|__MIGRATION_ID__|${MIGRATION_ID}|g" \
       -e "s|imagePullPolicy: Always|imagePullPolicy: IfNotPresent|g" "$1"
 }
 
@@ -46,20 +50,33 @@ kubectl apply -f k8s/local/postgres.yaml
 kubectl patch configmap oficina-config --namespace "${NS}" --type merge \
   -p '{"data":{"DATABASE_SSL":"false"}}'
 
-# Secret local — valores fakes para teste local, o Secret real do EKS vem do CI/CD.
+# Secret local — par RS256 e tokens descartáveis; o Secret real do EKS vem do CI/CD.
+JWT_LOCAL_DIR=$(mktemp -d)
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "${JWT_LOCAL_DIR}/priv.pem" 2>/dev/null
+openssl pkey -in "${JWT_LOCAL_DIR}/priv.pem" -pubout -out "${JWT_LOCAL_DIR}/pub.pem" 2>/dev/null
 kubectl create secret generic oficina-secret --namespace "${NS}" \
   --from-literal=DATABASE_URL='postgresql://oficina:oficina@postgres:5432/oficina?schema=public' \
-  --from-literal=JWT_SECRET='segredo-apenas-local' \
+  --from-file=JWT_PRIVATE_KEY="${JWT_LOCAL_DIR}/priv.pem" \
+  --from-file=JWT_PUBLIC_KEY="${JWT_LOCAL_DIR}/pub.pem" \
+  --from-literal=TOKEN_BILLING_OS='token-billing-local-descartavel' \
+  --from-literal=TOKEN_EXECUTION_OS='token-execution-local-descartavel' \
+  --from-literal=TOKEN_AUTH_CPF_OS='token-auth-cpf-local-descartavel' \
   --from-literal=SENDGRID_API_KEY='' \
   --from-literal=ADMIN_SENHA='admin12345' \
+  --dry-run=client -o yaml | kubectl apply -f -
+rm -rf "${JWT_LOCAL_DIR}"
+
+# O Job de migration lê um Secret próprio, só com DATABASE_URL (como em produção).
+kubectl create secret generic "oficina-migrate-secret-${MIGRATION_ID}" --namespace "${NS}" \
+  --from-literal=DATABASE_URL='postgresql://oficina:oficina@postgres:5432/oficina?schema=public' \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl rollout status deployment/postgres --namespace "${NS}" --timeout=180s
 
 echo "==> 4/6 Migrations (mesmo Job usado em produção)"
-kubectl delete job oficina-migrate --namespace "${NS}" --ignore-not-found
+kubectl delete job "oficina-migrate-${MIGRATION_ID}" --namespace "${NS}" --ignore-not-found
 localizar k8s/migration-job.yaml | kubectl apply -f -
-kubectl wait --for=condition=complete job/oficina-migrate \
+kubectl wait --for=condition=complete "job/oficina-migrate-${MIGRATION_ID}" \
   --namespace "${NS}" --timeout=300s
 
 echo "==> 5/6 Deployment, Service e HPA"

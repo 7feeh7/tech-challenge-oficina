@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/shared/database/prisma.module';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import { MovimentacaoEstoqueGateway } from './application/ports/movimentacao-estoque.gateway';
 import { MOVIMENTACAO_ESTOQUE_GATEWAY } from './application/ports/tokens';
 import { BuscarMovimentacaoUseCase } from './application/use-cases/buscar-movimentacao.use-case';
@@ -24,9 +28,9 @@ import { PrismaMovimentacaoEstoqueGateway } from './infra/persistence/prisma-mov
     },
     {
       provide: RegistrarMovimentacaoUseCase,
-      useFactory: (gateway: MovimentacaoEstoqueGateway) =>
-        new RegistrarMovimentacaoUseCase(gateway),
-      inject: [MOVIMENTACAO_ESTOQUE_GATEWAY],
+      useFactory: (gateway: MovimentacaoEstoqueGateway, uow: UnitOfWork) =>
+        new RegistrarMovimentacaoUseCase(gateway, uow),
+      inject: [MOVIMENTACAO_ESTOQUE_GATEWAY, UNIT_OF_WORK],
     },
     {
       provide: ListarMovimentacoesUseCase,

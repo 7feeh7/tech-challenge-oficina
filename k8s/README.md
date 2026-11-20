@@ -6,15 +6,15 @@ Deploy da API NestJS no cluster Kubernetes.
 
 | Arquivo | Recurso | Descrição |
 | --- | --- | --- |
-| `namespace.yaml` | Namespace | Isola os recursos da aplicação (`oficina`). |
-| `serviceaccount.yaml` | ServiceAccount | IRSA para publicação SNS (`oficina-api`). |
-| `configmap.yaml` | ConfigMap | Variáveis não sensíveis (`PORT`, `ADMIN_EMAIL`, etc.). |
-| `secret.example.yaml` | Secret | Modelo dos dados sensíveis (`DATABASE_URL`, `JWT_SECRET`, `ADMIN_SENHA`). O Secret real é criado pelo CI/CD. |
-| `migration-job.yaml` | Job | Aplica as migrations do Prisma **uma vez por deploy**, antes do rollout da API. |
-| `deployment.yaml` | Deployment | 2 réplicas, `RollingUpdate`, `securityContext` non-root, spread multi-AZ, probes. |
+| `namespace.yaml` | Namespace | Isola os recursos da aplicação (`oficina`). Provisionado pelo `infra-kubernetes`; fora do pipeline da aplicação (D6.2, D9.1). |
+| `serviceaccount.yaml` | ServiceAccount | IRSA da API (`oficina-api`): SNS e SQS. Anotada pelo `deploy.yml` com o ARN de `/infra/os_service_irsa_role_arn`. |
+| `configmap.yaml` | ConfigMap | Variáveis não sensíveis (`PORT`, `ADMIN_EMAIL`, etc.), URLs das filas e do tópico (marcadores `__...__` preenchidos pelo `deploy.yml` com o SSM), processadores desligados (`false`) e tempos dos processadores. |
+| `secret.example.yaml` | Secret | Modelo dos dados sensíveis da API (`DATABASE_URL`, chaves JWT, tokens, `ADMIN_SENHA`). O `oficina-secret` real é criado só pelo `deploy.yml`. |
+| `migration-job.yaml` | Job | Aplica as migrations com a mesma imagem do deploy. Roda dentro do `deploy.yml` (entre o build e o rollout) e, em manutenção, pelo `migrate.yml` (`workflow_dispatch` na `main`). Lê só o Secret `oficina-migrate-secret-<id>` (`DATABASE_URL`); Job e Secret têm nome único por run (`<id>` = `<run_id>-<tentativa>`); não usa ConfigMap nem IRSA. |
+| `deployment.yaml` | Deployment | 1 réplica inicial, `RollingUpdate`, `securityContext` non-root, spread multi-AZ, probes; tag de imagem por SHA no CI; `terminationGracePeriodSeconds` de 1020 s (cálculo em `docs/tempos-processadores-os.md`). |
 | `service.yaml` | Service | Tipo `NodePort` (30080), tráfego público só via API Gateway + NLB interno. |
 | `pdb.yaml` | PodDisruptionBudget | Garante `minAvailable: 1` durante evictions e rollouts. |
-| `hpa.yaml` | HorizontalPodAutoscaler | Escala de 2 a 10 pods por CPU (70%) e memória (80%). |
+| `hpa.yaml` | HorizontalPodAutoscaler | Escala de 1 a 6 pods por CPU (70%) e memória (80%) (D5.5, D6.7). |
 
 ## Deploy manual (o CI/CD faz isso automaticamente)
 
@@ -26,18 +26,24 @@ aws eks update-kubeconfig --region us-east-1 --name tech-challenge-eks
 kubectl apply -f namespace.yaml
 kubectl apply -f configmap.yaml
 
-# 3. Crie o Secret com os valores reais (não use o example em produção)
+# 3. Crie os Secrets com os valores reais (não use o example em produção).
+#    O da migration leva só a DATABASE_URL.
+kubectl create secret generic oficina-migrate-secret-manual -n oficina \
+  --from-literal=DATABASE_URL='postgresql://oficina:senha@ENDPOINT_RDS:5432/oficina?schema=public'
 kubectl create secret generic oficina-secret -n oficina \
   --from-literal=DATABASE_URL='postgresql://oficina:senha@ENDPOINT_RDS:5432/oficina?schema=public' \
-  --from-literal=JWT_SECRET='...' \
-  --from-literal=SENDGRID_API_KEY='...' \
+  --from-literal=JWT_PRIVATE_KEY='...' \
+  --from-literal=JWT_PUBLIC_KEY='...' \
+  --from-literal=TOKEN_BILLING_OS='...' \
+  --from-literal=TOKEN_EXECUTION_OS='...' \
+  --from-literal=TOKEN_AUTH_CPF_OS='...' \
   --from-literal=ADMIN_SENHA='...'
 
 # 4. Rode as migrations (Job) e espere terminar, ANTES de subir a API.
-#    Ajuste a imagem (URL do ECR) no manifesto antes de aplicar.
-kubectl delete job oficina-migrate -n oficina --ignore-not-found
-kubectl apply -f migration-job.yaml
-kubectl wait --for=condition=complete job/oficina-migrate -n oficina --timeout=300s
+#    Ajuste a imagem (URL do ECR) no manifesto e troque __MIGRATION_ID__ por `manual`.
+sed 's|__MIGRATION_ID__|manual|g' migration-job.yaml | kubectl apply -f -
+kubectl wait --for=condition=complete job/oficina-migrate-manual -n oficina --timeout=300s
+kubectl delete job oficina-migrate-manual -n oficina   # libera as conexões antes do rollout
 
 # 5. Ajuste a imagem no deployment (URL do ECR) e aplique
 kubectl apply -f deployment.yaml
@@ -47,6 +53,10 @@ kubectl apply -f hpa.yaml
 
 > As migrations rodam só neste Job — o container da API sobe direto com `yarn start:prod`.
 > Isso evita que cada pod criado pelo HPA repita o `migrate deploy` durante um pico de carga.
+
+## Ordem no pipeline
+
+No `deploy.yml`, uma run por commit na `main`: `test` → `build` (imagem com tag SHA) → `migration` (este Job, com a mesma imagem, até `Complete`; removido ao terminar) → `deploy` (rollout com a mesma tag). Falha na migration impede o rollout e o Deployment anterior segue no ar. O `migrate.yml` só existe para manutenção manual.
 
 ## Verificação
 

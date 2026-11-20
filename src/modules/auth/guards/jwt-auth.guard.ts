@@ -50,9 +50,12 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private async verifyToken(token: string): Promise<JwtPayload> {
-    const secret = this.configService.get<string>('JWT_SECRET');
+    const publicKey = this.configService.getOrThrow<string>('JWT_PUBLIC_KEY');
 
-    return this.jwtService.verifyAsync<JwtPayload>(token, { secret });
+    return this.jwtService.verifyAsync<JwtPayload>(token, {
+      secret: publicKey,
+      algorithms: ['RS256'],
+    });
   }
 
   private validarClaims(payload: JwtPayload): void {
@@ -63,6 +66,25 @@ export class JwtAuthGuard implements CanActivate {
 
     if (!payload.email || !payload.perfil) {
       throw new UnauthorizedException('Token interno inválido.');
+    }
+
+    this.validarEmissorEAudiencia(payload);
+  }
+
+  private validarEmissorEAudiencia(payload: JwtPayload): void {
+    const issuer = this.configService.get<string>('JWT_ISSUER');
+    const audience = this.configService.get<string>('JWT_AUDIENCE');
+
+    if (issuer && payload.iss !== issuer) {
+      throw new UnauthorizedException('Issuer inválido.');
+    }
+
+    if (audience) {
+      const aud = payload.aud;
+      const audiences = Array.isArray(aud) ? aud : aud ? [aud] : [];
+      if (!audiences.includes(audience)) {
+        throw new UnauthorizedException('Audience inválida.');
+      }
     }
   }
 

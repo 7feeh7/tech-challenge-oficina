@@ -1,0 +1,18 @@
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440099",
+  "eventType": "execution.reparo-concluido.v1",
+  "version": 1,
+  "occurredAt": "2026-11-15T15:00:00.000Z",
+  "source": "execution",
+  "correlationId": "550e8400-e29b-41d4-a716-446655440000",
+  "causationId": null,
+  "ordemServicoId": "550e8400-e29b-41d4-a716-446655440000",
+  "rodada": 1,
+  "payload": {
+    "tarefaId": "550e8400-e29b-41d4-a716-446655440000#1#REPARO",
+    "concluidoEm": "2026-11-15T15:00:00.000Z",
+    "servicosRealizados": [],
+    "pecasUtilizadas": [],
+    "divergencias": []
+  }
+}

@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/shared/database/prisma.module';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from '@/shared/database/unit-of-work.port';
 import { PecaGateway } from './application/ports/peca.gateway';
 import { PECA_GATEWAY } from './application/ports/tokens';
 import { AtualizarPecaUseCase } from './application/use-cases/atualizar-peca.use-case';
@@ -38,8 +42,9 @@ import { PrismaPecaGateway } from './infra/persistence/prisma-peca.gateway';
     },
     {
       provide: AtualizarPecaUseCase,
-      useFactory: (gateway: PecaGateway) => new AtualizarPecaUseCase(gateway),
-      inject: [PECA_GATEWAY],
+      useFactory: (gateway: PecaGateway, uow: UnitOfWork) =>
+        new AtualizarPecaUseCase(gateway, uow),
+      inject: [PECA_GATEWAY, UNIT_OF_WORK],
     },
     {
       provide: RemoverPecaUseCase,

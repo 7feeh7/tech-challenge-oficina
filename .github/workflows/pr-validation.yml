@@ -2,17 +2,49 @@ name: PR Validation
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]
     branches: [main, develop]
   push:
     branches: [develop]
 
 env:
   DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+  JWT_ISSUER: tech-challenge-auth
+  JWT_AUDIENCE: tech-challenge-api
 
 jobs:
+  titulo-conventional-commits:
+    name: Título Conventional Commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar título do PR
+        env:
+          TITULO: ${{ github.event.pull_request.title }}
+        run: |
+          if ! echo "$TITULO" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?: .+'; then
+            echo "Título fora do Conventional Commits: $TITULO"
+            echo "Esperado: tipo(escopo opcional): descrição — ex. feat(os): adiciona pool explícito no Prisma"
+            exit 1
+          fi
+
   validate:
     name: Lint, Build e Testes
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,28 +56,52 @@ jobs:
           cache: yarn
 
       - run: yarn install --frozen-lockfile
+      # O código de saída do `yarn audit` (Yarn Classic) ignora --level; o audit-ci falha só em vulnerabilidade alta ou crítica.
+      - name: Auditoria de dependências de produção (alta e crítica, sem exceção)
+        run: npx --yes audit-ci@7.1.0 --high --skip-dev
+      - name: Auditoria completa de dependências (alta e crítica, exceções só em audit-ci.jsonc)
+        run: npx --yes audit-ci@7.1.0 --config audit-ci.jsonc
       - run: yarn prisma generate
+      - run: yarn prisma migrate deploy
       - run: yarn lint
       - run: yarn build
       - run: yarn test:cov
-
-      # - name: Auditoria npm (alta/critica)
-      #   run: yarn audit --level high
-      #   continue-on-error: false
+      - run: yarn test:int
+      - run: yarn test:e2e
 
       - name: SonarCloud Scan
         if: github.event_name == 'pull_request'
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65  # v8.4.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: SonarCloud Quality Gate
         if: github.event_name == 'pull_request'
-        uses: SonarSource/sonarqube-quality-gate-action@v1
+        uses: SonarSource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa  # v1.2.1
         timeout-minutes: 5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  terraform-validate:
+    name: Terraform fmt e validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sem credencial AWS e sem backend: só verifica formatação e sintaxe.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+
+      - name: Terraform fmt, init e validate
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
 
   security-scan:
     name: Secret Scan

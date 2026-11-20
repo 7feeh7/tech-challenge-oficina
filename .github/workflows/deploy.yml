@@ -1,8 +1,20 @@
 name: Deploy Application
 
+# Uma run por commit na main: test → build → migration → deploy, cada job por `needs`.
+# A imagem é construída uma vez (tag = SHA do commit) e a migration e o rollout usam
+# essa mesma tag. Se a migration falhar, o rollout não roda e o Deployment anterior
+# segue no ar. Não há espera por outro workflow nem `workflow_run`.
+#
+# A fila os-in e a DLQ (terraform/) ficam no terraform.yml, só por disparo manual e
+# antes desta run (runbook, passo 6.2): o deploy lê os parâmetros SSM que ele publica.
+# Pontos de aprovação: cada job com `environment: producao` pede a aprovação
+# configurada no environment (build, migration e deploy).
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "terraform/**"
+      - "docs/**"
   workflow_dispatch:
 
 env:
@@ -10,6 +22,8 @@ env:
   K8S_NAMESPACE: oficina
   TF_ENVIRONMENT: producao
 
+# O GitHub mantém uma run em execução e uma pendente por grupo: uma nova run cancela
+# a pendente, mesmo com cancel-in-progress false.
 concurrency:
   group: deploy-producao
   cancel-in-progress: false
@@ -36,8 +50,9 @@ jobs:
       - run: yarn build
       - run: yarn test:cov
 
-  deploy:
-    name: Deploy no EKS
+  build:
+    name: Build e push da imagem
+    if: github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     environment: producao
@@ -52,103 +67,143 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Resolver parametros via SSM
-        id: ssm
-        run: |
-          PREFIX="/tech-challenge/${{ env.TF_ENVIRONMENT }}"
-          ECR=$(aws ssm get-parameter --name "${PREFIX}/infra/ecr_repository_url" --query Parameter.Value --output text)
-          EKS=$(aws ssm get-parameter --name "${PREFIX}/infra/eks_cluster_name" --query Parameter.Value --output text)
-          DB_ARN=$(aws ssm get-parameter --name "${PREFIX}/database/db_secret_arn" --query Parameter.Value --output text)
-          JWT_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/jwt_secret_arn" --query Parameter.Value --output text)
-          SNS_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/sns_notificacao_topic_arn" --query Parameter.Value --output text)
-          IRSA_ARN=$(aws ssm get-parameter --name "${PREFIX}/infra/api_notificacao_irsa_role_arn" --query Parameter.Value --output text)
-          API_GATEWAY_URL=$(aws ssm get-parameter --name "${PREFIX}/infra/api_gateway_url" --query Parameter.Value --output text)
-          echo "ecr=$ECR" >> $GITHUB_OUTPUT
-          echo "eks=$EKS" >> $GITHUB_OUTPUT
-          echo "db_arn=$DB_ARN" >> $GITHUB_OUTPUT
-          echo "jwt_arn=$JWT_ARN" >> $GITHUB_OUTPUT
-          echo "sns_arn=$SNS_ARN" >> $GITHUB_OUTPUT
-          echo "irsa_arn=$IRSA_ARN" >> $GITHUB_OUTPUT
-          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
-
-      - name: Montar DATABASE_URL a partir do Secrets Manager
-        id: db
-        run: |
-          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.db_arn }}" --query SecretString --output text)
-          USER=$(echo "$SECRET" | jq -r .username)
-          PASS=$(echo "$SECRET" | jq -r .password)
-          HOST=$(echo "$SECRET" | jq -r .host)
-          PORT=$(echo "$SECRET" | jq -r .port)
-          DB=$(echo "$SECRET" | jq -r .dbname)
-          URL="postgresql://${USER}:${PASS}@${HOST}:${PORT}/${DB}?schema=public&connection_limit=5&pool_timeout=10"
-          echo "database_url=$URL" >> $GITHUB_OUTPUT
-
-      - name: Obter JWT do Secrets Manager
-        id: jwt
-        run: |
-          SECRET=$(aws secretsmanager get-secret-value --secret-id "${{ steps.ssm.outputs.jwt_arn }}" --query SecretString --output text)
-          JWT=$(echo "$SECRET" | jq -r .secret)
-          echo "jwt_secret=$JWT" >> $GITHUB_OUTPUT
-
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build e push imagem (SHA imutavel)
         env:
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -t "$ECR_REPOSITORY:latest" .
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          ECR_REPOSITORY=$(parametro infra/ecr_repository_url)
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" .
           docker push "$ECR_REPOSITORY:$IMAGE_TAG"
-          docker push "$ECR_REPOSITORY:latest"
+
+  migration:
+    name: Migration (Job no EKS)
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # O Job é removido ao fim da ação, antes do job de deploy: não soma conexões ao surge do rollout.
+      - uses: ./.github/actions/migration-os
+        with:
+          image-tag: ${{ github.sha }}
+
+  deploy:
+    name: Deploy no EKS
+    if: github.ref == 'refs/heads/main'
+    needs: migration
+    runs-on: ubuntu-latest
+    environment: producao
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Configurar kubectl
         run: |
-          aws eks update-kubeconfig \
-            --region "$AWS_REGION" \
-            --name "${{ steps.ssm.outputs.eks }}"
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          EKS_CLUSTER=$(parametro infra/eks_cluster_name)
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER"
 
-      - name: Namespace, ServiceAccount e ConfigMap
-        env:
-          SNS_ARN: ${{ steps.ssm.outputs.sns_arn }}
-          IRSA_ARN: ${{ steps.ssm.outputs.irsa_arn }}
-          API_GATEWAY_URL: ${{ steps.ssm.outputs.api_gateway_url }}
+      # Só este job lê o ARN da IRSA: é ele que anota a ServiceAccount `oficina-api`.
+      - name: ServiceAccount (IRSA)
         run: |
-          kubectl apply -f k8s/namespace.yaml
-          sed "s|API_NOTIFICACAO_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
-          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_ARN}|g" \
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          IRSA_ARN=$(parametro infra/os_service_irsa_role_arn)
+          sed "s|OS_SERVICE_IRSA_ROLE_ARN|${IRSA_ARN}|g" k8s/serviceaccount.yaml | kubectl apply -f -
+
+      # Os valores do SSM são lidos e aplicados no mesmo passo: não passam por
+      # `env:` nem por *output*, que apareceriam no log.
+      - name: ConfigMap
+        run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          SNS_NOTIFICACAO_TOPIC_ARN=$(parametro infra/sns_notificacao_topic_arn)
+          API_GATEWAY_URL=$(parametro infra/api_gateway_url)
+          SQS_OS_IN_URL=$(parametro infra/os_in_queue_url)
+          SQS_OS_IN_DLQ_URL=$(parametro infra/os_in_dlq_url)
+          SQS_BILLING_IN_URL=$(parametro infra/billing_in_queue_url)
+          SQS_EXECUTION_IN_URL=$(parametro infra/execution_in_queue_url)
+          sed -e "s|__SNS_NOTIFICACAO_TOPIC_ARN__|${SNS_NOTIFICACAO_TOPIC_ARN}|g" \
               -e "s|__API_GATEWAY_URL__|${API_GATEWAY_URL}|g" \
+              -e "s|__SQS_OS_IN_URL__|${SQS_OS_IN_URL}|g" \
+              -e "s|__SQS_OS_IN_DLQ_URL__|${SQS_OS_IN_DLQ_URL}|g" \
+              -e "s|__SQS_BILLING_IN_URL__|${SQS_BILLING_IN_URL}|g" \
+              -e "s|__SQS_EXECUTION_IN_URL__|${SQS_EXECUTION_IN_URL}|g" \
               k8s/configmap.yaml | kubectl apply -f -
 
-      - name: Secret do Kubernetes
+      # Só o deploy cria o `oficina-secret` (chave JWT e tokens). A migration usa o Secret
+      # próprio, só com DATABASE_URL. Cada valor é lido, mascarado e aplicado neste passo.
+      - name: Secret da aplicação
+        env:
+          ADMIN_SENHA: ${{ secrets.ADMIN_SENHA }}
         run: |
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+
+          montar_database_url
+
+          jwt_privada=$(segredo infra/jwt_secret_arn)
+          JWT_PRIVATE_KEY=$(jq -r 'if .privateKey then .privateKey elif .private_key then .private_key else . end' <<< "$jwt_privada")
+          mascarar "$JWT_PRIVATE_KEY"
+
+          jwt_publica=$(segredo infra/jwt_public_secret_arn)
+          JWT_PUBLIC_KEY=$(jq -r 'if .publicKey then .publicKey elif .public_key then .public_key else . end' <<< "$jwt_publica")
+
+          token_billing=$(segredo infra/token_billing_os_secret_arn)
+          TOKEN_BILLING_OS=$(jq -r 'if .token then .token else . end' <<< "$token_billing")
+          mascarar "$TOKEN_BILLING_OS"
+
+          token_execution=$(segredo infra/token_execution_os_secret_arn)
+          TOKEN_EXECUTION_OS=$(jq -r 'if .token then .token else . end' <<< "$token_execution")
+          mascarar "$TOKEN_EXECUTION_OS"
+
+          token_auth_cpf=$(segredo infra/token_auth_cpf_os_secret_arn)
+          TOKEN_AUTH_CPF_OS=$(jq -r 'if .token then .token else . end' <<< "$token_auth_cpf")
+          mascarar "$TOKEN_AUTH_CPF_OS"
+
           kubectl create secret generic oficina-secret \
             --namespace "$K8S_NAMESPACE" \
-            --from-literal=DATABASE_URL='${{ steps.db.outputs.database_url }}' \
-            --from-literal=JWT_SECRET='${{ steps.jwt.outputs.jwt_secret }}' \
-            --from-literal=ADMIN_SENHA='${{ secrets.ADMIN_SENHA }}' \
+            --from-literal=DATABASE_URL="$DATABASE_URL" \
+            --from-literal=JWT_PRIVATE_KEY="$JWT_PRIVATE_KEY" \
+            --from-literal=JWT_PUBLIC_KEY="$JWT_PUBLIC_KEY" \
+            --from-literal=TOKEN_BILLING_OS="$TOKEN_BILLING_OS" \
+            --from-literal=TOKEN_EXECUTION_OS="$TOKEN_EXECUTION_OS" \
+            --from-literal=TOKEN_AUTH_CPF_OS="$TOKEN_AUTH_CPF_OS" \
+            --from-literal=ADMIN_SENHA="$ADMIN_SENHA" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Migrations (Job)
-        id: migrate
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
-        run: |
-          kubectl delete job oficina-migrate \
-            --namespace "$K8S_NAMESPACE" --ignore-not-found
-          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
-            k8s/migration-job.yaml | kubectl apply -f -
-          kubectl wait --for=condition=complete job/oficina-migrate \
-            --namespace "$K8S_NAMESPACE" --timeout=300s
-
       - name: Deployment, Service, PDB e HPA
-        id: rollout
         env:
           IMAGE_TAG: ${{ github.sha }}
-          ECR_REPOSITORY: ${{ steps.ssm.outputs.ecr }}
         run: |
-          sed "s|ECR_REPOSITORY_URL:latest|$ECR_REPOSITORY:$IMAGE_TAG|g" \
-            k8s/deployment.yaml | kubectl apply -f -
+          set -euo pipefail
+          source "$GITHUB_WORKSPACE/.github/scripts/parametros-aws.sh"
+          ECR_REPOSITORY=$(parametro infra/ecr_repository_url)
+          sed -e "s|ECR_REPOSITORY_URL:__IMAGE_TAG__|${ECR_REPOSITORY}:${IMAGE_TAG}|g" \
+              -e "s|__IMAGE_TAG__|${IMAGE_TAG}|g" \
+              k8s/deployment.yaml | kubectl apply -f -
           kubectl apply -f k8s/service.yaml
           kubectl apply -f k8s/pdb.yaml
           kubectl apply -f k8s/hpa.yaml
@@ -159,7 +214,6 @@ jobs:
             --namespace "$K8S_NAMESPACE" --timeout=180s
 
       - name: Smoke test — health readiness
-        id: smoke
         run: |
           kubectl run smoke-test-${{ github.run_id }} \
             --namespace "$K8S_NAMESPACE" \
@@ -171,12 +225,3 @@ jobs:
           kubectl exec smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE" -- \
             curl -sf "http://oficina-api/health/ready"
           kubectl delete pod smoke-test-${{ github.run_id }} -n "$K8S_NAMESPACE"
-
-      - name: Rollback automatico em falha pos-migration
-        if: failure() && steps.migrate.outcome == 'success'
-        run: |
-          echo "Falha detectada apos migration — revertendo Deployment para revisao anterior."
-          kubectl rollout undo deployment/oficina-api \
-            --namespace "$K8S_NAMESPACE" || true
-          kubectl rollout status deployment/oficina-api \
-            --namespace "$K8S_NAMESPACE" --timeout=180s || true

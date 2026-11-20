@@ -10,6 +10,12 @@ describe('ListarPecasUseCase', () => {
     useCase = new ListarPecasUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ pecas: [], total: 0 });
+    await useCase.execute();
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de peças', async () => {
     gateway.listar.mockResolvedValue({ pecas: [criarPecaFake()], total: 1 });
 

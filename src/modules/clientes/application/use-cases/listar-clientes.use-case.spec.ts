@@ -10,6 +10,14 @@ describe('ListarClientesUseCase', () => {
     useCase = new ListarClientesUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ clientes: [], total: 0 });
+
+    await useCase.execute();
+
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de clientes', async () => {
     gateway.listar.mockResolvedValue({
       clientes: [criarClienteFake()],

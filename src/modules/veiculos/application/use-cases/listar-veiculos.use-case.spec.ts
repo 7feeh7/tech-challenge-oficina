@@ -10,6 +10,12 @@ describe('ListarVeiculosUseCase', () => {
     useCase = new ListarVeiculosUseCase(gateway);
   });
 
+  it('usa paginação padrão quando não informada', async () => {
+    gateway.listar.mockResolvedValue({ veiculos: [], total: 0 });
+    await useCase.execute();
+    expect(gateway.listar).toHaveBeenCalledWith(1, 10, undefined);
+  });
+
   it('retorna lista paginada de veículos', async () => {
     gateway.listar.mockResolvedValue({
       veiculos: [criarVeiculoFake()],
