@@ -1012,7 +1012,9 @@ export class PrismaReservaEstoqueGateway implements ReservaEstoqueGateway {
       ...mapaLiberado.keys(),
       ...(input.ajustesFisicos?.map((a) => a.pecaId) ?? []),
     ]);
-    for (const pecaId of [...pecasAfetadas].sort()) {
+    for (const pecaId of [...pecasAfetadas].sort((a, b) =>
+      a.localeCompare(b),
+    )) {
       await this.bloquearPeca(cliente, pecaId);
     }
 
