@@ -373,12 +373,16 @@ describe('Rotas internas de negócio (integração)', () => {
     });
 
     expect(saida.reservaId).toBeTruthy();
-    expect(new Date(saida.prazoReferencia).toString()).not.toBe('Invalid Date');
+    const prazoReferencia = new Date(saida.prazoReferencia);
+    const minutosAteOPrazo = (prazoReferencia.getTime() - Date.now()) / 60_000;
+    expect(minutosAteOPrazo).toBeGreaterThan(74);
+    expect(minutosAteOPrazo).toBeLessThanOrEqual(75);
 
     const os = await prisma.ordemServico.findUniqueOrThrow({
       where: { id: osId },
     });
     expect(os.status).toBe(StatusOS.AGUARDANDO_PAGAMENTO);
+    expect(os.prazoReferenciaReserva).toEqual(prazoReferencia);
   });
 
   it('ESTOQUE_INSUFICIENTE não grava idempotência', async () => {

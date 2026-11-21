@@ -6,6 +6,8 @@ import { EstadoIncompativelInternaError } from '../../domain/erros-internos';
 import { OrdemServicoNaoEncontradaError } from '@/modules/ordens-servico/domain/errors/ordem-servico.errors';
 import { PrismaContextoTransacao } from '@/shared/database/prisma-contexto-transacao';
 
+const PRAZO_RESERVA_MINUTOS = 75;
+
 describe('ReservarOsInternoUseCase', () => {
   const prisma = {} as never;
   const clienteTransacao = {
@@ -27,6 +29,7 @@ describe('ReservarOsInternoUseCase', () => {
       {} as never,
       {} as never,
       {} as never,
+      PRAZO_RESERVA_MINUTOS,
     );
     await expect(
       useCase.execute({
@@ -55,6 +58,7 @@ describe('ReservarOsInternoUseCase', () => {
       {} as never,
       { buscarNaTransacao: jest.fn().mockResolvedValue(null) } as never,
       {} as never,
+      PRAZO_RESERVA_MINUTOS,
     );
     await expect(
       useCase.execute({
@@ -87,6 +91,7 @@ describe('ReservarOsInternoUseCase', () => {
         gravarNaTransacao: jest.fn(),
       } as never,
       prisma,
+      PRAZO_RESERVA_MINUTOS,
     );
 
     const saida = await useCase.execute({
@@ -96,7 +101,7 @@ describe('ReservarOsInternoUseCase', () => {
       idempotencyKey: 'k1',
     });
 
-    expect(saida.prazoReferencia).toBe('2026-01-01T00:00:00.000Z');
+    expect(saida.prazoReferencia).toBe('2026-01-01T01:15:00.000Z');
     expect(saida.reservaId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
@@ -129,6 +134,7 @@ describe('ReservarOsInternoUseCase', () => {
         }),
       } as never,
       {} as never,
+      PRAZO_RESERVA_MINUTOS,
     );
     await expect(
       useCase.execute({
@@ -173,6 +179,7 @@ describe('ReservarOsInternoUseCase', () => {
         gravarNaTransacao: jest.fn(),
       } as never,
       prisma,
+      PRAZO_RESERVA_MINUTOS,
     );
 
     const saida = await useCase.execute({
@@ -183,5 +190,84 @@ describe('ReservarOsInternoUseCase', () => {
     });
     expect(reservar.execute).toHaveBeenCalled();
     expect(saida.reservaId).toBe('grupo-1');
+  });
+
+  describe('prazo da reserva', () => {
+    const instanteBanco = new Date('2026-01-01T00:00:00Z');
+
+    function criarUseCase(prazoReservaMinutos: number) {
+      const transicoes = { aplicar: jest.fn() };
+      const reservarEstoque = {
+        execute: jest.fn().mockResolvedValue({
+          grupoReservaId: 'grupo-1',
+          reutilizado: false,
+        }),
+      };
+      const useCase = new ReservarOsInternoUseCase(
+        {
+          bloquearParaAtualizacao: jest.fn().mockResolvedValue({
+            ordem: new OrdemServico({
+              id: 'os-1',
+              clienteId: 'c1',
+              veiculoId: 'v1',
+              status: StatusOS.AGUARDANDO_APROVACAO,
+              pecas: [
+                new ItemPecaOrdem({
+                  pecaId: 'p1',
+                  quantidade: 2,
+                  precoUnitario: 10,
+                }),
+              ],
+            }),
+          }),
+        } as never,
+        unitOfWork as never,
+        transicoes as never,
+        reservarEstoque as never,
+        {
+          buscarNaTransacao: jest.fn().mockResolvedValue(null),
+          gravarNaTransacao: jest.fn(),
+        } as never,
+        prisma,
+        prazoReservaMinutos,
+      );
+      return { useCase, transicoes, reservarEstoque };
+    }
+
+    const entrada = {
+      ordemServicoId: 'os-1',
+      rodada: 1,
+      orcamentoId: 'o1',
+      idempotencyKey: 'k1',
+    };
+
+    it('soma o prazo configurado ao instante do banco na reserva e na saída', async () => {
+      const { useCase, reservarEstoque } = criarUseCase(5);
+
+      const saida = await useCase.execute(entrada);
+
+      const prazoEsperado = new Date(instanteBanco.getTime() + 5 * 60_000);
+      expect(saida.prazoReferencia).toBe(prazoEsperado.toISOString());
+      expect(reservarEstoque.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ prazoReferencia: prazoEsperado }),
+        expect.anything(),
+      );
+    });
+
+    it('usa o instante do banco, e não o prazo, como momento da transição', async () => {
+      const { useCase, transicoes } = criarUseCase(75);
+
+      await useCase.execute(entrada);
+
+      const chamada = transicoes.aplicar.mock.calls[0][1];
+      expect(chamada.ocorridoEm).toEqual(instanteBanco);
+
+      const ordem = { registrarReservaConfirmada: jest.fn() };
+      chamada.aplicar(ordem, chamada.ocorridoEm);
+      expect(ordem.registrarReservaConfirmada).toHaveBeenCalledWith(
+        new Date('2026-01-01T01:15:00Z'),
+        instanteBanco,
+      );
+    });
   });
 });
