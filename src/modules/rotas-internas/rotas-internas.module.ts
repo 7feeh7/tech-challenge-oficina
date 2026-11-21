@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   UNIT_OF_WORK,
   type UnitOfWork,
@@ -22,6 +23,7 @@ import { TokenChamadorInternoGuard } from './guards/token-chamador-interno.guard
 import { IdempotencyKeyInternaGuard } from './guards/idempotency-key-interna.guard';
 import { ConcluirDiagnosticoInternoUseCase } from './application/use-cases/concluir-diagnostico-interno.use-case';
 import { ReservarOsInternoUseCase } from './application/use-cases/reservar-os-interno.use-case';
+import { lerPrazoReservaMinutos } from './application/ler-prazo-reserva-minutos';
 import { BuscarClienteCpfInternoUseCase } from './application/use-cases/buscar-cliente-cpf-interno.use-case';
 import { RotasInternasOrdensController } from './infra/http/controllers/rotas-internas-ordens.controller';
 import { RotasInternasClientesController } from './infra/http/controllers/rotas-internas-clientes.controller';
@@ -73,6 +75,7 @@ import { RotasInternasClientesController } from './infra/http/controllers/rotas-
         reservar: ReservarEstoqueUseCase,
         idempotency: IdempotencyService,
         prisma: PrismaService,
+        config: ConfigService,
       ) =>
         new ReservarOsInternoUseCase(
           ordens,
@@ -81,6 +84,7 @@ import { RotasInternasClientesController } from './infra/http/controllers/rotas-
           reservar,
           idempotency,
           prisma,
+          lerPrazoReservaMinutos(config.get<string>('PRAZO_RESERVA_MINUTOS')),
         ),
       inject: [
         ORDEM_SERVICO_GATEWAY,
@@ -89,6 +93,7 @@ import { RotasInternasClientesController } from './infra/http/controllers/rotas-
         ReservarEstoqueUseCase,
         IdempotencyService,
         PrismaService,
+        ConfigService,
       ],
     },
     {
