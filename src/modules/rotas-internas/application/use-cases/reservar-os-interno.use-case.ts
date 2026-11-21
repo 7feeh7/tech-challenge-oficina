@@ -20,6 +20,8 @@ import {
 } from '../validar-os-interna';
 import { EstadoIncompativelInternaError } from '../../domain/erros-internos';
 
+const MS_POR_MINUTO = 60_000;
+
 export interface ReservarOsInternoInput {
   ordemServicoId: string;
   rodada: number;
@@ -40,6 +42,7 @@ export class ReservarOsInternoUseCase {
     private readonly reservarEstoque: ReservarEstoqueUseCase,
     private readonly idempotency: IdempotencyService,
     private readonly prisma: PrismaService,
+    private readonly prazoReservaMinutos: number,
   ) {}
 
   async execute(
@@ -76,7 +79,10 @@ export class ReservarOsInternoUseCase {
           );
         }
 
-        const prazoReferencia = await obterInstanteBanco(contexto, this.prisma);
+        const agora = await obterInstanteBanco(contexto, this.prisma);
+        const prazoReferencia = new Date(
+          agora.getTime() + this.prazoReservaMinutos * MS_POR_MINUTO,
+        );
         const itensReserva = bloqueada.ordem.pecas.map((p) => ({
           pecaId: p.pecaId,
           quantidade: p.quantidade,
@@ -107,7 +113,7 @@ export class ReservarOsInternoUseCase {
           aplicar: (os, ocorridoEm) =>
             os.registrarReservaConfirmada(prazoReferencia, ocorridoEm),
           observacao: 'Reserva confirmada pela rota interna',
-          ocorridoEm: prazoReferencia,
+          ocorridoEm: agora,
         });
 
         const output: ReservarOsInternoOutput = {

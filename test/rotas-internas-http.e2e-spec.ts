@@ -250,9 +250,10 @@ describe('Rotas internas do OS pela pilha HTTP (e2e)', () => {
 
     const primeira = await enviar().expect(200);
     expect(primeira.body.reservaId).toEqual(expect.any(String));
-    expect(new Date(primeira.body.prazoReferencia).toString()).not.toBe(
-      'Invalid Date',
-    );
+    const minutosAteOPrazo =
+      (new Date(primeira.body.prazoReferencia).getTime() - Date.now()) / 60_000;
+    expect(minutosAteOPrazo).toBeGreaterThan(74);
+    expect(minutosAteOPrazo).toBeLessThanOrEqual(75);
 
     const repeticao = await enviar().expect(200);
     expect(repeticao.body).toEqual(primeira.body);
