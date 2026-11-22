@@ -1,220 +1,95 @@
-# Tech Challenge — API de Oficina Mecânica
+# Tech Challenge — OS Service (Oficina Mecânica)
 
-API REST para gestão de uma oficina mecânica: clientes, veículos, peças, serviços, ordens de serviço, orçamentos e movimentações de estoque. Projeto do Tech Challenge (FIAP) — **Fase 3** (cloud-native na AWS).
+Serviço central da oficina mecânica: clientes, veículos, catálogo, estoque e ordens de serviço. Projeto do Tech Challenge (FIAP).
 
-**Entrega Fase 3:** documento de entrega, roteiro de demonstração, vídeo e demais artefatos estão em [`docs/local/README.md`](docs/local/README.md) (seção [Entrega](docs/local/README.md#entrega)).
+Na **Fase 4** a solução foi dividida em seis repositórios independentes. Este é o **OS Service** e **orquestra a SAGA** das ordens de serviço: envia comandos ao Billing e ao Execution e é o único que muda o status da OS.
 
 ## Tecnologias
 
-| Tecnologia         | Versão                             |
-| ------------------ | ---------------------------------- |
-| Node.js            | 24+                                |
-| NestJS             | 11                                 |
-| Fastify            | 11                                 |
-| Prisma             | 7                                  |
-| PostgreSQL         | 16                                 |
-| Jest               | 30                                 |
-| Docker             | multi-stage (`Dockerfile` na raiz) |
-| dd-trace (Datadog) | 6                                  |
-| SonarCloud         | via CI                             |
+| Tecnologia         | Uso                                         |
+| ------------------ | ------------------------------------------- |
+| Node.js 24+        | Runtime                                     |
+| NestJS 11          | Framework, com Fastify 5                    |
+| TypeScript         | Linguagem                                   |
+| Prisma 7           | ORM e migrations                            |
+| PostgreSQL 16      | Banco relacional (RDS em produção)          |
+| Amazon SQS / SNS   | Mensageria (comandos, eventos, notificação) |
+| Jest 30 + ESLint   | Testes e lint                               |
+| Docker             | `Dockerfile` multi-stage na raiz            |
+| dd-trace (Datadog) | Tracing e métricas                          |
 
 ## Arquitetura
 
-Visão deste repositório (API no EKS):
+- **Responsabilidade:** clientes, veículos, usuários e login (`POST /v1/auth/login`, JWT RS256), catálogo (serviços e peças), estoque com reservas, ordens de serviço com histórico de status e idempotência por `Idempotency-Key`. Prefixo global `/v1`.
+- **Deploy:** EKS, namespace `oficina`, com `Deployment`, `HPA`, `Service` e `ServiceAccount` (IRSA) em [`k8s/`](k8s/README.md). O isolamento entre serviços vem de namespace, IAM/IRSA e credenciais e banco próprios.
+- **Banco:** database `oficina` na instância RDS PostgreSQL compartilhada, com usuário próprio. Não é acessado pelos outros serviços.
+- **SAGA orquestrada:** o OS envia comandos por filas SQS ponto a ponto (`billing-in`, `execution-in`) e recebe os fatos na fila `os-in`, criada em [`terraform/`](terraform/README.md). Billing e Execution não consomem eventos um do outro. Quando a cobrança expira ou o cliente desiste, o OS executa a compensação (cancela a tarefa, cancela ou estorna o financeiro e libera a reserva de estoque).
+- **Outbox e idempotência:** mensagens saem pela tabela `outbox_mensagens` (Transactional Outbox) e o consumo é idempotente por `mensagens_processadas`.
+- **REST interno:** rotas `/internal/...`, fora do API Gateway e protegidas por token de chamador. Recebe o diagnóstico do Execution, a reserva de estoque do Billing e a consulta de cliente por CPF da Lambda de autenticação.
+- **Notificação:** o OS publica as mudanças de status e a disponibilização de pagamento no SNS. O SNS só notifica e não participa da orquestração.
+- **Borda:** todo acesso externo passa pelo API Gateway (provisionado no `tech-challenge-infra-kubernetes`).
 
-```mermaid
-flowchart LR
-    GW[API Gateway] --> POD[oficina-api pods]
-    POD --> RDS[(RDS PostgreSQL)]
-    POD --> SNS[SNS notificação]
+## Execução e desenvolvimento
+
+Pré-requisitos: Node.js 24+, Yarn 1.x e Docker com Docker Compose.
+
+```bash
+git clone https://github.com/7feeh7/tech-challenge-oficina.git
+cd tech-challenge-oficina
+cp .env.example .env   # ajuste os valores
+docker compose up --build
 ```
-
-Diagrama completo da nuvem: [`docs/diagramas/componentes-nuvem.md`](docs/diagramas/componentes-nuvem.md) · Arquitetura (RFCs, ADRs e diagramas): [`docs/README.md`](docs/README.md)
-
-## Pré-requisitos
-
-- Node.js 24+
-- Yarn 1.x
-- Docker e Docker Compose (recomendado para subir o banco)
-
-## Instalação e Execução
-
-> OBS: É NECESSÁRIO CONFIGURAR O ARQUIVO .ENV
-
-1. Clonar o repositório:
-
-   ```bash
-   git clone https://github.com/7feeh7/tech-challenge-oficina.git
-   ```
-
-2. Copiar as variáveis de ambiente:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Subir API + Postgres com Docker:
-
-   ```bash
-   docker compose up --build
-   ```
-
-4. Agora deve estar em execução:
 
 - API: http://localhost:3000
 - Swagger: http://localhost:3000/docs
-- Postgres: localhost:5432
+- Health: http://localhost:3000/health
+- PostgreSQL: `localhost:5432`
 
-Variáveis de ambiente, scripts do `package.json` e execução sem Docker em [`docs/local/api/configuracao.md`](docs/local/api/configuracao.md).
+O compose aplica as migrations (`yarn prisma migrate deploy`) antes de iniciar. Os processadores de SQS e do outbox vêm desligados no `.env.example`. Para parar: `docker compose down`.
 
-## Comandos úteis
-
-**Parar o serviço**:
-
-```bash
-docker compose down
-```
-
-## Endpoints
-
-Contratos HTTP em [`docs/local/api/api.md`](docs/local/api/api.md), OpenAPI em [`docs/local/api/openapi.json`](docs/local/api/openapi.json)
-
-Em produção, toda entrada pública passa pelo **API Gateway** (URL em SSM `api_gateway_url`). Rotas de negócio usam prefixo `/v1`; autenticação por CPF em `POST /auth/cpf`.
-
-Todas as rotas `/v1/*` são protegidas por JWT, exceto `POST /v1/auth/login` e `/health`. Faça login e envie o token:
+Execução sem Docker (com um PostgreSQL local e `DATABASE_URL` no `.env`):
 
 ```bash
-# Login interno
-curl --location 'https://{api_gateway_url}/v1/auth/login' \
-  --header 'Content-Type: application/json' \
-  --data '{"email":"usuario@oficina.com","senha":"senha123"}'
-
-# Cliente por CPF (sem /v1)
-curl --location 'https://{api_gateway_url}/auth/cpf' \
-  --header 'Content-Type: application/json' \
-  --data '{"cpf":"529.982.247-25"}'
-
-# Rotas protegidas
-curl --location 'https://{api_gateway_url}/v1/clientes' \
-  --header 'Authorization: Bearer SEU_TOKEN'
+yarn install
+yarn prisma generate
+yarn prisma migrate deploy
+yarn start:dev
 ```
 
-Detalhes em [`docs/local/api/gateway-rotas.md`](docs/local/api/gateway-rotas.md).
-
-Perfis, permissões e fluxo de login em [`docs/local/api/autenticacao.md`](docs/local/api/autenticacao.md).
-
-Principais rotas:
-
-- `POST /auth/login` — autenticação
-- `GET|POST|PATCH|DELETE /clientes`, `/veiculos`, `/servicos`, `/pecas`
-- `POST /ordens-servico` — abre a OS com cliente, veículo, serviços e peças
-- `GET /ordens-servico` — fila de trabalho
-- `GET /ordens-servico/:id` — status atual e detalhes da OS
-- `PATCH /ordens-servico/:id` — muda o status da OS (notifica o cliente por e-mail)
-- `GET /ordens-servico/metricas/tempo-medio` — tempo médio de execução / ciclo total
-- `GET|POST|PATCH|DELETE /orcamentos` — aprovar orçamento baixa estoque automaticamente
-- `GET|POST /movimentacoes-estoque`
-- `GET|POST|PATCH|DELETE /usuarios` (somente ADMINISTRADOR)
-
-Fila de OS, máquina de estados, renegociação, desistência e notificação por e-mail em [`docs/local/api/regras-de-negocio.md`](docs/local/api/regras-de-negocio.md).
-
-## Como rodar os testes
-
-Executar toda a suite:
+Testes e qualidade:
 
 ```bash
-yarn test
+yarn test       # unitários
+yarn test:cov   # unitários com cobertura
+yarn test:int   # integração (PostgreSQL local; inclui BDD e contratos)
+yarn test:e2e   # end-to-end
+yarn lint
+yarn build
 ```
 
-Cobertura, integração (PostgreSQL local; inclui BDD e contratos) e end-to-end:
-
-```bash
-yarn test:cov
-yarn test:int
-yarn test:e2e
-```
-
-BDD e testes de contrato em [`docs/testes-bdd-e-contratos.md`](docs/testes-bdd-e-contratos.md).
-
-Cobertura mínima, padrão dos testes e SonarQube em [`docs/local/operacao/testes-e-qualidade.md`](docs/local/operacao/testes-e-qualidade.md).
-
-## Auditoria de dependências no CI
-
-O `pr-validation.yml` roda duas auditorias com `audit-ci@7.1.0`, ambas falhando só em vulnerabilidade alta ou crítica (o código de saída do `yarn audit` ignora o nível):
-
-- **Produção, sem exceção:** `npx audit-ci@7.1.0 --high --skip-dev`, sem arquivo de configuração nem allowlist.
-- **Completa (com devDependencies):** `npx audit-ci@7.1.0 --config audit-ci.jsonc`. Não há exceção: a `allowlist` do arquivo não existe. Se um advisory alto ou crítico sem correção disponível exigir exceção temporária, ela entra na `allowlist` com justificativa, prazo (`expiry`) e condição de remoção.
-
-O `Dockerfile` instala só dependências de produção na imagem final (`yarn install --production`); `prisma` e `dotenv` ficam em `dependencies` porque o Job de migration roda `prisma migrate deploy` na mesma imagem.
-
-O SonarCloud está temporariamente desabilitado no `pr-validation.yml` (decisão de 2026-11-18); reativar no checkpoint 2.3 do runbook de implantação.
-
-## Repositórios da solução (Fase 3)
-
-| Repositório                       | Responsabilidade                                         | URL                                                       |
-| --------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
-| **tech-challenge-oficina** (este) | API NestJS, Prisma, `Dockerfile`, manifests `k8s/`, docs | https://github.com/7feeh7/tech-challenge-oficina          |
-| tech-challenge-serverless         | Functions auth CPF e notificação                         | https://github.com/7feeh7/tech-challenge-serverless       |
-| tech-challenge-infra-kubernetes   | VPC, EKS, ECR, API Gateway, mensageria, Datadog          | https://github.com/7feeh7/tech-challenge-infra-kubernetes |
-| tech-challenge-infra-database     | RDS PostgreSQL, Secrets Manager                          | https://github.com/7feeh7/tech-challenge-infra-database   |
-
-**Ordem de deploy:** infra-kubernetes → infra-database → serverless → **este repo** (4º). Passo a passo: [`docs/local/operacao/runbook-subir-producao.md`](docs/local/operacao/runbook-subir-producao.md).
-
-## Infraestrutura e deploy
-
-A aplicação roda em **EKS** com banco no **RDS**, imagem no **ECR** e autoescalonamento por **HPA**. Existe **um único ambiente provisionado**: `develop` valida automaticamente (sem tocar a AWS) e `main` implanta após merge de PR aprovado.
-
-### Deploy ativo (produção)
-
-| Recurso                | Como obter                                               |
-| ---------------------- | -------------------------------------------------------- |
-| API Gateway (URL base) | SSM `/tech-challenge/producao/infra/api_gateway_url`     |
-| Swagger UI             | `{api_gateway_url}/docs`                                 |
-| Health                 | `{api_gateway_url}/health`                               |
-| Imagem ECR             | SSM `ecr_repository_url` + tag = SHA do commit em `main` |
-
-> Após a demonstração o ambiente pode ser desligado por custo. Consulte [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) para data de validação.
-
-### Dockerfile
-
-`Dockerfile` multi-stage na raiz: build NestJS + Prisma generate, runtime Alpine com usuário não-root. Migrations rodam no Job `k8s/migration-job.yaml`, não no CMD da imagem.
-
-### Variáveis e secrets (sem valores)
-
-| Escopo                        | Nomes                                                                 |
-| ----------------------------- | --------------------------------------------------------------------- |
-| `.env` local                  | Ver [`.env.example`](.env.example)                                    |
-| GitHub Environment `producao` | `AWS_*`, `JWT_SECRET`, `SENDGRID_API_KEY`, `ADMIN_SENHA`              |
-| Runtime K8s                   | `DATABASE_URL` (Secret), `DD_*`, `JWT_*`, `SNS_NOTIFICACAO_TOPIC_ARN` |
-
-Rollback automático: falha pós-migration dispara `kubectl rollout undo` — ver [`docs/local/operacao/ci-cd.md`](docs/local/operacao/ci-cd.md).
-
-### Seed de demonstração
-
-Dados fictícios para gravação do vídeo — **somente manual**:
-
-```bash
-./scripts/seed-demo.sh
-```
-
-Roteiro completo: [`docs/local/entrega/demo-fase3.md`](docs/local/entrega/demo-fase3.md).
-
-- ADRs: [`docs/adrs/README.md`](docs/adrs/README.md) · RFCs: [`docs/rfcs/README.md`](docs/rfcs/README.md)
-- Arquitetura Fase 3: [`docs/README.md`](docs/README.md)
-- Infraestrutura e provisionamento: [`docs/local/arquitetura/infraestrutura.md`](docs/local/arquitetura/infraestrutura.md)
-- Pipeline e secrets: [`docs/local/operacao/ci-cd.md`](docs/local/operacao/ci-cd.md)
-- Governança de branches: [`docs/local/operacao/governanca-git.md`](docs/local/operacao/governanca-git.md)
-- Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
-
-> **Custos:** EKS, NAT Gateway e RDS geram custo enquanto ligados. Use `workflow_dispatch` → destroy nos repos de infra após a demonstração.
+O CI (`pr-validation.yml`) roda auditoria de dependências (`audit-ci`), lint, build, cobertura, integração e e2e. O deploy para a `main` está em `deploy.yml`.
 
 ## Documentação
 
-| Documento                                 | Conteúdo                                             |
-| ----------------------------------------- | ---------------------------------------------------- |
-| [**Arquivo local**](docs/local/README.md) | API, banco, operação, segurança e **entrega Fase 3** |
-| [Arquitetura](docs/README.md)             | RFCs, ADRs e diagramas                               |
+- Arquitetura (RFCs, ADRs e diagramas): [`docs/README.md`](docs/README.md)
+- Decisões da Fase 4: [ADR-008 microsserviços](docs/adrs/008-divisao-em-microsservicos.md), [ADR-009 SAGA orquestrada](docs/adrs/009-saga-orquestrada.md), [ADR-010 SQS e outbox](docs/adrs/010-mensageria-sqs-outbox.md), [ADR-011 persistência poliglota](docs/adrs/011-persistencia-poliglota.md)
+- Saga: [`docs/saga-fato-estado.md`](docs/saga-fato-estado.md)
+- Contratos: [eventos](docs/contratos/eventos-os.md), [REST interno](docs/contratos/rest-interno-os.md), [pendências](docs/contratos/pendencias-os.md)
+- API: [`docs/local/api/api.md`](docs/local/api/api.md), [OpenAPI](docs/local/api/openapi.json), [rotas do gateway](docs/local/api/gateway-rotas.md), [autenticação](docs/local/api/autenticacao.md), [configuração](docs/local/api/configuracao.md)
+- Regras de negócio: [`docs/local/api/regras-de-negocio.md`](docs/local/api/regras-de-negocio.md)
+- Testes: [`docs/testes-bdd-e-contratos.md`](docs/testes-bdd-e-contratos.md), [`docs/local/operacao/testes-e-qualidade.md`](docs/local/operacao/testes-e-qualidade.md)
+- Operação: [CI/CD](docs/local/operacao/ci-cd.md), [observabilidade](docs/local/operacao/observabilidade.md), [runbook de produção](docs/local/operacao/runbook-subir-producao.md)
+- Manifests Kubernetes: [`k8s/README.md`](k8s/README.md)
 
-Detalhes operacionais, contratos HTTP, CI/CD, segurança e material de entrega: [`docs/local/README.md`](docs/local/README.md).
+## Repositórios da solução
 
-**Entrega Fase 3:** [`docs/local/entrega/entrega-fase3.md`](docs/local/entrega/entrega-fase3.md) (documento base para PDF) ·
+| Repositório                       | Responsabilidade                                      |
+| --------------------------------- | ----------------------------------------------------- |
+| **tech-challenge-oficina** (este) | OS Service e orquestrador da SAGA                     |
+| tech-challenge-billing            | Orçamentos, cobranças e Mercado Pago                  |
+| tech-challenge-execution          | Tarefas de diagnóstico e reparo                       |
+| tech-challenge-infra-kubernetes   | EKS, API Gateway, mensageria de notificação e Datadog |
+| tech-challenge-infra-database     | RDS PostgreSQL                                        |
+| tech-challenge-serverless         | Lambdas de autenticação por CPF e notificação         |
+
+Todos em `github.com/7feeh7/<repositório>`; o OS Service é `tech-challenge-oficina`.
